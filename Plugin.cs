@@ -44,6 +44,7 @@ public sealed class Plugin : IDalamudPlugin
         IDalamudPluginInterface pluginInterface,
         ICommandManager commandManager,
         IClientState clientState,
+        ICondition condition,
         IObjectTable objectTable,
         IDataManager dataManager,
         ITargetManager targetManager,
@@ -58,7 +59,7 @@ public sealed class Plugin : IDalamudPlugin
         config = pi.GetPluginConfig() as Configuration ?? new Configuration();
         config.Initialize(pi);
 
-        gameState = new GameStateService(clientState, objectTable, dataManager, log);
+        gameState = new GameStateService(clientState, condition, objectTable, dataManager, log);
         vnav = new VNavmeshAdapter(pi, log);
         navigation = new NavigationController(vnav, log);
         var executor = new NativeActionExecutor(objectTable, targetManager, log);

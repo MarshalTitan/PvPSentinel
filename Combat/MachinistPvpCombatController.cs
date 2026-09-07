@@ -59,7 +59,7 @@ internal sealed class MachinistPvpCombatController : ICombatController
         TargetDecision target,
         BehaviorState behavior)
     {
-        if (target.Target.HasStatus("Guard"))
+        if (target.Target.HasStatusExact("Guard"))
             return (0, "Target is Guarding; hold damage until the physical-ranged role action is integrated and verified.");
 
         if (behavior == BehaviorState.FinishKill && target.IsFinishOpportunity)

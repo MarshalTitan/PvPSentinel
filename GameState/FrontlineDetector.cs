@@ -4,9 +4,9 @@ namespace PvPSentinel.GameState;
 
 internal static class FrontlineDetector
 {
-    public static bool IsFrontline(bool isPvPExcludingDen, TerritoryType territory)
+    public static bool IsFrontline(bool isPvPExcludingDen, bool isBoundByDuty, TerritoryType territory)
     {
-        if (!isPvPExcludingDen || territory.RowId == 0 || !territory.IsPvpZone)
+        if (!isPvPExcludingDen || !isBoundByDuty || territory.RowId == 0 || !territory.IsPvpZone)
             return false;
 
         var content = territory.ContentFinderCondition.Value;

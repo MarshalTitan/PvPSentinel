@@ -22,6 +22,6 @@ internal sealed record PlayerSnapshot(
 {
     public float HpPercent => MaxHp == 0 ? 0f : CurrentHp * 100f / MaxHp;
     public bool HasStatus(string name) => Statuses.Any(s => s.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+    public bool HasStatusExact(string name) => Statuses.Any(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
     public string BattleHigh => Statuses.FirstOrDefault(s => s.Name.Contains("Battle High", StringComparison.OrdinalIgnoreCase))?.Name ?? "None";
 }
-

@@ -65,7 +65,7 @@ internal sealed class TargetSelector
             return null;
 
         var leashDistance = HorizontalDistance(mainCluster.Center, enemy.Position);
-        var guarding = enemy.HasStatus("Guard");
+        var guarding = enemy.HasStatusExact("Guard");
         var friendsNear = game.Friendlies.Count(friend => HorizontalDistance(friend.Position, enemy.Position) <= 15f);
         var enemiesNear = game.Enemies.Count(other => HorizontalDistance(other.Position, enemy.Position) <= 15f);
         var isolated = enemiesNear <= 2;

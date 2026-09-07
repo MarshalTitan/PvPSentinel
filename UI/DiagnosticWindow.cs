@@ -36,6 +36,7 @@ internal sealed class DiagnosticWindow : Window
         var local = game.LocalPlayer;
 
         KeyValue("PvP", YesNo(game.IsPvP));
+        KeyValue("Bound by duty", YesNo(game.IsBoundByDuty));
         KeyValue("Mode", game.IsFrontline ? "Frontline" : "Unsupported / none");
         KeyValue("Map", $"{game.MapName} ({game.TerritoryId}/{game.MapId})");
         KeyValue("Job", local is null ? "Unavailable" : $"{local.JobAbbreviation} ({local.JobId})");

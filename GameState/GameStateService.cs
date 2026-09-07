@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using PvPSentinel.Models;
@@ -8,6 +9,7 @@ namespace PvPSentinel.GameState;
 
 internal sealed class GameStateService(
     IClientState clientState,
+    ICondition condition,
     IObjectTable objects,
     IDataManager data,
     IPluginLog log)
@@ -22,7 +24,10 @@ internal sealed class GameStateService(
             var territory = ResolveTerritory(clientState.TerritoryType);
             var territoryName = territory.RowId == 0 ? $"Territory {clientState.TerritoryType}" : territory.PlaceName.Value.Name.ToString();
             var isPvP = clientState.IsPvPExcludingDen;
-            var isFrontline = FrontlineDetector.IsFrontline(isPvP, territory);
+            var isBoundByDuty = condition[ConditionFlag.BoundByDuty] ||
+                                condition[ConditionFlag.BoundByDuty56] ||
+                                condition[ConditionFlag.BoundByDuty95];
+            var isFrontline = FrontlineDetector.IsFrontline(isPvP, isBoundByDuty, territory);
 
             if (!clientState.IsLoggedIn || localObject is null)
             {
@@ -30,6 +35,7 @@ internal sealed class GameStateService(
                     DateTime.UtcNow,
                     clientState.IsLoggedIn,
                     isPvP,
+                    isBoundByDuty,
                     isFrontline,
                     clientState.TerritoryType,
                     clientState.MapId,
@@ -64,6 +70,7 @@ internal sealed class GameStateService(
                 DateTime.UtcNow,
                 clientState.IsLoggedIn,
                 isPvP,
+                isBoundByDuty,
                 isFrontline,
                 clientState.TerritoryType,
                 clientState.MapId,
