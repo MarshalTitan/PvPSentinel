@@ -1,0 +1,36 @@
+name: Build development artifact
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download current Dalamud development assemblies
+        shell: pwsh
+        run: |
+          $dalamudDir = "$env:AppData\XIVLauncher\addon\Hooks\dev"
+          New-Item -ItemType Directory -Force -Path $dalamudDir | Out-Null
+          Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip
+          Expand-Archive -Path dalamud.zip -DestinationPath $dalamudDir -Force
+          Remove-Item dalamud.zip
+
+      - run: dotnet restore PvPSentinel.csproj
+      - run: dotnet build PvPSentinel.csproj -c Release --no-restore
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PvPSentinel-development
+          path: bin/Release/PvPSentinel/latest.zip
+          if-no-files-found: error
+
