@@ -1,0 +1,15 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <Author>MarshalTitan</Author>
+    <Name>PvP Sentinel</Name>
+    <Punchline>Development controller for stable Frontline group-following and MCH combat decisions.</Punchline>
+    <Description>Development build for Frontline state detection, friendly-force clustering, stable vnavmesh following, target scoring, and an opt-in Machinist PvP combat framework.</Description>
+    <RepoUrl>https://github.com/MarshalTitan/PvPSentinel</RepoUrl>
+    <Tags>pvp;frontline;machinist;navigation;development</Tags>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
+

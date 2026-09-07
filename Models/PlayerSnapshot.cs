@@ -1,0 +1,27 @@
+using System.Numerics;
+
+namespace PvPSentinel.Models;
+
+internal sealed record StatusSnapshot(uint Id, string Name, float RemainingSeconds);
+
+internal sealed record PlayerSnapshot(
+    ulong GameObjectId,
+    uint EntityId,
+    string Name,
+    uint JobId,
+    string JobAbbreviation,
+    Vector3 Position,
+    uint CurrentHp,
+    uint MaxHp,
+    byte ShieldPercent,
+    bool IsHostile,
+    bool IsPartyOrAlliance,
+    bool IsDead,
+    bool IsTargetable,
+    IReadOnlyList<StatusSnapshot> Statuses)
+{
+    public float HpPercent => MaxHp == 0 ? 0f : CurrentHp * 100f / MaxHp;
+    public bool HasStatus(string name) => Statuses.Any(s => s.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+    public string BattleHigh => Statuses.FirstOrDefault(s => s.Name.Contains("Battle High", StringComparison.OrdinalIgnoreCase))?.Name ?? "None";
+}
+

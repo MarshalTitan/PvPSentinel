@@ -1,0 +1,10 @@
+.vs/
+.idea/
+bin/
+obj/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+.tools/
+
