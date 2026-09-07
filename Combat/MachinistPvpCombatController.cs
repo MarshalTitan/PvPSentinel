@@ -28,7 +28,7 @@ internal sealed class MachinistPvpCombatController : ICombatController
         if (!game.IsMachinist)
             return new CombatDecision(false, 0, "None", "Unsupported PvP job; combat is disabled.");
 
-        if (!game.IsFrontline || game.LocalPlayer is null || game.LocalPlayer.IsDead)
+        if (!game.IsFrontline || !game.IsClassificationReliable || game.LocalPlayer is null || game.LocalPlayer.IsDead)
             return new CombatDecision(false, 0, "None", "Combat safety gate is closed.");
 
         if (behavior is not BehaviorState.Engage and not BehaviorState.FinishKill || target is null)

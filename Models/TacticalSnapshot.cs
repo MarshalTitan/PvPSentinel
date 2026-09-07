@@ -41,7 +41,8 @@ internal sealed record TacticalSnapshot(
     CombatDecision Combat,
     int Friendly20,
     int Enemy20,
+    int Unknown20,
     int Friendly40,
     int Enemy40,
+    int Unknown40,
     string DecisionReason);
-

@@ -24,6 +24,9 @@ internal sealed class BehaviorEngine
         if (!game.IsFrontline)
             return Set(BehaviorState.Idle, game.CapturedAtUtc, game.IsPvP ? "PvP territory is not a recognized Frontline map." : "Not inside Frontline.", immediate: true);
 
+        if (!game.IsClassificationReliable)
+            return Set(BehaviorState.Paused, game.CapturedAtUtc, $"Player classification is uncertain; automation is paused. {game.TeamStatus.Explanation}", immediate: true);
+
         if (game.LocalPlayer.IsDead)
         {
             wasDead = true;
@@ -86,4 +89,3 @@ internal sealed class BehaviorEngine
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));
 }
-

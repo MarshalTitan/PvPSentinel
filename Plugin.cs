@@ -46,6 +46,7 @@ public sealed class Plugin : IDalamudPlugin
         IClientState clientState,
         ICondition condition,
         IObjectTable objectTable,
+        IPartyList partyList,
         IDataManager dataManager,
         ITargetManager targetManager,
         IFramework framework,
@@ -59,7 +60,7 @@ public sealed class Plugin : IDalamudPlugin
         config = pi.GetPluginConfig() as Configuration ?? new Configuration();
         config.Initialize(pi);
 
-        gameState = new GameStateService(clientState, condition, objectTable, dataManager, log);
+        gameState = new GameStateService(clientState, condition, objectTable, partyList, dataManager, log);
         vnav = new VNavmeshAdapter(pi, log);
         navigation = new NavigationController(vnav, log);
         var executor = new NativeActionExecutor(objectTable, targetManager, log);
@@ -130,8 +131,10 @@ public sealed class Plugin : IDalamudPlugin
             combatDecision,
             CountNear(game.Friendlies, localPosition, 20f),
             CountNear(game.Enemies, localPosition, 20f),
+            CountNear(game.UnknownPlayers, localPosition, 20f),
             CountNear(game.Friendlies, localPosition, 40f),
             CountNear(game.Enemies, localPosition, 40f),
+            CountNear(game.UnknownPlayers, localPosition, 40f),
             reason);
 
         if (behavior != lastLoggedBehavior)
@@ -160,7 +163,7 @@ public sealed class Plugin : IDalamudPlugin
             null,
             new NavigationDecision(false, null, "Waiting."),
             new CombatDecision(false, 0, "None", "Waiting."),
-            0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
             "Waiting for first update.");
     }
 }

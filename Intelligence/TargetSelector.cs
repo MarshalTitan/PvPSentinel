@@ -13,7 +13,7 @@ internal sealed class TargetSelector
         FriendlyCluster? mainCluster,
         Configuration config)
     {
-        if (!config.TargetSelectionEnabled || game.LocalPlayer is null || mainCluster is null)
+        if (!config.TargetSelectionEnabled || game.LocalPlayer is null || mainCluster is null || !game.IsClassificationReliable)
         {
             Clear();
             return null;

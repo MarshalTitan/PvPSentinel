@@ -18,7 +18,7 @@ internal sealed class NavigationController(IVNavmeshAdapter vnav, IPluginLog log
     {
         var allowedState = behavior is BehaviorState.Regroup or BehaviorState.FollowGroup or
             BehaviorState.RespawnRegroup or BehaviorState.Retreat or BehaviorState.Engage or BehaviorState.FinishKill;
-        if (!config.Enabled || !config.NavigationEnabled || !game.IsFrontline || game.LocalPlayer is null || game.LocalPlayer.IsDead || !allowedState)
+        if (!config.Enabled || !config.NavigationEnabled || !game.IsFrontline || !game.IsClassificationReliable || game.LocalPlayer is null || game.LocalPlayer.IsDead || !allowedState)
         {
             StopOwnedMovement();
             return new NavigationDecision(false, null, "Navigation is stopped by the safety gate.");
@@ -101,4 +101,3 @@ internal sealed class NavigationController(IVNavmeshAdapter vnav, IPluginLog log
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));
 }
-

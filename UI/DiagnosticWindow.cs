@@ -25,7 +25,7 @@ internal sealed class DiagnosticWindow : Window
         this.vnav = vnav;
         this.wrath = wrath;
         this.lastAction = lastAction;
-        Size = new Vector2(570, 690);
+        Size = new Vector2(680, 760);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
@@ -42,6 +42,13 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Job", local is null ? "Unavailable" : $"{local.JobAbbreviation} ({local.JobId})");
         if (!string.IsNullOrEmpty(game.ReadError))
             ColoredText(new Vector4(1f, 0.45f, 0.3f, 1f), game.ReadError);
+
+        Section("Frontline Classification");
+        KeyValue("Alliance roster", YesNo(game.TeamStatus.IsAlliance));
+        KeyValue("Declared / resolved members", $"{game.TeamStatus.DeclaredMemberCount} / {game.TeamStatus.ResolvedMemberCount}");
+        KeyValue("Non-member rule available", YesNo(game.TeamStatus.CanClassifyNonMembers));
+        KeyValue("Classification reliable", YesNo(game.IsClassificationReliable));
+        ImGui.TextWrapped(game.TeamStatus.Explanation);
 
         Section("Behavior");
         ColoredText(BehaviorColor(state.Behavior), state.Behavior.ToString().ToUpperInvariant());
@@ -71,8 +78,38 @@ internal sealed class DiagnosticWindow : Window
         }
 
         Section("Nearby");
-        KeyValue("Friendlies / enemies within 20y", $"{state.Friendly20} / {state.Enemy20}");
-        KeyValue("Friendlies / enemies within 40y", $"{state.Friendly40} / {state.Enemy40}");
+        KeyValue("Friendly / enemy / unknown within 20y", $"{state.Friendly20} / {state.Enemy20} / {state.Unknown20}");
+        KeyValue("Friendly / enemy / unknown within 40y", $"{state.Friendly40} / {state.Enemy40} / {state.Unknown40}");
+
+        var nearbyPlayers = local is null
+            ? []
+            : game.ObservedPlayers
+                .Select(player => (Player: player, Distance: HorizontalDistance(local.Position, player.Position)))
+                .Where(item => item.Distance <= 40f)
+                .OrderBy(item => item.Distance)
+                .ToArray();
+        if (ImGui.TreeNode($"Nearby PCs within 40y ({nearbyPlayers.Length})"))
+        {
+            foreach (var item in nearbyPlayers)
+            {
+                var player = item.Player;
+                if (!ImGui.TreeNode($"{player.Classification}: {player.JobAbbreviation}, {item.Distance:F1}y###pc-{player.GameObjectId:X}"))
+                    continue;
+
+                KeyValue("Entity / object ID", $"0x{player.EntityId:X8} / 0x{player.GameObjectId:X16}");
+                KeyValue("Job", $"{player.JobAbbreviation} ({player.JobId})");
+                KeyValue("Final classification", player.Classification.ToString());
+                KeyValue("StatusFlags", $"{player.StatusFlags} (0x{(uint)player.StatusFlags:X8})");
+                KeyValue("PartyMember flag", YesNo(player.PartyMemberFlag));
+                KeyValue("AllianceMember flag", YesNo(player.AllianceMemberFlag));
+                KeyValue("Hostile flag", YesNo(player.HostileFlag));
+                KeyValue("Roster member", YesNo(player.IsRosterMember));
+                KeyValue("Targetable", YesNo(player.IsTargetable));
+                KeyValue("Distance", $"{item.Distance:F1}y");
+                ImGui.TreePop();
+            }
+            ImGui.TreePop();
+        }
 
         Section("Current Target");
         if (state.Target is null)

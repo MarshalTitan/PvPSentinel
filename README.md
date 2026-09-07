@@ -14,6 +14,8 @@ Implemented:
 - direct `IClientState` PvP detection
 - language-independent Frontline detection from local `TerritoryType` / `ContentFinderCondition` data
 - loaded friendly/enemy player snapshots with job, position, HP, shield, targetability, and statuses
+- Frontline-specific three-way player classification using live party/alliance membership, with Unknown as the fail-safe fallback
+- per-player classification diagnostics including IDs, raw status flags, membership flags, targetability, and distance
 - friendly clustering, main-force selection, density, confidence, and movement trend
 - main-group commitment and meaningful-size hysteresis
 - configurable target scoring and safe low-HP finish opportunities
@@ -45,6 +47,8 @@ The master switch and combat execution both default to **off**. Navigation can o
 5. the local player is alive;
 6. a reliable friendly cluster exists; and
 7. vnavmesh reports that its navigation mesh is ready.
+
+Player classification is an additional hard gate. The plugin requires an available Frontline alliance roster and no unresolved player classifications before navigation, targeting, or combat may proceed.
 
 Any missing requirement stops owned movement. Combat has additional gates for MCH, an `Engage` or `FinishKill` behavior, a valid selected target, verified local action data, and the separate combat toggle.
 
@@ -107,6 +111,8 @@ Run the stages separately and use the master switch as the emergency stop.
 
 Enter Frontline as MCH and verify map/mode/job detection, friendly and enemy counts, cluster membership, main-group confidence, target scores, finish flags, death, and respawn transitions.
 
+For the classification re-test, expand **Nearby PCs within 40y** during both spawn and an active fight. Confirm that members of your own Frontline alliance are Friendly, visible opposing players are Enemy even when their Hostile flag is false, and no observed player is silently folded into Friendly. If **Classification reliable** is No or any nearby PC is Unknown, stop after Stage A and capture the expanded row plus the alliance roster counts.
+
 ### Stage B — movement only
 
 - Master enabled: **on**
@@ -141,4 +147,3 @@ Capture the diagnostic values before and after any incorrect decision:
 ## Third-party boundaries
 
 PvPSentinel uses vnavmesh only through documented IPC endpoints. Wrath Combo is optional and inactive in this milestone because its documented IPC explicitly does not support PvP combo/options control. The MCH controller is an independent implementation; current action identifiers were cross-checked against local game data and the BSD-3-Clause Wrath Combo source.
-

@@ -11,6 +11,7 @@ internal sealed class GameStateService(
     IClientState clientState,
     ICondition condition,
     IObjectTable objects,
+    IPartyList partyList,
     IDataManager data,
     IPluginLog log)
 {
@@ -43,23 +44,47 @@ internal sealed class GameStateService(
                     null,
                     [],
                     [],
+                    [],
+                    [],
+                    new FrontlineTeamStatus(false, 0, 0, false, "Local player is unavailable."),
                     "Local player is unavailable.");
             }
 
-            var local = Convert(localObject);
+            var roster = CaptureTeamRoster(localObject, isFrontline);
+            var local = Convert(localObject, PlayerClassification.Friendly, isRosterMember: true);
             var friendlies = new List<PlayerSnapshot>();
             var enemies = new List<PlayerSnapshot>();
+            var unknownPlayers = new List<PlayerSnapshot>();
+            var observedPlayers = new List<PlayerSnapshot>();
 
             foreach (var player in objects.PlayerObjects)
             {
                 if (player.EntityId == local.EntityId || player.EntityId == 0)
                     continue;
 
-                var snapshot = Convert(player);
-                if (snapshot.IsHostile)
-                    enemies.Add(snapshot);
-                else
-                    friendlies.Add(snapshot);
+                var isRosterMember = roster.EntityIds.Contains(player.EntityId) ||
+                                     roster.ObjectIds.Contains(player.GameObjectId);
+                var classification = FrontlinePlayerResolver.Classify(
+                    isLocalPlayer: false,
+                    isFrontline,
+                    roster.Status.CanClassifyNonMembers,
+                    isRosterMember,
+                    player.StatusFlags);
+                var snapshot = Convert(player, classification, isRosterMember);
+                observedPlayers.Add(snapshot);
+
+                switch (classification)
+                {
+                    case PlayerClassification.Friendly:
+                        friendlies.Add(snapshot);
+                        break;
+                    case PlayerClassification.Enemy:
+                        enemies.Add(snapshot);
+                        break;
+                    default:
+                        unknownPlayers.Add(snapshot);
+                        break;
+                }
             }
 
             // Including ourselves gives clustering a stable anchor and makes a lone
@@ -78,6 +103,9 @@ internal sealed class GameStateService(
                 local,
                 friendlies,
                 enemies,
+                unknownPlayers,
+                observedPlayers,
+                roster.Status,
                 string.Empty);
         }
         catch (Exception ex)
@@ -87,7 +115,10 @@ internal sealed class GameStateService(
         }
     }
 
-    private PlayerSnapshot Convert(IBattleChara player)
+    private PlayerSnapshot Convert(
+        IBattleChara player,
+        PlayerClassification classification,
+        bool isRosterMember)
     {
         var flags = player.StatusFlags;
         var statuses = player.StatusList
@@ -107,12 +138,62 @@ internal sealed class GameStateService(
             player.CurrentHp,
             player.MaxHp,
             player.ShieldPercentage,
+            classification,
+            flags,
+            flags.HasFlag(StatusFlags.PartyMember),
+            flags.HasFlag(StatusFlags.AllianceMember),
             flags.HasFlag(StatusFlags.Hostile),
-            flags.HasFlag(StatusFlags.PartyMember) || flags.HasFlag(StatusFlags.AllianceMember),
+            isRosterMember,
             player.IsDead || player.CurrentHp == 0,
             player.IsTargetable,
             statuses);
     }
+
+    private TeamRoster CaptureTeamRoster(IBattleChara localPlayer, bool isFrontline)
+    {
+        var entityIds = new HashSet<uint> { localPlayer.EntityId };
+        var objectIds = new HashSet<ulong> { localPlayer.GameObjectId };
+        var isAlliance = false;
+        var declaredCount = 0;
+
+        try
+        {
+            isAlliance = partyList.IsAlliance;
+            declaredCount = partyList.Length;
+            foreach (var member in partyList)
+            {
+                if (member.EntityId != 0)
+                    entityIds.Add(member.EntityId);
+                if (member.GameObject is { } gameObject)
+                    objectIds.Add(gameObject.GameObjectId);
+            }
+        }
+        catch (Exception ex)
+        {
+            return new TeamRoster(
+                entityIds,
+                objectIds,
+                new FrontlineTeamStatus(false, 0, entityIds.Count, false,
+                    $"Alliance roster read failed; non-member PCs remain Unknown ({ex.GetType().Name})."));
+        }
+
+        var canClassifyNonMembers = isFrontline && isAlliance && declaredCount >= 8 && entityIds.Count >= 2;
+        var explanation = !isFrontline
+            ? "Not in a recognized Frontline duty; non-member classification is disabled."
+            : canClassifyNonMembers
+                ? "Alliance roster is available; positive membership is Friendly and other loaded PCs are Enemy candidates."
+                : "Frontline alliance roster is not authoritative yet; non-member PCs remain Unknown.";
+
+        return new TeamRoster(
+            entityIds,
+            objectIds,
+            new FrontlineTeamStatus(isAlliance, declaredCount, entityIds.Count, canClassifyNonMembers, explanation));
+    }
+
+    private sealed record TeamRoster(
+        HashSet<uint> EntityIds,
+        HashSet<ulong> ObjectIds,
+        FrontlineTeamStatus Status);
 
     private string ResolveStatusName(uint id)
     {
