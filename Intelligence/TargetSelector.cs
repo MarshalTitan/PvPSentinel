@@ -1,9 +1,10 @@
 using System.Numerics;
+using PvPSentinel.Diagnostics;
 using PvPSentinel.Models;
 
 namespace PvPSentinel.Intelligence;
 
-internal sealed class TargetSelector
+internal sealed class TargetSelector(DevelopmentLogger developmentLog)
 {
     private uint selectedEntityId;
     private DateTime selectedAtUtc = DateTime.MinValue;
@@ -15,7 +16,7 @@ internal sealed class TargetSelector
     {
         if (!config.TargetSelectionEnabled || game.LocalPlayer is null || mainCluster is null || !game.IsClassificationReliable)
         {
-            Clear();
+            Clear("Target selection gate is closed.");
             return null;
         }
 
@@ -30,9 +31,15 @@ internal sealed class TargetSelector
 
         if (scored.Length == 0)
         {
-            Clear();
+            Clear("No target has a positive score inside the engagement radius.");
             return null;
         }
+
+        developmentLog.Throttled(
+            "target-scores",
+            string.Join(" | ", scored.Take(8).Select(decision =>
+                $"0x{decision.Target.EntityId:X8} {decision.Target.JobAbbreviation} score={decision.Score:F1} finish={decision.IsFinishOpportunity}: {decision.Explanation}")),
+            TimeSpan.FromSeconds(4));
 
         var best = scored[0];
         var incumbent = scored.FirstOrDefault(decision => decision.Target.EntityId == selectedEntityId);
@@ -41,13 +48,23 @@ internal sealed class TargetSelector
             var committed = game.CapturedAtUtc - selectedAtUtc < TimeSpan.FromSeconds(config.MinimumTargetCommitmentSeconds);
             var finishOverride = best.IsFinishOpportunity && !incumbent.IsFinishOpportunity;
             if (!finishOverride && (committed || best.Score < incumbent.Score + config.TargetSwitchScoreAdvantage))
+            {
+                developmentLog.Throttled(
+                    "target-switch-retained",
+                    $"Retained 0x{incumbent.Target.EntityId:X8} ({incumbent.Score:F1}) over 0x{best.Target.EntityId:X8} ({best.Score:F1}); committed={committed}, required advantage={config.TargetSwitchScoreAdvantage:F1}.",
+                    TimeSpan.FromSeconds(3));
                 best = incumbent;
+            }
         }
 
         if (selectedEntityId != best.Target.EntityId)
         {
             selectedEntityId = best.Target.EntityId;
             selectedAtUtc = game.CapturedAtUtc;
+            developmentLog.Changed(
+                "target-selection",
+                selectedEntityId.ToString(),
+                $"Selected 0x{best.Target.EntityId:X8} {best.Target.JobAbbreviation}, score {best.Score:F1}, finish={best.IsFinishOpportunity}. {best.Explanation}");
         }
 
         return best;
@@ -94,8 +111,10 @@ internal sealed class TargetSelector
         return new TargetDecision(enemy, score, finish, explanation);
     }
 
-    private void Clear()
+    private void Clear(string reason)
     {
+        if (selectedEntityId != 0)
+            developmentLog.Changed("target-selection", "none", $"Cleared target 0x{selectedEntityId:X8}. {reason}");
         selectedEntityId = 0;
         selectedAtUtc = DateTime.MinValue;
     }

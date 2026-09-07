@@ -1,14 +1,16 @@
 using System.Numerics;
-using Dalamud.Plugin.Services;
+using PvPSentinel.Diagnostics;
 using PvPSentinel.Models;
 
 namespace PvPSentinel.Navigation;
 
-internal sealed class NavigationController(IVNavmeshAdapter vnav, IPluginLog log)
+internal sealed class NavigationController(IVNavmeshAdapter vnav, DevelopmentLogger developmentLog)
 {
     private Vector3? committedDestination;
     private DateTime committedAtUtc = DateTime.MinValue;
     private DateTime lastMoveRequestUtc = DateTime.MinValue;
+    private Vector3? lastProgressPosition;
+    private DateTime lastProgressUtc = DateTime.MinValue;
 
     public NavigationDecision Update(
         GameStateSnapshot game,
@@ -45,6 +47,12 @@ internal sealed class NavigationController(IVNavmeshAdapter vnav, IPluginLog log
         {
             committedDestination = proposed;
             committedAtUtc = now;
+            lastProgressPosition = game.LocalPlayer.Position;
+            lastProgressUtc = now;
+            developmentLog.Changed(
+                "nav-destination",
+                $"{proposed.X:F1}|{proposed.Y:F1}|{proposed.Z:F1}",
+                $"Committed destination {FormatVector(proposed)} from cluster #{mainCluster.Id}; previous change {change:F1}y, commitment active={commitmentActive}.");
         }
 
         var destination = committedDestination.Value;
@@ -56,16 +64,43 @@ internal sealed class NavigationController(IVNavmeshAdapter vnav, IPluginLog log
         if (!shouldMove || distance <= 3f)
         {
             if (vnav.IsPathRunning)
+            {
+                developmentLog.Changed("nav-path-state", "hold", $"Stopping path to hold position; destination distance {distance:F1}y, cluster-center distance {centerDistance:F1}y.");
                 vnav.Stop();
+            }
+            lastProgressPosition = null;
+            lastProgressUtc = DateTime.MinValue;
             return new NavigationDecision(false, destination, $"Holding ranged position; main force center is {centerDistance:F1}y away.");
+        }
+
+        var currentPosition = game.LocalPlayer.Position;
+        if (lastProgressPosition is null || HorizontalDistance(lastProgressPosition.Value, currentPosition) >= 1.5f)
+        {
+            lastProgressPosition = currentPosition;
+            lastProgressUtc = now;
+        }
+        else if (lastProgressUtc != DateTime.MinValue && now - lastProgressUtc >= TimeSpan.FromSeconds(5))
+        {
+            developmentLog.Throttled(
+                "nav-stuck-repath",
+                $"No meaningful progress for {(now - lastProgressUtc).TotalSeconds:F1}s while {distance:F1}y from {FormatVector(destination)}; stopping the current path and requesting a repath.",
+                TimeSpan.FromSeconds(5));
+            if (vnav.IsPathRunning || vnav.IsPathfindInProgress)
+                vnav.Stop();
+            lastMoveRequestUtc = DateTime.MinValue;
+            lastProgressPosition = currentPosition;
+            lastProgressUtc = now;
         }
 
         if (!vnav.IsPathRunning && !vnav.IsPathfindInProgress && now - lastMoveRequestUtc >= TimeSpan.FromSeconds(1))
         {
             lastMoveRequestUtc = now;
             var accepted = vnav.MoveCloseTo(destination, 2.5f);
-            if (config.VerboseLogging)
-                log.Debug("vnavmesh move request {Result}: {Destination}", accepted ? "accepted" : "rejected", destination);
+            developmentLog.Throttled(
+                accepted ? "nav-path-request" : "nav-path-failure",
+                $"Path request {(accepted ? "accepted" : "rejected")} for {FormatVector(destination)} with 2.5y tolerance; running={vnav.IsPathRunning}, pathfinding={vnav.IsPathfindInProgress}.",
+                accepted ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5));
+            developmentLog.Changed("nav-path-state", accepted ? "requested" : "rejected", $"Path request {(accepted ? "accepted" : "rejected")} for {FormatVector(destination)}.");
         }
 
         return new NavigationDecision(true, destination, commitmentActive
@@ -79,6 +114,8 @@ internal sealed class NavigationController(IVNavmeshAdapter vnav, IPluginLog log
             vnav.Stop();
         committedDestination = null;
         committedAtUtc = DateTime.MinValue;
+        lastProgressPosition = null;
+        lastProgressUtc = DateTime.MinValue;
     }
 
     private static Vector3 BuildRangedFollowPoint(Vector3 playerPosition, FriendlyCluster cluster, float offset)
@@ -100,4 +137,6 @@ internal sealed class NavigationController(IVNavmeshAdapter vnav, IPluginLog log
 
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));
+
+    private static string FormatVector(Vector3 value) => $"({value.X:F1}, {value.Y:F1}, {value.Z:F1})";
 }

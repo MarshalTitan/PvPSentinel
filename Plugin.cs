@@ -4,6 +4,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using PvPSentinel.Behavior;
 using PvPSentinel.Combat;
+using PvPSentinel.Diagnostics;
 using PvPSentinel.GameState;
 using PvPSentinel.Integrations;
 using PvPSentinel.Intelligence;
@@ -25,9 +26,10 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Configuration config;
     private readonly WindowSystem windows = new("PvPSentinel");
     private readonly GameStateService gameState;
-    private readonly FriendlyClusterAnalyzer clusterAnalyzer = new();
-    private readonly MainGroupTracker mainGroupTracker = new();
-    private readonly TargetSelector targetSelector = new();
+    private readonly DevelopmentLogger developmentLog;
+    private readonly FriendlyClusterAnalyzer clusterAnalyzer;
+    private readonly MainGroupTracker mainGroupTracker;
+    private readonly TargetSelector targetSelector;
     private readonly BehaviorEngine behaviorEngine = new();
     private readonly VNavmeshAdapter vnav;
     private readonly NavigationController navigation;
@@ -60,17 +62,22 @@ public sealed class Plugin : IDalamudPlugin
         config = pi.GetPluginConfig() as Configuration ?? new Configuration();
         config.Initialize(pi);
 
-        gameState = new GameStateService(clientState, condition, objectTable, partyList, dataManager, log);
-        vnav = new VNavmeshAdapter(pi, log);
-        navigation = new NavigationController(vnav, log);
+        developmentLog = new DevelopmentLogger(log, () => config.VerboseLogging);
+        clusterAnalyzer = new FriendlyClusterAnalyzer(developmentLog);
+        mainGroupTracker = new MainGroupTracker(developmentLog);
+        targetSelector = new TargetSelector(developmentLog);
+
+        gameState = new GameStateService(clientState, condition, objectTable, partyList, dataManager, log, developmentLog);
+        vnav = new VNavmeshAdapter(pi, developmentLog);
+        navigation = new NavigationController(vnav, developmentLog);
         var executor = new NativeActionExecutor(objectTable, targetManager, log);
         combat = new MachinistPvpCombatController(dataManager, executor, log);
 
-        diagnostics = new DiagnosticWindow(() => current, vnav, wrath, () => combat.LastAction)
+        diagnostics = new DiagnosticWindow(() => current, vnav, wrath, () => combat.LastAction, OnDiagnosticsClosed)
         {
             IsOpen = config.ShowDiagnostics,
         };
-        configurationWindow = new ConfigurationWindow(config);
+        configurationWindow = new ConfigurationWindow(config, SetDiagnosticsVisibility, OnVerboseLoggingChanged);
         windows.AddWindow(diagnostics);
         windows.AddWindow(configurationWindow);
 
@@ -118,6 +125,8 @@ public sealed class Plugin : IDalamudPlugin
         var (behavior, behaviorSince, reason) = behaviorEngine.Evaluate(game, mainCluster, target, config);
         var navDecision = navigation.Update(game, behavior, mainCluster, config);
         var combatDecision = combat.Update(game, behavior, target, config);
+        developmentLog.Throttled("behavior-evaluation", $"State {behavior}; committed {(game.CapturedAtUtc - behaviorSince).TotalSeconds:F1}s; {reason}");
+        developmentLog.Throttled("combat-decision", $"Active {combatDecision.ControllerActive}; desired {combatDecision.DesiredAction} ({combatDecision.ActionId}); {combatDecision.Explanation}");
         var localPosition = game.LocalPlayer?.Position ?? Vector3.Zero;
 
         current = new TacticalSnapshot(
@@ -145,8 +154,33 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private void DrawUi() => windows.Draw();
-    private void OpenDiagnostics() => diagnostics.IsOpen = true;
+    private void OpenDiagnostics() => SetDiagnosticsVisibility(true);
     private void OpenConfiguration() => configurationWindow.IsOpen = true;
+
+    private void SetDiagnosticsVisibility(bool isOpen)
+    {
+        diagnostics.IsOpen = isOpen;
+        if (config.ShowDiagnostics == isOpen)
+            return;
+
+        config.ShowDiagnostics = isOpen;
+        config.Save();
+    }
+
+    private void OnDiagnosticsClosed()
+    {
+        if (!config.ShowDiagnostics)
+            return;
+
+        config.ShowDiagnostics = false;
+        config.Save();
+    }
+
+    private void OnVerboseLoggingChanged(bool enabled)
+    {
+        developmentLog.Reset();
+        log.Information("PvPSentinel verbose logging {State}.", enabled ? "enabled" : "disabled");
+    }
 
     private static int CountNear(IEnumerable<PlayerSnapshot> players, Vector3 origin, float radius) =>
         players.Count(player => Vector2.Distance(new Vector2(player.Position.X, player.Position.Z), new Vector2(origin.X, origin.Z)) <= radius);

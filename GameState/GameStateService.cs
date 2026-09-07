@@ -3,6 +3,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using PvPSentinel.Diagnostics;
 using PvPSentinel.Models;
 
 namespace PvPSentinel.GameState;
@@ -13,7 +14,8 @@ internal sealed class GameStateService(
     IObjectTable objects,
     IPartyList partyList,
     IDataManager data,
-    IPluginLog log)
+    IPluginLog log,
+    DevelopmentLogger developmentLog)
 {
     private readonly Dictionary<uint, string> statusNames = new();
 
@@ -72,6 +74,10 @@ internal sealed class GameStateService(
                     player.StatusFlags);
                 var snapshot = Convert(player, classification, isRosterMember);
                 observedPlayers.Add(snapshot);
+                developmentLog.Changed(
+                    $"classification-{snapshot.EntityId:X8}",
+                    $"{snapshot.Classification}|{snapshot.IsRosterMember}|{snapshot.PartyMemberFlag}|{snapshot.AllianceMemberFlag}|{snapshot.HostileFlag}",
+                    $"0x{snapshot.EntityId:X8} {snapshot.JobAbbreviation} => {snapshot.Classification}; roster={snapshot.IsRosterMember}, party={snapshot.PartyMemberFlag}, alliance={snapshot.AllianceMemberFlag}, hostile={snapshot.HostileFlag}, targetable={snapshot.IsTargetable}.");
 
                 switch (classification)
                 {
@@ -90,6 +96,14 @@ internal sealed class GameStateService(
             // Including ourselves gives clustering a stable anchor and makes a lone
             // visible ally a meaningful two-person group.
             friendlies.Add(local);
+
+            developmentLog.Changed(
+                "classification-roster",
+                $"{roster.Status.IsAlliance}|{roster.Status.DeclaredMemberCount}|{roster.Status.ResolvedMemberCount}|{roster.Status.CanClassifyNonMembers}",
+                $"Alliance={roster.Status.IsAlliance}; declared={roster.Status.DeclaredMemberCount}; resolved={roster.Status.ResolvedMemberCount}; non-member rule={roster.Status.CanClassifyNonMembers}. {roster.Status.Explanation}");
+            developmentLog.Throttled(
+                "classification-summary",
+                $"Observed {observedPlayers.Count}: {friendlies.Count} friendly (including self), {enemies.Count} enemy, {unknownPlayers.Count} unknown.");
 
             return new GameStateSnapshot(
                 DateTime.UtcNow,

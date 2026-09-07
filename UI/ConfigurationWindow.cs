@@ -7,11 +7,18 @@ namespace PvPSentinel.UI;
 internal sealed class ConfigurationWindow : Window
 {
     private readonly Configuration config;
+    private readonly Action<bool> diagnosticsVisibilityChanged;
+    private readonly Action<bool> verboseLoggingChanged;
 
-    public ConfigurationWindow(Configuration config)
+    public ConfigurationWindow(
+        Configuration config,
+        Action<bool> diagnosticsVisibilityChanged,
+        Action<bool> verboseLoggingChanged)
         : base("PvP Sentinel - Configuration###PvPSentinelConfiguration")
     {
         this.config = config;
+        this.diagnosticsVisibilityChanged = diagnosticsVisibilityChanged;
+        this.verboseLoggingChanged = verboseLoggingChanged;
         Size = new Vector2(520, 620);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
@@ -30,8 +37,16 @@ internal sealed class ConfigurationWindow : Window
         ImGui.Unindent();
 
         ImGui.Spacing();
-        DrawCheckbox("Show diagnostic window", config.ShowDiagnostics, value => config.ShowDiagnostics = value);
-        DrawCheckbox("Verbose logging", config.VerboseLogging, value => config.VerboseLogging = value);
+        DrawCheckbox("Show diagnostic window", config.ShowDiagnostics, value =>
+        {
+            config.ShowDiagnostics = value;
+            diagnosticsVisibilityChanged(value);
+        });
+        DrawCheckbox("Verbose logging", config.VerboseLogging, value =>
+        {
+            config.VerboseLogging = value;
+            verboseLoggingChanged(value);
+        });
 
         Section("Movement and clustering");
         DrawFloat("Friendly cluster link radius", config.FriendlyClusterLinkRadius, 6f, 30f, value => config.FriendlyClusterLinkRadius = value, "%.1f y");

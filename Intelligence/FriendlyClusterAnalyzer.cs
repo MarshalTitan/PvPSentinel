@@ -1,9 +1,10 @@
 using System.Numerics;
+using PvPSentinel.Diagnostics;
 using PvPSentinel.Models;
 
 namespace PvPSentinel.Intelligence;
 
-internal sealed class FriendlyClusterAnalyzer
+internal sealed class FriendlyClusterAnalyzer(DevelopmentLogger developmentLog)
 {
     private readonly Dictionary<uint, PositionSample> previous = new();
 
@@ -36,6 +37,10 @@ internal sealed class FriendlyClusterAnalyzer
         previous.Clear();
         foreach (var player in friendlies)
             previous[player.EntityId] = new PositionSample(player.Position, capturedAtUtc);
+
+        developmentLog.Throttled(
+            "cluster-analysis",
+            $"{friendlies.Count} friendlies produced {clusters.Count} clusters: {string.Join(", ", clusters.Select(cluster => $"#{cluster.Id} n={cluster.PlayerCount} confidence={cluster.Confidence:F2} density={cluster.Density:F2}"))}.");
 
         return clusters;
     }
@@ -112,4 +117,3 @@ internal sealed class FriendlyClusterAnalyzer
 
     private sealed record PositionSample(Vector3 Position, DateTime AtUtc);
 }
-

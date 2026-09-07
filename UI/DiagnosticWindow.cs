@@ -13,21 +13,26 @@ internal sealed class DiagnosticWindow : Window
     private readonly IVNavmeshAdapter vnav;
     private readonly WrathAdapter wrath;
     private readonly Func<string> lastAction;
+    private readonly Action closed;
 
     public DiagnosticWindow(
         Func<TacticalSnapshot> snapshot,
         IVNavmeshAdapter vnav,
         WrathAdapter wrath,
-        Func<string> lastAction)
+        Func<string> lastAction,
+        Action closed)
         : base("PvP Sentinel - Development###PvPSentinelDiagnostics")
     {
         this.snapshot = snapshot;
         this.vnav = vnav;
         this.wrath = wrath;
         this.lastAction = lastAction;
+        this.closed = closed;
         Size = new Vector2(680, 760);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
+
+    public override void OnClose() => closed();
 
     public override void Draw()
     {

@@ -24,6 +24,8 @@ Implemented:
 - stable ranged follow destinations with commitment time and switch-distance hysteresis
 - modular MCH PvP combat decision/execution layer
 - mandatory diagnostics and state-transition logging
+- live diagnostic-window visibility control with the saved preference restored after reload
+- opt-in throttled development logging for classification, clustering, targeting, behavior, navigation, repathing, and combat decisions
 - fail-closed safety gates outside recognized Frontline duties
 
 Not implemented in this milestone:
@@ -112,6 +114,8 @@ Run the stages separately and use the master switch as the emergency stop.
 Enter Frontline as MCH and verify map/mode/job detection, friendly and enemy counts, cluster membership, main-group confidence, target scores, finish flags, death, and respawn transitions.
 
 For the classification re-test, expand **Nearby PCs within 40y** during both spawn and an active fight. Confirm that members of your own Frontline alliance are Friendly, visible opposing players are Enemy even when their Hostile flag is false, and no observed player is silently folded into Friendly. If **Classification reliable** is No or any nearby PC is Unknown, stop after Stage A and capture the expanded row plus the alliance roster counts.
+
+The **Show diagnostic window** checkbox now changes the live window immediately and persists that visibility preference. **Verbose logging** emits throttled development decisions to `Dalamud.log`; switching it on clears prior suppression state so the current classification, cluster, behavior, targeting, navigation, and combat details appear promptly without being repeated every update.
 
 ### Stage B — movement only
 
