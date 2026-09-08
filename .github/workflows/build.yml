@@ -1,4 +1,4 @@
-name: Build and publish development artifact
+name: Build and publish beta release
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
           $version = [string]$project.Project.PropertyGroup.Version
           $expectedTag = "v$version"
           if ($env:GITHUB_REF_NAME -ne $expectedTag) {
-            throw "Release tag '$env:GITHUB_REF_NAME' does not match project version '$version'. Bump <Version> before distributing a new testing build."
+            throw "Release tag '$env:GITHUB_REF_NAME' does not match project version '$version'. Bump <Version> before distributing a new build."
           }
 
       - run: dotnet build PvPSentinel.csproj -c Release --no-restore
@@ -52,11 +52,11 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PvPSentinel-development
+          name: PvPSentinel-release
           path: bin/Release/PvPSentinel/PvPSentinel.zip
           if-no-files-found: error
 
-      - name: Publish GitHub prerelease
+      - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
@@ -65,6 +65,5 @@ jobs:
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           gh release create $env:GITHUB_REF_NAME bin/Release/PvPSentinel/PvPSentinel.zip `
             --verify-tag `
-            --prerelease `
-            --title "PvPSentinel $version (testing)" `
-            --notes "Testing-exclusive PvPSentinel development build. Keep automation disabled until the current staged test has been approved."
+            --title "PvPSentinel $version (beta)" `
+            --notes "PvPSentinel active beta release. Keep automation disabled until the current staged test has been approved."

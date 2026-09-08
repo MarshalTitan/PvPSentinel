@@ -1,12 +1,13 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.2.0</Version>
+    <Version>0.1.3.0</Version>
     <Author>MarshalTitan</Author>
     <Name>PvP Sentinel</Name>
-    <Punchline>Development controller for stable Frontline group-following and MCH combat decisions.</Punchline>
-    <Description>Development build for Frontline state detection, friendly-force clustering, stable vnavmesh following, target scoring, and an opt-in Machinist PvP combat framework.</Description>
+    <Punchline>Beta controller for stable Frontline group-following and MCH combat decisions.</Punchline>
+    <Description>Active beta for Frontline state detection, friendly-force clustering, stable vnavmesh following, target scoring, and an opt-in Machinist PvP combat framework.</Description>
     <RepoUrl>https://github.com/MarshalTitan/PvPSentinel</RepoUrl>
-    <Tags>pvp;frontline;machinist;navigation;development</Tags>
+    <IconUrl>https://raw.githubusercontent.com/MarshalTitan/PvPSentinel/main/assets/icon.png</IconUrl>
+    <Tags>pvp;frontline;machinist;navigation;beta</Tags>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
