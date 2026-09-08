@@ -1,14 +1,20 @@
-name: Build development artifact
+name: Build and publish development artifact
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -26,11 +32,39 @@ jobs:
           Remove-Item dalamud.zip
 
       - run: dotnet restore PvPSentinel.csproj
+
+      - name: Require release tag to match project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content PvPSentinel.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          $expectedTag = "v$version"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Release tag '$env:GITHUB_REF_NAME' does not match project version '$version'. Bump <Version> before distributing a new testing build."
+          }
+
       - run: dotnet build PvPSentinel.csproj -c Release --no-restore
+
+      - name: Prepare installable package
+        shell: pwsh
+        run: Copy-Item bin/Release/PvPSentinel/latest.zip bin/Release/PvPSentinel/PvPSentinel.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: PvPSentinel-development
-          path: bin/Release/PvPSentinel/latest.zip
+          path: bin/Release/PvPSentinel/PvPSentinel.zip
           if-no-files-found: error
 
+      - name: Publish GitHub prerelease
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          gh release create $env:GITHUB_REF_NAME bin/Release/PvPSentinel/PvPSentinel.zip `
+            --verify-tag `
+            --prerelease `
+            --title "PvPSentinel $version (testing)" `
+            --notes "Testing-exclusive PvPSentinel development build. Keep automation disabled until the current staged test has been approved."

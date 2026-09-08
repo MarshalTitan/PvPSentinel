@@ -1,8 +1,6 @@
 # PvPSentinel
 
-PvPSentinel is a standalone Dalamud plugin under development for explainable, stable Frontline movement and Machinist PvP combat decisions.
-
-This repository is independent from the central `MarshalTitan/Sentinel` custom-plugin catalog. The catalog is intentionally **not** changed during local development.
+PvPSentinel is a standalone Dalamud plugin under development for explainable, stable Frontline movement and Machinist PvP combat decisions. Its source and releases live in this repository. Testing builds are distributed as testing-exclusive entries through the central `MarshalTitan/Sentinel` custom-plugin catalog.
 
 ## Milestone 1 status
 
@@ -36,7 +34,7 @@ Not implemented in this milestone:
 - non-MCH job controllers
 - objective/score memory structures
 - Wrath-controlled PvP rotation (Wrath's documented IPC does not support PvP combos/options)
-- beta/release publishing or changes to `MarshalTitan/Sentinel/repo.json`
+- normal-availability publishing for users who have not opted into testing plugins
 
 ## Safety defaults
 
@@ -89,6 +87,20 @@ Outputs:
 
 - development DLL: `bin\Release\PvPSentinel.dll`
 - installable development ZIP: `bin\Release\PvPSentinel\latest.zip`
+
+## Testing distribution
+
+Distributed development builds use their own four-part version sequence from `<Version>` in `PvPSentinel.csproj`. Every distributed build must increase that version. Pushing a tag named exactly `v<Version>` builds `PvPSentinel.zip` and publishes it as a GitHub prerelease; a mismatched tag fails before publication.
+
+After the prerelease succeeds, update only the PvPSentinel object in `MarshalTitan/Sentinel/repo.json`:
+
+- set `AssemblyVersion` and `TestingAssemblyVersion` to the new version;
+- set both Dalamud API fields to the supported API level;
+- point all three download links to the new `PvPSentinel.zip` release asset;
+- refresh `LastUpdate`; and
+- retain `IsTestingExclusive: true` until general availability is explicitly approved.
+
+The local Dev Plugin Location described below remains available only as an emergency/debug path.
 
 ## Local Dalamud loading
 
