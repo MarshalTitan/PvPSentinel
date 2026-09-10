@@ -6,7 +6,7 @@
     <Punchline>Beta controller for stable Frontline group-following and MCH combat decisions.</Punchline>
     <Description>Active beta for Frontline state detection, friendly-force clustering, stable vnavmesh following, target scoring, and an opt-in Machinist PvP combat framework.</Description>
     <RepoUrl>https://github.com/MarshalTitan/PvPSentinel</RepoUrl>
-    <IconUrl>https://raw.githubusercontent.com/MarshalTitan/PvPSentinel/main/assets/icon.png</IconUrl>
+    <IconUrl>https://raw.githubusercontent.com/MarshalTitan/PvPSentinel/main/assets/icon_clean.png</IconUrl>
     <Tags>pvp;frontline;machinist;navigation;beta</Tags>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
