@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Windowing;
 using PvPSentinel.Models;
 using System.Numerics;
@@ -9,8 +10,12 @@ internal sealed class TargetCounterWindow : Window
 {
     private readonly Configuration config;
     private readonly Func<TacticalSnapshot> snapshot;
+    private readonly IFontHandle numberFont;
 
-    public TargetCounterWindow(Configuration config, Func<TacticalSnapshot> snapshot)
+    public TargetCounterWindow(
+        Configuration config,
+        Func<TacticalSnapshot> snapshot,
+        IFontHandle numberFont)
         : base(
             "###PvPSentinelTargetCounter",
             ImGuiWindowFlags.NoTitleBar |
@@ -22,6 +27,7 @@ internal sealed class TargetCounterWindow : Window
     {
         this.config = config;
         this.snapshot = snapshot;
+        this.numberFont = numberFont;
         IsOpen = true;
         RespectCloseHotkey = false;
         Position = new Vector2(640, 320);
@@ -57,7 +63,12 @@ internal sealed class TargetCounterWindow : Window
     public override void Draw()
     {
         var threat = snapshot().Threat;
-        DrawCentered(threat.TargeterCount.ToString(), config.TargetCounterNumberSize);
+        // The ordinary Dalamud font is built near normal UI size. Enlarging it
+        // to 64px+ magnifies its atlas texture and produces visibly soft digits.
+        // This dedicated 128px digit atlas is always downsampled instead, keeping
+        // the counter sharp across the full configurable size range.
+        using (numberFont.Push())
+            DrawCentered(threat.TargeterCount.ToString(), config.TargetCounterNumberSize);
 
         if (config.TargetCounterShowJobs && threat.Targeters.Count > 0)
         {

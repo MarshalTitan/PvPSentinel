@@ -36,6 +36,7 @@ Implemented in source:
 - common PvP defense for repeatable sub-75% Recuperate; Stun, Heavy, Bind, Silence, Deep Freeze, and Miracle of Nature Purify with Resilience protection; and a tunable Guard threshold that rises with targeters, enemy density, numerical disadvantage, and observed rapid HP loss; automatic Elixir remains intentionally disabled
 - a shared `PvPThreatTracker` used by both Native defense and the UI, reporting currently observed enemy hard targets, their jobs/distances, nearby enemy/friendly density, and a derived threat level
 - an optional movable targeting-me counter, enabled by default only in PvP and hidden at zero, with position locking, count/job-text sizes, background transparency, and an optional job-abbreviation row
+- dedicated high-resolution counter glyphs, built locally through Dalamud's managed font atlas so large numbers remain sharp without copying or depending on AnyoneCore image assets
 - independent MCH policy for Analysis/tool preservation, Wildfire target memory and Full Metal continuation, conservative contextual Marksman's Spite confidence, Dervish, proactive Bishop Autoturret, and normal pressure
 - structured native diagnostics including `WOULD TARGET`, `WOULD TARGET: NONE`, `WOULD USE`, competing/rejected scores, defensive preemption, dynamic Guard factors, Purify and LB rejection reasons, action-layer resolution, HP/MP, allied focus, tools, Wildfire, Overheated, and limit gauge
 - external-combat coordination based only on local combat, casting, and queued-action state, with a configurable resume grace period

@@ -1,4 +1,5 @@
 using Dalamud.Game.Command;
+using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -46,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DiagnosticWindow diagnostics;
     private readonly ConfigurationWindow configurationWindow;
     private readonly TargetCounterWindow targetCounter;
+    private readonly IFontHandle targetCounterFont;
 
     private DateTime nextUpdateUtc = DateTime.MinValue;
     private BehaviorState lastLoggedBehavior = BehaviorState.Idle;
@@ -103,7 +105,10 @@ public sealed class Plugin : IDalamudPlugin
             ClearEmergencyStop,
             queueLifecycle.ResetMatchCounter,
             () => queueLifecycle.EmergencyStopLatched);
-        targetCounter = new TargetCounterWindow(config, () => current);
+        var counterGlyphs = FontAtlasBuildToolkitUtilities.ToGlyphRange("0123456789", false, false);
+        targetCounterFont = pi.UiBuilder.FontAtlas.NewDelegateFontHandle(step =>
+            step.OnPreBuild(toolkit => toolkit.AddDalamudDefaultFont(128f, counterGlyphs)));
+        targetCounter = new TargetCounterWindow(config, () => current, targetCounterFont);
         windows.AddWindow(diagnostics);
         windows.AddWindow(configurationWindow);
         windows.AddWindow(targetCounter);
@@ -131,6 +136,7 @@ public sealed class Plugin : IDalamudPlugin
         pi.UiBuilder.OpenConfigUi -= OpenConfiguration;
         commands.RemoveHandler(Command);
         windows.RemoveAllWindows();
+        targetCounterFont.Dispose();
     }
 
     private void OnCommand(string _, string arguments)
