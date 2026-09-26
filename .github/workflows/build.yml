@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Native MCH Shadow refinement from the full Seal Rock comparison: remembers hypothetical Wildfire commitments and recast state, prevents unaffordable Purify from claiming defensive preemption, and allows Bioblaster/Scattergun in valid single-target close-range contexts. The target-score floor, threat-aware Guard, conservative execute model, External ACR mode, navigation, lifecycle logic, and Shadow default are preserved."
+            --notes "Native MCH Shadow refinement from the latest correlated Frontline trace: adds hypothetical cooldown, animation-lock, and limit-gauge accounting; prevents focus-fire Wildfire overkill starts; completes the supported Purify effect list; and removes the Target Counter frame. The target-score floor, hard defensive preemption, threat-aware Guard, conservative execute model, External ACR mode, navigation, lifecycle logic, and Shadow default are preserved."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }
