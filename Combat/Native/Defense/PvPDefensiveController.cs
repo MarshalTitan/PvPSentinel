@@ -68,7 +68,7 @@ internal sealed class PvPDefensiveController
         var removable = local.Statuses.FirstOrDefault(status =>
             RemovableStatusIds.Contains(status.Id) || RemovableStatusNames.Contains(status.Name));
         var resilient = local.HasStatus(ResilienceStatusId) || local.HasStatusExact("Resilience");
-        var purifyUrgent = removable is not null && !resilient;
+        var purifyEligible = NativeCombatPolicy.PurifyEligible(removable is not null, resilient, local.CurrentMp);
         string purifyState;
         if (removable is not null && !resilient)
         {
@@ -163,7 +163,7 @@ internal sealed class PvPDefensiveController
         var recuperateNeeded = NativeCombatPolicy.RecuperateEligible(
             local.HpPercent, config.NativeRecuperateHpPercent, local.CurrentMp);
         var preemptionReason = NativeCombatPolicy.DefensePreemptionReason(
-            purifyUrgent, guardNeeded, recuperateNeeded);
+            purifyEligible, guardNeeded, recuperateNeeded);
         var suppressOffense = preemptionReason != "None";
 
         return new DefensiveEvaluation(

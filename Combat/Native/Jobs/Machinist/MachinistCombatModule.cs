@@ -59,7 +59,7 @@ internal sealed class MachinistCombatModule : IPvpJobCombatModule
     }
 
     public void NotifyActionAccepted(NativeActionCandidate action, DateTime acceptedAtUtc, bool hypothetical) =>
-        burst.NotifyActionAccepted(action, acceptedAtUtc);
+        burst.NotifyActionAccepted(action, acceptedAtUtc, hypothetical);
 
     public void Reset() => burst.Reset();
 
@@ -111,9 +111,18 @@ internal sealed class MachinistCombatModule : IPvpJobCombatModule
         candidates.Add(Enemy(context, MachinistActions.FullMetalField, "Full Metal Field", NativeActionLayer.NormalPressure,
             "Use high-value Full Metal Field outside a committed Wildfire sequence when the client reports it available."));
 
-        if (target.Distance <= 12f && target.NearbyEnemies >= 2)
+        if (target.Distance <= 12f)
+        {
+            var scattergunReason = target.NearbyEnemies <= 1
+                ? $"Close single-target pressure at {target.Distance:F1}y; Scattergun strikes twice when it hits only one target and applies knockback control."
+                : $"Close clustered pressure at {target.Distance:F1}y with {target.NearbyEnemies} enemies observed around the target.";
             candidates.Add(Enemy(context, MachinistActions.Scattergun, "Scattergun", NativeActionLayer.NormalPressure,
-                $"Close clustered pressure: {target.NearbyEnemies} enemies observed around the target at {target.Distance:F1}y."));
+                scattergunReason));
+        }
+        else
+        {
+            rejections.Add($"Scattergun rejected: selected target at {target.Distance:F1}y exceeds its 12y cone range.");
+        }
 
         if (target.Distance <= 25f)
             candidates.Add(Enemy(context, MachinistActions.BlastCharge, "Blast Charge", NativeActionLayer.NormalPressure, "Baseline ranged pressure; higher-priority defense, execute, burst, tools, and utility were unavailable."));

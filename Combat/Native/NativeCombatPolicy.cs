@@ -5,6 +5,9 @@ internal static class NativeCombatPolicy
     public static bool RecuperateEligible(float hpPercent, float threshold, uint currentMp) =>
         hpPercent < threshold && currentMp >= 2000;
 
+    public static bool PurifyEligible(bool removableControlPresent, bool resilienceActive, uint currentMp) =>
+        removableControlPresent && !resilienceActive && currentMp >= 2000;
+
     public static bool ShouldSwitchTarget(
         double committedSeconds,
         float minimumCommitmentSeconds,

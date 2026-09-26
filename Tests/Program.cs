@@ -80,6 +80,12 @@ Check("Recuperate not eligible at 75%", false,
     NativeCombatPolicy.RecuperateEligible(75f, 75f, 10000));
 Check("Recuperate requires MP", false,
     NativeCombatPolicy.RecuperateEligible(20f, 75f, 1999));
+Check("Purify is actionable for removable CC with MP", true,
+    NativeCombatPolicy.PurifyEligible(true, false, 2000));
+Check("Purify does not preempt when MP is insufficient", false,
+    NativeCombatPolicy.PurifyEligible(true, false, 1999));
+Check("Purify does not preempt through Resilience", false,
+    NativeCombatPolicy.PurifyEligible(true, true, 10000));
 Check("Recuperate hard-preempts offense", "Recuperate priority",
     NativeCombatPolicy.DefensePreemptionReason(false, false, true));
 Check("Guard preempts simultaneous Recuperate", "Guard priority",

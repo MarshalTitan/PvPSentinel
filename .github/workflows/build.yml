@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Target-counter rendering refinement: replaces enlarged normal-size UI glyphs with a dedicated high-resolution digit atlas so the movable targeting-me count remains crisp at configurable sizes. Threat tracking, Guard integration, Native MCH Shadow behavior, combat providers, navigation, and lifecycle logic are unchanged."
+            --notes "Native MCH Shadow refinement from the full Seal Rock comparison: remembers hypothetical Wildfire commitments and recast state, prevents unaffordable Purify from claiming defensive preemption, and allows Bioblaster/Scattergun in valid single-target close-range contexts. The target-score floor, threat-aware Guard, conservative execute model, External ACR mode, navigation, lifecycle logic, and Shadow default are preserved."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

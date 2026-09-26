@@ -10,8 +10,11 @@ internal sealed record BurstEvaluation(
 
 internal sealed class MachinistBurstController
 {
+    private static readonly TimeSpan WildfireSequenceTimeout = TimeSpan.FromSeconds(9);
+    private static readonly TimeSpan WildfireCooldown = TimeSpan.FromSeconds(24);
     private ulong wildfireTargetId;
     private DateTime wildfireCommittedAtUtc = DateTime.MinValue;
+    private DateTime hypotheticalWildfireReadyAtUtc = DateTime.MinValue;
     private int attacksCommitted;
     private string lastExitReason = "not committed";
 
@@ -57,7 +60,7 @@ internal sealed class MachinistBurstController
                                    (burstSupport < 2 || burstThreats > burstSupport + 1);
             if (burstTarget is null || burstTarget.IsDead || !burstTarget.IsTargetable)
                 Abandon("Wildfire target became invalid");
-            else if (age > TimeSpan.FromSeconds(9))
+            else if (age > WildfireSequenceTimeout)
                 Abandon("Wildfire sequence expired");
             else if (unsafeToContinue)
                 Abandon($"continuation unsafe at {context.Local.HpPercent:F1}% HP/overextension");
@@ -74,9 +77,14 @@ internal sealed class MachinistBurstController
 
         if (!IsActive && target is not null)
         {
+            var hypotheticalCooldownRemaining = hypotheticalWildfireReadyAtUtc - context.Game.CapturedAtUtc;
             var safe = context.Local.HpPercent >= 45f && !target.IsOverextended;
             var worthwhile = target.Player.CurrentHp >= 18000 && !target.IsGuarding && target.Distance <= 25f;
-            if (safe && worthwhile)
+            if (hypotheticalCooldownRemaining > TimeSpan.Zero)
+            {
+                rejections.Add($"Wildfire rejected: the Shadow simulation already committed it and preserves the {WildfireCooldown.TotalSeconds:F0}s recast ({hypotheticalCooldownRemaining.TotalSeconds:F1}s remaining).");
+            }
+            else if (safe && worthwhile)
             {
                 initiation.Add(Enemy(context, MachinistActions.Wildfire, "Wildfire",
                     $"Initiate a deliberate burst transition at {target.Distance:F1}y; target HP {target.Player.CurrentHp:N0}, allied focus {target.AlliedFocus}, local HP {context.Local.HpPercent:F1}%."));
@@ -93,14 +101,16 @@ internal sealed class MachinistBurstController
         return new BurstEvaluation(continuation, initiation, rejections, state);
     }
 
-    public void NotifyActionAccepted(NativeActionCandidate action, DateTime now)
+    public void NotifyActionAccepted(NativeActionCandidate action, DateTime now, bool hypothetical)
     {
         if (action.ActionId == MachinistActions.Wildfire)
         {
             wildfireTargetId = action.TargetObjectId;
             wildfireCommittedAtUtc = now;
+            if (hypothetical)
+                hypotheticalWildfireReadyAtUtc = now + WildfireCooldown;
             attacksCommitted = 0;
-            lastExitReason = "committed";
+            lastExitReason = hypothetical ? "hypothetically committed in Shadow" : "committed";
             return;
         }
 
@@ -112,7 +122,11 @@ internal sealed class MachinistBurstController
             Abandon("four Wildfire follow-up attacks completed");
     }
 
-    public void Reset() => Abandon("reset");
+    public void Reset()
+    {
+        hypotheticalWildfireReadyAtUtc = DateTime.MinValue;
+        Abandon("reset");
+    }
 
     private void Abandon(string reason)
     {

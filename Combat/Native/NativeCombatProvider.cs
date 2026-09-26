@@ -146,7 +146,13 @@ internal sealed class NativeCombatProvider : ICombatController
 
         if (config.NativeCombatMode == NativeCombatMode.ShadowObserve)
         {
-            LogActionDecision(chosen, shadow: true);
+            // Feed each newly reported hypothetical decision back into the job
+            // module. Shadow mode still performs no target or action mutation,
+            // but stateful decisions such as Wildfire must remember the
+            // commitment or the observer will recommend a fresh opener every
+            // tick instead of evaluating the promised follow-up sequence.
+            if (LogActionDecision(chosen, shadow: true))
+                module.NotifyActionAccepted(chosen, game.CapturedAtUtc, hypothetical: true);
             diagnostics = diagnostics with { ActionResolution = $"WOULD USE {chosen.ActionName}: {chosen.Reason}" };
             return Decision(true, chosen.ActionId, $"WOULD USE {chosen.ActionName}", chosen.Reason, diagnostics);
         }
@@ -290,17 +296,18 @@ internal sealed class NativeCombatProvider : ICombatController
         }
     }
 
-    private void LogActionDecision(NativeActionCandidate action, bool shadow)
+    private bool LogActionDecision(NativeActionCandidate action, bool shadow)
     {
         var label = shadow ? "WOULD USE" : "USED";
         var signature = $"{shadow}|{action.ActionId}|{action.TargetObjectId}";
         developmentLog.Changed("native-action", signature, $"{label} {action.ActionName}. {action.Reason}");
         if (signature == lastActionLogSignature)
-            return;
+            return false;
 
         log.Information("PvPSentinel native {Decision} {Action} ({ActionId}). {Reason}",
             label, action.ActionName, action.ActionId, action.Reason);
         lastActionLogSignature = signature;
+        return true;
     }
 
     private void ResetState()

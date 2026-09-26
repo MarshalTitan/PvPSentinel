@@ -41,10 +41,11 @@ internal sealed class MachinistAnalysisController
             candidates.Add(Enemy(context, MachinistActions.ChainSaw, "Chain Saw", "Use primed Chain Saw; Analysis adds the high-value target vulnerability when active."));
         if (state.BioblasterPrimed)
         {
-            if (target.Distance <= 12f && target.NearbyEnemies >= 2)
-                candidates.Add(Enemy(context, MachinistActions.Bioblaster, "Bioblaster", $"Use primed Bioblaster at {target.Distance:F1}y with {target.NearbyEnemies} enemies in the local engagement."));
+            if (target.Distance <= 12f)
+                candidates.Add(Enemy(context, MachinistActions.Bioblaster, "Bioblaster",
+                    $"Use primed Bioblaster at {target.Distance:F1}y for cone pressure and to advance the tool chain to Air Anchor; {target.NearbyEnemies} enemies observed around the target. Analysis remains preserved by default."));
             else
-                rejections.Add($"Bioblaster rejected: requires <=12y and clustered combat; observed {target.Distance:F1}y/{target.NearbyEnemies} nearby enemies.");
+                rejections.Add($"Bioblaster rejected: selected target at {target.Distance:F1}y exceeds its 12y cone range; Analysis remains preserved.");
         }
 
         return new AnalysisEvaluation(candidates, rejections);
