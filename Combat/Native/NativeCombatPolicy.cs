@@ -41,6 +41,9 @@ internal static class NativeCombatPolicy
     public static bool IsTargetScoreAcceptable(float score, float minimumScore) =>
         score >= minimumScore;
 
+    public static bool IsTargetAcceptable(float score, float minimumScore, bool severeOverextension) =>
+        !severeOverextension && IsTargetScoreAcceptable(score, minimumScore);
+
     public static string DefensePreemptionReason(
         bool purifyUrgent,
         bool guardNeeded,
@@ -115,7 +118,40 @@ internal static class NativeCombatPolicy
         effectiveHp <= (uint)MathF.Round(baseDamage * Math.Max(1f, damageMultiplier)) ||
         alliedFocus >= Math.Max(0, minimumFocus);
 
+    public static uint MarksmanOverkillFloor(
+        uint minimumEffectiveHp,
+        int alliedFocus,
+        uint focusHpPerPlayer,
+        int uncreditedFocus,
+        uint maximumMinimumHp) =>
+        FocusAdjustedMinimumHp(
+            minimumEffectiveHp,
+            alliedFocus,
+            focusHpPerPlayer,
+            uncreditedFocus,
+            maximumMinimumHp);
+
+    public static bool IsMarksmanOverkillRisk(
+        uint effectiveHp,
+        float distance,
+        float normalPressureRange,
+        uint overkillFloor) =>
+        distance <= normalPressureRange && effectiveHp < overkillFloor;
+
     public static uint WildfireSurvivalFloor(
+        uint minimumEffectiveHp,
+        int alliedFocus,
+        uint focusHpPerPlayer,
+        int uncreditedFocus,
+        uint maximumMinimumHp)
+        => FocusAdjustedMinimumHp(
+            minimumEffectiveHp,
+            alliedFocus,
+            focusHpPerPlayer,
+            uncreditedFocus,
+            maximumMinimumHp);
+
+    private static uint FocusAdjustedMinimumHp(
         uint minimumEffectiveHp,
         int alliedFocus,
         uint focusHpPerPlayer,
