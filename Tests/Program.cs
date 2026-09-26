@@ -111,6 +111,10 @@ Check("target score floor rejects negative least-bad target", false,
     NativeCombatPolicy.IsTargetScoreAcceptable(-1f, 10f));
 Check("target score floor accepts exact boundary", true,
     NativeCombatPolicy.IsTargetScoreAcceptable(10f, 10f));
+Check("severe overextension is rejected even above score floor", false,
+    NativeCombatPolicy.IsTargetAcceptable(75f, 10f, true));
+Check("safe candidate above score floor remains acceptable", true,
+    NativeCombatPolicy.IsTargetAcceptable(10f, 10f, false));
 
 var lowPressureGuard = NativeCombatPolicy.CalculateGuardThreshold(
     35f, 65f, 0, 2, 3, 4f, 1.5f, 2, 2f, 0f, 12f, 8f);
@@ -133,6 +137,12 @@ Check("Marksman rejects above-solo HP without strong focus", false,
     NativeCombatPolicy.HasMarksmanHighHpConfidence(41000, 40000, 1f, 2, 3));
 Check("Marksman accepts above-solo HP with strong focus", true,
     NativeCombatPolicy.HasMarksmanHighHpConfidence(41000, 40000, 1f, 3, 3));
+Check("Marksman anti-overkill floor rises with allied focus", 20000u,
+    NativeCombatPolicy.MarksmanOverkillFloor(10000, 6, 2000, 1, 20000));
+Check("Marksman conserves gauge on collapsing normal-range target", true,
+    NativeCombatPolicy.IsMarksmanOverkillRisk(7538, 24.8f, 25f, 20000));
+Check("Marksman retains long-range finishing role below overkill floor", false,
+    NativeCombatPolicy.IsMarksmanOverkillRisk(7538, 25.1f, 25f, 20000));
 
 Check("Wildfire survival floor retains low-focus baseline", 28000u,
     NativeCombatPolicy.WildfireSurvivalFloor(28000, 1, 2500, 1, 45000));
