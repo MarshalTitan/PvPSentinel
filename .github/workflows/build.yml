@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Native MCH Shadow refinement from the latest correlated Frontline trace: adds hypothetical cooldown, animation-lock, and limit-gauge accounting; prevents focus-fire Wildfire overkill starts; completes the supported Purify effect list; and removes the Target Counter frame. The target-score floor, hard defensive preemption, threat-aware Guard, conservative execute model, External ACR mode, navigation, lifecycle logic, and Shadow default are preserved."
+            --notes "Native MCH Shadow safety refinement from the latest correlated Frontline trace: hard-rejects severe-overextension targets even when positive combat bonuses would clear the numeric floor; conserves Marksman's Spite on collapsing normal-range targets under allied focus; and strengthens target commitment/switch hysteresis. The validated Shadow cooldown ledger, Wildfire survival floor, defensive preemption, threat-aware Guard, Purify coverage, borderless Target Counter, External ACR mode, navigation, lifecycle logic, and Shadow default are preserved. The reported LB at 16:58 match time was manual and excluded from Champion behavior analysis."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }
