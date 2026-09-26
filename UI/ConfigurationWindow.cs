@@ -130,6 +130,9 @@ internal sealed class ConfigurationWindow : Window
         DrawInt("Marksman's Spite high-HP minimum focus", config.NativeMarksmanHighHpMinimumFocus, 0, 8, value => config.NativeMarksmanHighHpMinimumFocus = value);
         DrawInt("Marksman's Spite focus allowance", (int)config.NativeMarksmanFocusAllowance, 0, 20000, value => config.NativeMarksmanFocusAllowance = (uint)value);
         DrawInt("Marksman's Spite max effective HP", (int)config.NativeMarksmanMaximumEffectiveHp, 40000, 120000, value => config.NativeMarksmanMaximumEffectiveHp = (uint)value);
+        DrawInt("Marksman's Spite anti-overkill HP", (int)config.NativeMarksmanOverkillMinimumHp, 0, 30000, value => config.NativeMarksmanOverkillMinimumHp = (uint)value);
+        DrawInt("Marksman's Spite anti-overkill HP per focused ally", (int)config.NativeMarksmanOverkillFocusHpPerPlayer, 0, 10000, value => config.NativeMarksmanOverkillFocusHpPerPlayer = (uint)value);
+        DrawInt("Marksman's Spite anti-overkill cap", (int)config.NativeMarksmanOverkillMaximumMinimumHp, 0, 50000, value => config.NativeMarksmanOverkillMaximumMinimumHp = (uint)value);
         DrawInt("Wildfire minimum effective HP", (int)config.NativeWildfireMinimumEffectiveHp, 18000, 60000, value => config.NativeWildfireMinimumEffectiveHp = (uint)value);
         DrawInt("Wildfire HP per focused ally", (int)config.NativeWildfireFocusHpPerPlayer, 0, 10000, value => config.NativeWildfireFocusHpPerPlayer = (uint)value);
         DrawInt("Wildfire uncredited focus", config.NativeWildfireUncreditedFocus, 0, 4, value => config.NativeWildfireUncreditedFocus = value);
