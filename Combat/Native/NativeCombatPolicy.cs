@@ -2,11 +2,34 @@ namespace PvPSentinel.Combat.Native;
 
 internal static class NativeCombatPolicy
 {
+    private static readonly HashSet<uint> PurifyRemovableStatusIds =
+    [
+        1343, // Stun
+        1344, // Heavy
+        1345, // Bind
+        1347, // Silence
+        3219, // Deep Freeze
+    ];
+
+    private static readonly HashSet<string> PurifyRemovableStatusNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Stun",
+        "Heavy",
+        "Bind",
+        "Silence",
+        "Half-asleep",
+        "Sleep",
+        "Deep Freeze",
+    };
+
     public static bool RecuperateEligible(float hpPercent, float threshold, uint currentMp) =>
         hpPercent < threshold && currentMp >= 2000;
 
     public static bool PurifyEligible(bool removableControlPresent, bool resilienceActive, uint currentMp) =>
         removableControlPresent && !resilienceActive && currentMp >= 2000;
+
+    public static bool IsPurifyRemovableStatus(uint statusId, string statusName) =>
+        PurifyRemovableStatusIds.Contains(statusId) || PurifyRemovableStatusNames.Contains(statusName);
 
     public static bool ShouldSwitchTarget(
         double committedSeconds,
@@ -91,6 +114,19 @@ internal static class NativeCombatPolicy
         int minimumFocus) =>
         effectiveHp <= (uint)MathF.Round(baseDamage * Math.Max(1f, damageMultiplier)) ||
         alliedFocus >= Math.Max(0, minimumFocus);
+
+    public static uint WildfireSurvivalFloor(
+        uint minimumEffectiveHp,
+        int alliedFocus,
+        uint focusHpPerPlayer,
+        int uncreditedFocus,
+        uint maximumMinimumHp)
+    {
+        var creditedFocus = Math.Max(0, alliedFocus - Math.Max(0, uncreditedFocus));
+        var focusAdjustment = (ulong)creditedFocus * focusHpPerPlayer;
+        var uncapped = (ulong)minimumEffectiveHp + focusAdjustment;
+        return (uint)Math.Min(Math.Max(minimumEffectiveHp, maximumMinimumHp), uncapped);
+    }
 }
 
 internal sealed record GuardThresholdEvaluation(
