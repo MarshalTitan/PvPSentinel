@@ -23,7 +23,8 @@ internal sealed class TargetCounterWindow : Window
             ImGuiWindowFlags.AlwaysAutoResize |
             ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar |
-            ImGuiWindowFlags.NoScrollWithMouse)
+            ImGuiWindowFlags.NoScrollWithMouse |
+            ImGuiWindowFlags.NoBackground)
     {
         this.config = config;
         this.snapshot = snapshot;
@@ -49,13 +50,13 @@ internal sealed class TargetCounterWindow : Window
 
     public override void PreDraw()
     {
-        BgAlpha = Math.Clamp(1f - config.TargetCounterBackgroundTransparency, 0f, 1f);
         Flags = ImGuiWindowFlags.NoTitleBar |
                 ImGuiWindowFlags.NoResize |
                 ImGuiWindowFlags.AlwaysAutoResize |
                 ImGuiWindowFlags.NoCollapse |
                 ImGuiWindowFlags.NoScrollbar |
-                ImGuiWindowFlags.NoScrollWithMouse;
+                ImGuiWindowFlags.NoScrollWithMouse |
+                ImGuiWindowFlags.NoBackground;
         if (config.TargetCounterLocked)
             Flags |= ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoInputs;
     }

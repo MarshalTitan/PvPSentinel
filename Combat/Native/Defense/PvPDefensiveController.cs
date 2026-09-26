@@ -16,33 +16,7 @@ internal sealed class PvPDefensiveController
 {
     private const uint GuardStatusId = 3054;
     private const uint ResilienceStatusId = 3248;
-    private const uint StunStatusId = 1343;
-    private const uint HeavyStatusId = 1344;
-    private const uint BindStatusId = 1345;
-    private const uint SilenceStatusId = 1347;
-    private const uint MiracleOfNatureStatusId = 3085;
-    private const uint DeepFreezeStatusId = 3219;
     private readonly Queue<(DateTime CapturedAtUtc, float HpPercent)> hpHistory = new();
-
-    private static readonly HashSet<uint> RemovableStatusIds =
-    [
-        StunStatusId,
-        HeavyStatusId,
-        BindStatusId,
-        SilenceStatusId,
-        DeepFreezeStatusId,
-        MiracleOfNatureStatusId,
-    ];
-
-    private static readonly HashSet<string> RemovableStatusNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Stun",
-        "Heavy",
-        "Bind",
-        "Silence",
-        "Deep Freeze",
-        "Miracle of Nature",
-    };
 
     public DefensiveEvaluation Evaluate(
         GameStateSnapshot game,
@@ -66,7 +40,7 @@ internal sealed class PvPDefensiveController
         var hpLossPerSecond = UpdateHpLossRate(game.CapturedAtUtc, local.HpPercent);
 
         var removable = local.Statuses.FirstOrDefault(status =>
-            RemovableStatusIds.Contains(status.Id) || RemovableStatusNames.Contains(status.Name));
+            NativeCombatPolicy.IsPurifyRemovableStatus(status.Id, status.Name));
         var resilient = local.HasStatus(ResilienceStatusId) || local.HasStatusExact("Resilience");
         var purifyEligible = NativeCombatPolicy.PurifyEligible(removable is not null, resilient, local.CurrentMp);
         string purifyState;

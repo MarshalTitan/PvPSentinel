@@ -1,6 +1,7 @@
 using System.Numerics;
 using PvPSentinel.Combat;
 using PvPSentinel.Combat.Native;
+using PvPSentinel.Combat.Native.Jobs.Machinist;
 using PvPSentinel.Combat.Threat;
 using PvPSentinel.GameState;
 using PvPSentinel.Models;
@@ -86,6 +87,12 @@ Check("Purify does not preempt when MP is insufficient", false,
     NativeCombatPolicy.PurifyEligible(true, false, 1999));
 Check("Purify does not preempt through Resilience", false,
     NativeCombatPolicy.PurifyEligible(true, true, 10000));
+Check("Purify recognizes Half-asleep by public status name", true,
+    NativeCombatPolicy.IsPurifyRemovableStatus(0, "Half-asleep"));
+Check("Purify recognizes Sleep by public status name", true,
+    NativeCombatPolicy.IsPurifyRemovableStatus(0, "Sleep"));
+Check("Purify does not claim unsupported Miracle of Nature", false,
+    NativeCombatPolicy.IsPurifyRemovableStatus(3085, "Miracle of Nature"));
 Check("Recuperate hard-preempts offense", "Recuperate priority",
     NativeCombatPolicy.DefensePreemptionReason(false, false, true));
 Check("Guard preempts simultaneous Recuperate", "Guard priority",
@@ -126,6 +133,32 @@ Check("Marksman rejects above-solo HP without strong focus", false,
     NativeCombatPolicy.HasMarksmanHighHpConfidence(41000, 40000, 1f, 2, 3));
 Check("Marksman accepts above-solo HP with strong focus", true,
     NativeCombatPolicy.HasMarksmanHighHpConfidence(41000, 40000, 1f, 3, 3));
+
+Check("Wildfire survival floor retains low-focus baseline", 28000u,
+    NativeCombatPolicy.WildfireSurvivalFloor(28000, 1, 2500, 1, 45000));
+Check("Wildfire survival floor rises with credited allied focus", 38000u,
+    NativeCombatPolicy.WildfireSurvivalFloor(28000, 5, 2500, 1, 45000));
+Check("Wildfire survival floor respects cap", 45000u,
+    NativeCombatPolicy.WildfireSurvivalFloor(28000, 12, 2500, 1, 45000));
+
+var shadowLedger = new NativeShadowActionLedger();
+var shadowStart = new DateTime(2026, 9, 26, 18, 37, 10, DateTimeKind.Utc);
+Check("fresh Shadow action is available", true,
+    shadowLedger.Check(MachinistActions.BishopAutoturret, shadowStart).IsAvailable);
+shadowLedger.Commit(MachinistActions.BishopAutoturret, shadowStart);
+Check("Shadow global lock follows a hypothetical action", false,
+    shadowLedger.CheckGlobal(shadowStart.AddMilliseconds(300)).IsAvailable);
+Check("Shadow global lock clears after animation lock", true,
+    shadowLedger.CheckGlobal(shadowStart.AddMilliseconds(600)).IsAvailable);
+Check("Shadow prevents duplicate Bishop during hypothetical recast", false,
+    shadowLedger.Check(MachinistActions.BishopAutoturret, shadowStart.AddSeconds(29.9)).IsAvailable);
+Check("Shadow releases Bishop at hypothetical recast", true,
+    shadowLedger.Check(MachinistActions.BishopAutoturret, shadowStart.AddSeconds(30)).IsAvailable);
+shadowLedger.Commit(MachinistActions.MarksmansSpite, shadowStart);
+Check("Shadow spends hypothetical limit gauge", false,
+    shadowLedger.Check(MachinistActions.MarksmansSpite, shadowStart.AddSeconds(89)).IsAvailable);
+Check("Shadow limit gauge model recovers at charge time", true,
+    shadowLedger.Check(MachinistActions.MarksmansSpite, shadowStart.AddSeconds(90)).IsAvailable);
 
 Check("no observed pressure has no threat level", PvPThreatLevel.None,
     PvPThreatPolicy.EvaluateLevel(0, 0));

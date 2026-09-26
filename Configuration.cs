@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 5;
+    public int Version { get; set; } = 6;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public CombatProvider CombatProvider { get; set; } = CombatProvider.Off;
@@ -26,7 +26,6 @@ public sealed class Configuration : IPluginConfiguration
     public bool TargetCounterLocked { get; set; }
     public float TargetCounterNumberSize { get; set; } = 64f;
     public float TargetCounterJobSize { get; set; } = 16f;
-    public float TargetCounterBackgroundTransparency { get; set; } = 0.65f;
 
     public bool AllowBorderlandRuins { get; set; } = true;
     public bool AllowSealRock { get; set; } = true;
@@ -79,6 +78,10 @@ public sealed class Configuration : IPluginConfiguration
     public int NativeMarksmanHighHpMinimumFocus { get; set; } = 3;
     public uint NativeMarksmanFocusAllowance { get; set; } = 3000;
     public uint NativeMarksmanMaximumEffectiveHp { get; set; } = 56000;
+    public uint NativeWildfireMinimumEffectiveHp { get; set; } = 28000;
+    public uint NativeWildfireFocusHpPerPlayer { get; set; } = 2500;
+    public int NativeWildfireUncreditedFocus { get; set; } = 1;
+    public uint NativeWildfireMaximumMinimumHp { get; set; } = 45000;
     public float MountDistance { get; set; } = 55f;
     public float DismountDistance { get; set; } = 28f;
     public float MountEnemySafetyRadius { get; set; } = 30f;
@@ -106,7 +109,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 5)
+        if (Version >= 6)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -161,10 +164,20 @@ public sealed class Configuration : IPluginConfiguration
             TargetCounterLocked = false;
             TargetCounterNumberSize = 64f;
             TargetCounterJobSize = 16f;
-            TargetCounterBackgroundTransparency = 0.65f;
         }
 
-        Version = 5;
+        if (Version < 6)
+        {
+            // v0.2.0.5 adds an anti-overkill survival floor for deliberate
+            // Wildfire commitments. Existing installations receive the same
+            // conservative defaults as fresh configurations.
+            NativeWildfireMinimumEffectiveHp = 28000;
+            NativeWildfireFocusHpPerPlayer = 2500;
+            NativeWildfireUncreditedFocus = 1;
+            NativeWildfireMaximumMinimumHp = 45000;
+        }
+
+        Version = 6;
         Save();
     }
 

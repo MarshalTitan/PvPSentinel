@@ -14,6 +14,7 @@ internal sealed class NativeCombatProvider : ICombatController
     private readonly NativeActionExecutor executor;
     private readonly PvPTargetEvaluator targetEvaluator = new();
     private readonly PvPDefensiveController defense = new();
+    private readonly NativeShadowActionLedger shadowActions = new();
     private readonly IReadOnlyDictionary<uint, IPvpJobCombatModule> modules;
     private readonly Dictionary<uint, bool> verifiedActions;
     private readonly DevelopmentLogger developmentLog;
@@ -91,7 +92,15 @@ internal sealed class NativeCombatProvider : ICombatController
             ? defensive.Candidates
             : defensive.Candidates.Concat(job.Candidates);
         NativeActionCandidate? chosen = null;
-        foreach (var candidate in actionPermission ? ordered : [])
+        ShadowActionAvailability? globalShadowHold = null;
+        if (config.NativeCombatMode == NativeCombatMode.ShadowObserve)
+            globalShadowHold = shadowActions.CheckGlobal(game.CapturedAtUtc);
+
+        if (globalShadowHold?.IsAvailable == false)
+        {
+            rejected.Insert(0, globalShadowHold.Explanation + ".");
+        }
+        else foreach (var candidate in actionPermission ? ordered : [])
         {
             if (!verifiedActions.GetValueOrDefault(candidate.ActionId))
             {
@@ -105,6 +114,16 @@ internal sealed class NativeCombatProvider : ICombatController
             {
                 rejected.Add($"{candidate.ActionName} rejected: target is Guarding; only verified Guard-bypassing Drill remains eligible.");
                 continue;
+            }
+
+            if (config.NativeCombatMode == NativeCombatMode.ShadowObserve)
+            {
+                var shadowAvailability = shadowActions.Check(candidate.ActionId, game.CapturedAtUtc);
+                if (!shadowAvailability.IsAvailable)
+                {
+                    rejected.Add($"{candidate.ActionName} held: {shadowAvailability.Explanation}.");
+                    continue;
+                }
             }
 
             var availability = executor.Check(candidate);
@@ -136,6 +155,8 @@ internal sealed class NativeCombatProvider : ICombatController
             lastActionLogSignature = string.Empty;
             var holdReason = defensive.SuppressOffense
                 ? $"OFFENSE SUPPRESSED: {defensive.PreemptionReason}; no eligible defensive action was client-ready, so Native holds."
+                : globalShadowHold?.IsAvailable == false
+                ? globalShadowHold.Explanation + "."
                 : offensePermitted
                 ? "No verified and client-ready action passed the ordered native decision layers."
                 : "Only emergency defense is permitted in the current strategic behavior; no defensive action is ready.";
@@ -152,7 +173,10 @@ internal sealed class NativeCombatProvider : ICombatController
             // commitment or the observer will recommend a fresh opener every
             // tick instead of evaluating the promised follow-up sequence.
             if (LogActionDecision(chosen, shadow: true))
+            {
+                shadowActions.Commit(chosen.ActionId, game.CapturedAtUtc);
                 module.NotifyActionAccepted(chosen, game.CapturedAtUtc, hypothetical: true);
+            }
             diagnostics = diagnostics with { ActionResolution = $"WOULD USE {chosen.ActionName}: {chosen.Reason}" };
             return Decision(true, chosen.ActionId, $"WOULD USE {chosen.ActionName}", chosen.Reason, diagnostics);
         }
