@@ -6,6 +6,8 @@ internal sealed record ExecuteEvaluation(
 
 internal sealed class MachinistExecuteController
 {
+    private const float NormalPressureRange = 25f;
+
     public ExecuteEvaluation Evaluate(NativeCombatContext context)
     {
         var target = context.Target;
@@ -24,6 +26,22 @@ internal sealed class MachinistExecuteController
         var chainSawVulnerability = target.Player.HasStatus(3154);
         var damageMultiplier = chainSawVulnerability ? 1.2f : 1f;
         var expectedSoloDamage = (uint)MathF.Round(config.NativeMarksmanBaseDamage * damageMultiplier);
+        var overkillFloor = NativeCombatPolicy.MarksmanOverkillFloor(
+            config.NativeMarksmanOverkillMinimumHp,
+            target.AlliedFocus,
+            config.NativeMarksmanOverkillFocusHpPerPlayer,
+            config.NativeMarksmanUncreditedFocus,
+            config.NativeMarksmanOverkillMaximumMinimumHp);
+        if (NativeCombatPolicy.IsMarksmanOverkillRisk(
+                target.EffectiveHp,
+                target.Distance,
+                NormalPressureRange,
+                overkillFloor))
+        {
+            return new ExecuteEvaluation(null,
+                $"Marksman's Spite conservation rejected: effective HP {target.EffectiveHp:N0} is below the focus-adjusted {overkillFloor:N0} anti-overkill floor at normal pressure range ({target.Distance:F1}y <= {NormalPressureRange:F0}y), with {target.AlliedFocus} allied focus. Preserve the full limit gauge and finish with ordinary pressure.");
+        }
+
         var allowance = NativeCombatPolicy.MarksmanEffectiveHpAllowance(
             config.NativeMarksmanBaseDamage,
             target.AlliedFocus,
