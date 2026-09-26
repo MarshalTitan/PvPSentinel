@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Combat/ExternalCombatYieldTracker.cs" Link="Combat/ExternalCombatYieldTracker.cs" />
+    <Compile Include="../Combat/Native/NativeCombatPolicy.cs" Link="Combat/Native/NativeCombatPolicy.cs" />
+    <Compile Include="../GameState/FrontlinePlayerResolver.cs" Link="GameState/FrontlinePlayerResolver.cs" />
+    <Compile Include="../Models/FrontlineMap.cs" Link="Models/FrontlineMap.cs" />
+    <Compile Include="../Models/PlayerClassification.cs" Link="Models/PlayerClassification.cs" />
+    <Compile Include="../Navigation/PathValidator.cs" Link="Navigation/PathValidator.cs" />
+  </ItemGroup>
+</Project>

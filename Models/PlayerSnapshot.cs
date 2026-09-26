@@ -5,13 +5,6 @@ namespace PvPSentinel.Models;
 
 internal sealed record StatusSnapshot(uint Id, string Name, float RemainingSeconds);
 
-internal enum PlayerClassification
-{
-    Unknown,
-    Friendly,
-    Enemy,
-}
-
 internal sealed record PlayerSnapshot(
     ulong GameObjectId,
     uint EntityId,
@@ -21,7 +14,10 @@ internal sealed record PlayerSnapshot(
     Vector3 Position,
     uint CurrentHp,
     uint MaxHp,
+    uint CurrentMp,
+    uint MaxMp,
     byte ShieldPercent,
+    ulong TargetObjectId,
     PlayerClassification Classification,
     StatusFlags StatusFlags,
     bool PartyMemberFlag,
@@ -37,5 +33,6 @@ internal sealed record PlayerSnapshot(
     public bool IsEnemy => Classification == PlayerClassification.Enemy;
     public bool HasStatus(string name) => Statuses.Any(s => s.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
     public bool HasStatusExact(string name) => Statuses.Any(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+    public bool HasStatus(uint id) => Statuses.Any(s => s.Id == id);
     public string BattleHigh => Statuses.FirstOrDefault(s => s.Name.Contains("Battle High", StringComparison.OrdinalIgnoreCase))?.Name ?? "None";
 }

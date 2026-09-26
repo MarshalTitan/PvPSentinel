@@ -5,6 +5,8 @@ using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using PvPSentinel.Diagnostics;
 using PvPSentinel.Models;
+using ActionManager = FFXIVClientStructs.FFXIV.Client.Game.ActionManager;
+using LimitBreakController = FFXIVClientStructs.FFXIV.Client.Game.UI.LimitBreakController;
 
 namespace PvPSentinel.GameState;
 
@@ -19,18 +21,33 @@ internal sealed class GameStateService(
 {
     private readonly Dictionary<uint, string> statusNames = new();
 
-    public GameStateSnapshot Capture()
+    public unsafe GameStateSnapshot Capture()
     {
         try
         {
             var localObject = objects.LocalPlayer;
             var territory = ResolveTerritory(clientState.TerritoryType);
             var territoryName = territory.RowId == 0 ? $"Territory {clientState.TerritoryType}" : territory.PlaceName.Value.Name.ToString();
+            var content = territory.RowId == 0 ? default : territory.ContentFinderCondition.Value;
+            var contentName = content.RowId == 0 ? "Unknown" : content.Name.ToString();
             var isPvP = clientState.IsPvPExcludingDen;
             var isBoundByDuty = condition[ConditionFlag.BoundByDuty] ||
                                 condition[ConditionFlag.BoundByDuty56] ||
                                 condition[ConditionFlag.BoundByDuty95];
             var isFrontline = FrontlineDetector.IsFrontline(isPvP, isBoundByDuty, territory);
+            var frontlineMap = FrontlineMapCatalog.Identify(content.RowId, clientState.TerritoryType);
+            var isInCombat = condition[ConditionFlag.InCombat];
+            var isCasting = condition[ConditionFlag.Casting] || condition[ConditionFlag.Casting87] || localObject?.IsCasting == true;
+            var actionManager = ActionManager.Instance();
+            var isActionQueued = actionManager is not null && actionManager->ActionQueued;
+            var animationLockSeconds = actionManager is null ? 0f : Math.Max(0f, actionManager->AnimationLock);
+            var isMounted = condition[ConditionFlag.Mounted] || condition[ConditionFlag.RidingPillion];
+            var isMounting = condition[ConditionFlag.Mounting] || condition[ConditionFlag.MountOrOrnamentTransition];
+            var isBetweenAreas = condition[ConditionFlag.BetweenAreas] || condition[ConditionFlag.BetweenAreas51];
+            var limitBreak = LimitBreakController.Instance();
+            var limitCurrent = limitBreak is null ? (ushort)0 : limitBreak->CurrentUnits;
+            var limitBarUnits = limitBreak is null ? (ushort)0 : limitBreak->BarUnits;
+            var limitBarCount = limitBreak is null ? (byte)0 : limitBreak->BarCount;
 
             if (!clientState.IsLoggedIn || localObject is null)
             {
@@ -40,10 +57,24 @@ internal sealed class GameStateService(
                     isPvP,
                     isBoundByDuty,
                     isFrontline,
+                    isInCombat,
+                    isCasting,
+                    isActionQueued,
+                    animationLockSeconds,
+                    isMounted,
+                    isMounting,
+                    isBetweenAreas,
+                    limitCurrent,
+                    limitBarUnits,
+                    limitBarCount,
                     clientState.TerritoryType,
                     clientState.MapId,
                     territoryName,
+                    content.RowId,
+                    contentName,
+                    frontlineMap,
                     null,
+                    [],
                     [],
                     [],
                     [],
@@ -71,7 +102,9 @@ internal sealed class GameStateService(
                     isFrontline,
                     roster.Status.CanClassifyNonMembers,
                     isRosterMember,
-                    player.StatusFlags);
+                    player.StatusFlags.HasFlag(StatusFlags.PartyMember),
+                    player.StatusFlags.HasFlag(StatusFlags.AllianceMember),
+                    player.StatusFlags.HasFlag(StatusFlags.Hostile));
                 var snapshot = Convert(player, classification, isRosterMember);
                 observedPlayers.Add(snapshot);
                 developmentLog.Changed(
@@ -96,6 +129,9 @@ internal sealed class GameStateService(
             // Including ourselves gives clustering a stable anchor and makes a lone
             // visible ally a meaningful two-person group.
             friendlies.Add(local);
+            var objectiveObservations = isFrontline
+                ? CaptureObjectiveObservations(local.Position)
+                : [];
 
             developmentLog.Changed(
                 "classification-roster",
@@ -111,14 +147,28 @@ internal sealed class GameStateService(
                 isPvP,
                 isBoundByDuty,
                 isFrontline,
+                isInCombat,
+                isCasting,
+                isActionQueued,
+                animationLockSeconds,
+                isMounted,
+                isMounting,
+                isBetweenAreas,
+                limitCurrent,
+                limitBarUnits,
+                limitBarCount,
                 clientState.TerritoryType,
                 clientState.MapId,
                 territoryName,
+                content.RowId,
+                contentName,
+                frontlineMap,
                 local,
                 friendlies,
                 enemies,
                 unknownPlayers,
                 observedPlayers,
+                objectiveObservations,
                 roster.Status,
                 string.Empty);
         }
@@ -151,7 +201,10 @@ internal sealed class GameStateService(
             player.Position,
             player.CurrentHp,
             player.MaxHp,
+            player.CurrentMp,
+            player.MaxMp,
             player.ShieldPercentage,
+            player.TargetObjectId,
             classification,
             flags,
             flags.HasFlag(StatusFlags.PartyMember),
@@ -191,12 +244,13 @@ internal sealed class GameStateService(
                     $"Alliance roster read failed; non-member PCs remain Unknown ({ex.GetType().Name})."));
         }
 
-        var canClassifyNonMembers = isFrontline && isAlliance && declaredCount >= 8 && entityIds.Count >= 2;
+        var plausibleRosterSize = declaredCount is >= 8 and <= 24 && entityIds.Count is >= 2 and <= 24;
+        var canClassifyNonMembers = isFrontline && isAlliance && plausibleRosterSize;
         var explanation = !isFrontline
             ? "Not in a recognized Frontline duty; non-member classification is disabled."
             : canClassifyNonMembers
                 ? "Alliance roster is available; positive membership is Friendly and other loaded PCs are Enemy candidates."
-                : "Frontline alliance roster is not authoritative yet; non-member PCs remain Unknown.";
+                : $"Frontline alliance roster is not authoritative yet (declared {declaredCount}, resolved {entityIds.Count}); non-member PCs remain Unknown.";
 
         return new TeamRoster(
             entityIds,
@@ -208,6 +262,35 @@ internal sealed class GameStateService(
         HashSet<uint> EntityIds,
         HashSet<ulong> ObjectIds,
         FrontlineTeamStatus Status);
+
+    private IReadOnlyList<ObjectiveObservation> CaptureObjectiveObservations(System.Numerics.Vector3 localPosition)
+    {
+        var observations = new List<ObjectiveObservation>();
+        foreach (var gameObject in objects)
+        {
+            if (gameObject is null || gameObject.ObjectKind is not (ObjectKind.EventObj or ObjectKind.BattleNpc))
+                continue;
+
+            var delta = gameObject.Position - localPosition;
+            if ((delta.X * delta.X) + (delta.Z * delta.Z) > 300f * 300f)
+                continue;
+
+            var battle = gameObject as IBattleChara;
+            observations.Add(new ObjectiveObservation(
+                gameObject.GameObjectId,
+                gameObject.EntityId,
+                gameObject.BaseId,
+                gameObject.Name.TextValue,
+                gameObject.ObjectKind.ToString(),
+                gameObject.Position,
+                gameObject.IsTargetable,
+                gameObject.IsDead,
+                battle?.CurrentHp ?? 0,
+                battle?.MaxHp ?? 0));
+        }
+
+        return observations;
+    }
 
     private string ResolveStatusName(uint id)
     {

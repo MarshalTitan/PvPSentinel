@@ -1,74 +1,91 @@
 # PvPSentinel
 
-PvPSentinel is a standalone Dalamud plugin under active beta development for explainable, stable Frontline movement and Machinist PvP combat decisions. Its source and normal GitHub releases live in this repository and are distributed through the central `MarshalTitan/Sentinel` custom-plugin catalog.
+PvPSentinel is an experimental Dalamud plugin for Frontline strategy, safe navigation, match lifecycle management, and modular native PvP combat. PvPSentinel can remain the strategic brain and navigation owner while an independent external combat system handles job actions, or run its first native Machinist module in a read-only observer mode.
 
-## Milestone 1 status
+MMOMinion, AnyoneCore, Anyone's Champion, ChampionMachinist, TensorCore, and TensorReactions are not dependencies. The native implementation uses public Dalamud/game state and locally verified action data only.
 
-Implemented:
+## Current development milestone
 
-- Dalamud API 15 / .NET 10 plugin project and valid development ZIP packaging
-- `/pvpsentinel` diagnostics and `/pvpsentinel config` settings
-- saved configuration with a master enable switch
-- direct `IClientState` PvP detection
-- language-independent Frontline detection from local `TerritoryType` / `ContentFinderCondition` data
-- loaded friendly/enemy player snapshots with job, position, HP, shield, targetability, and statuses
-- Frontline-specific three-way player classification using live party/alliance membership, with Unknown as the fail-safe fallback
-- per-player classification diagnostics including IDs, raw status flags, membership flags, targetability, and distance
-- friendly clustering, main-force selection, density, confidence, and movement trend
-- main-group commitment and meaningful-size hysteresis
-- configurable target scoring and safe low-HP finish opportunities
-- behavior states for idle, regroup, follow, engage, finish, retreat, death, and respawn regroup
-- vnavmesh adapter using the current supported IPC surface
-- stable ranged follow destinations with commitment time and switch-distance hysteresis
-- modular MCH PvP combat decision/execution layer
-- mandatory diagnostics and state-transition logging
-- live diagnostic-window visibility control with the saved preference restored after reload
-- opt-in throttled development logging for classification, clustering, targeting, behavior, navigation, repathing, and combat decisions
-- fail-closed safety gates outside recognized Frontline duties
+Implemented in source:
 
-Not implemented in this milestone:
+- fail-closed Frontline player classification with `Friendly`, `Enemy`, and `Unknown` outcomes
+- positive party/alliance/roster membership taking precedence over contradictory hostile flags
+- all five current Frontline campaigns identified by language-neutral content and territory IDs:
+  - The Borderland Ruins (Secure)
+  - Seal Rock (Seize)
+  - The Fields of Glory (Shatter)
+  - Onsal Hakair (Danshig Naadam)
+  - Worqor Chirteh (Triumph)
+- shared friendly clustering, main-force tracking, threat evaluation, target scoring, and ranged-position strategy
+- map-specific objective research policies and diagnostics for Secure, Seize, Shatter, Danshig Naadam, and Triumph
+- generated-path-only vnavmesh navigation: no movement starts until a returned path passes validation
+- path request timeout, path-start verification, progress/stuck detection, bounded repath backoff, and a consecutive-failure pause
+- optional long-distance Mount Roulette use with combat, casting, nearby-enemy, arrival, and transition gates
+- combat provider modes:
+  - `Off`
+  - `External Combat / ACR`
+  - `Native PvPSentinel (experimental)`
+- native development modes:
+  - `Shadow / Observe` (default): evaluates and logs, but the combat subsystem cannot change target, use an action, or move
+  - `Active`: permits the same independently implemented decision pipeline to issue verified native actions
+- a job-neutral native combat provider and `IPvpJobCombatModule` boundary, with the initial Machinist module separated into state, Analysis, burst, execute, and pressure controllers
+- contextual native target evaluation using validity, PvP classification, range, percentage and absolute HP, shields, Guard, observable allied focus, execute potential, current-target stickiness, local support, and overextension
+- configurable commitment time and meaningful score advantage before a valid native target can be replaced
+- common PvP defense for repeatable sub-75% Recuperate, supported-control Purify with Resilience protection, and conservative pressure-aware Guard; automatic Elixir remains intentionally disabled
+- independent MCH policy for Analysis/tool preservation, Wildfire target memory and Full Metal continuation, contextual Marksman's Spite, Dervish, proactive Bishop Autoturret, and normal pressure
+- structured native diagnostics including `WOULD TARGET` and `WOULD USE`, competing scores, action-layer resolution, HP/MP, Guard, allied focus, tools, Wildfire, Overheated, limit gauge, and important rejections
+- external-combat coordination based only on local combat, casting, and queued-action state, with a configurable resume grace period
+- Daily Challenge: Frontline inspection through the game's Duty Finder, including localized game-data names
+- per-map queue allow-list semantics: an unchecked active campaign means “do not queue today”
+- automatic PvPSentinel-owned queue submission, owned duty acceptance, match observation, completion counting, and requeue
+- configurable session match limit and a latched emergency stop
+- detailed diagnostics for classification, map, objectives, group choice, path state, mounting, combat yield, and queue lifecycle
+- pure logic tests for classification priority, all five map identifiers, generated-path rejection rules, external-combat yield timing, Recuperate boundary/MP rules, target-switch hysteresis, and contextual Marksman's Spite allowance
 
-- duty queueing or automatic duty acceptance
-- repeated unattended matches
-- Crystalline Conflict or Rival Wings
-- non-MCH job controllers
-- objective/score memory structures
-- Wrath-controlled PvP rotation (Wrath's documented IPC does not support PvP combos/options)
-- general-availability approval beyond the current active-beta designation
+Objective navigation and queue automation are deliberately separate opt-ins. Objective observations remain visible while objective navigation is off, allowing live object IDs and states to be validated before they steer movement. Secure and Triumph passive capture objects currently remain research-only unless the client exposes positive active-state evidence.
 
-## Safety defaults
+## Safety model
 
-The master switch and combat execution both default to **off**. Navigation can only run when all of these are true:
+Configuration version 3 preserves the earlier fail-closed automation migration and forces every upgraded installation's native development mode to `Shadow / Observe`. Master enable, navigation, mounting, objective navigation, queue automation, and the combat provider all require explicit selection. Selecting Native does not silently activate combat execution.
 
-1. the master switch is enabled;
-2. navigation is enabled;
-3. Dalamud reports PvP excluding the Wolves' Den;
-4. local game data identifies the territory as a Daily Frontline Challenge map;
-5. the local player is alive;
-6. a reliable friendly cluster exists; and
-7. vnavmesh reports that its navigation mesh is ready.
+Strategic movement requires:
 
-Player classification is an additional hard gate. The plugin requires an available Frontline alliance roster and no unresolved player classifications before navigation, targeting, or combat may proceed.
+1. master and navigation enabled;
+2. a recognized Frontline duty and live local player;
+3. authoritative classification with no observed `Unknown` player;
+4. a reliable friendly cluster or field-validated objective destination;
+5. vnavmesh ready; and
+6. a generated path whose start, endpoint, coordinates, and total length pass validation.
 
-Any missing requirement stops owned movement. Combat has additional gates for MCH, an `Engage` or `FinishKill` behavior, a valid selected target, verified local action data, and the separate combat toggle.
+PvPSentinel stops only the vnavmesh path it owns. It never falls back to running directly at a group or objective coordinate. Repeated path failures pause navigation until the destination materially changes or automation is reset.
+
+In `External Combat / ACR` mode, PvPSentinel does not set targets or execute combat actions. It has no IPC contract with MMOMinion or Champion. Local combat, casting, or queued-action state stops PvPSentinel-owned navigation; strategic travel resumes after those signals clear and the configured grace period expires.
+
+In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
+
+Queue automation accepts only a queue session submitted by the current PvPSentinel process. A pre-existing or unrelated Duty Ready prompt is reported but not accepted. If the daily campaign cannot be identified as exactly one allowed map, no queue action is taken.
+
+The emergency stop immediately stops owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every action-capable switch, and sets the combat provider to `Off`. Clearing the latch does not re-enable any switch.
 
 ## Architecture
 
 ```text
 PvPSentinel
-├── GameState       stable Dalamud/Lumina state capture and Frontline detection
+├── GameState       Dalamud/Lumina state, team classification, local action state
 ├── Intelligence    clustering, main-force hysteresis, target scoring
+├── Strategy        shared tactics and per-map objective research policies
 ├── Behavior        high-level state and safety decisions
-├── Navigation      stable destination logic and vnavmesh IPC adapter
-├── Combat          generic interface, native executor, MCH PvP controller
-├── Integrations    isolated optional Wrath boundary
+├── Navigation      mount control, generated path validation, stuck/repath logic
+├── Combat          Off/external/native provider coordination
+│   └── Native      target evaluation, common defense, action executor, job modules
+│       └── Jobs
+│           └── Machinist  state, Analysis, burst, execute, utility, pressure
+├── Queue           daily-map detection and owned Frontline lifecycle
 ├── Models          immutable diagnostic snapshots
-└── UI              configuration and development diagnostics
+└── UI              fail-closed configuration and development diagnostics
 ```
 
-The behavior engine decides whether combat is appropriate. The MCH controller chooses an action. Navigation follows a friendly-force destination and never chooses combat actions.
-
-## Build
+## Build and tests
 
 Prerequisites:
 
@@ -81,85 +98,81 @@ From the repository root:
 ```powershell
 dotnet restore PvPSentinel.csproj
 dotnet build PvPSentinel.csproj -c Release --no-restore
+dotnet run --project Tests/PvPSentinel.LogicTests.csproj -c Release
 ```
 
-Outputs:
+The development DLL is written to `bin\Release\PvPSentinel.dll`; the Dalamud SDK also produces `bin\Release\PvPSentinel\latest.zip`.
 
-- development DLL: `bin\Release\PvPSentinel.dll`
-- installable development ZIP: `bin\Release\PvPSentinel\latest.zip`
+## Staged live validation
 
-## Beta distribution
+Do not begin with movement, combat, objectives, or queue automation enabled.
 
-Distributed beta builds use their own four-part version sequence from `<Version>` in `PvPSentinel.csproj`. Every distributed build must increase that version. Pushing a tag named exactly `v<Version>` builds `PvPSentinel.zip` and publishes it as a normal GitHub release; a mismatched tag fails before publication.
+### Stage A — passive classification and map diagnostics
 
-After the release succeeds, update only the PvPSentinel object in `MarshalTitan/Sentinel/repo.json`:
+- master: off
+- navigation: off
+- mounting: off
+- objective navigation: off
+- queue automation: off
+- combat provider: `Off`
 
-- set `AssemblyVersion` and `TestingAssemblyVersion` to the new version;
-- set both Dalamud API fields to the supported API level;
-- point all three download links to the new `PvPSentinel.zip` release asset;
-- refresh `LastUpdate`; and
-- retain `IsTestingExclusive: false` and `IsHide: false` so normal custom-repository installs receive the beta.
+Inside Frontline, expand nearby-player diagnostics at spawn and during a fight. Confirm every visible teammate is `Friendly`, opponents are `Enemy` even when their raw hostile flag is false, and no observed player is `Unknown`. Record declared/resolved alliance counts if classification is not reliable.
 
-The local Dev Plugin Location described below remains available only as an emergency/debug path.
+Also capture the objective-research rows for the active map: name, base ID, object kind, targetability, HP, position, and observed live state. This evidence is required before widening map-specific objective authorization.
 
-## Local Dalamud loading
+### Stage B — validated group navigation
 
-1. Build the project in Release mode.
-2. In game, open `/xlsettings` and go to **Experimental**.
-3. Add the full path to `bin\Release\PvPSentinel.dll` under **Dev Plugin Locations**.
-4. Open `/xlplugins`, locate the installed development plugin, and enable it.
-5. Run `/pvpsentinel`.
+- master: on
+- navigation: on
+- combat provider: `Off`
+- objective navigation: off
 
-Do not enable navigation or combat on the first load. Confirm the diagnostics window works and configuration survives a reload first.
+Verify every move passes through `RequestingPath` and `PathValidated`/`FollowingPath`. Confirm blocked terrain produces repath/backoff or a failure pause, never direct travel toward the coordinate. Test death, respawn regrouping, long-distance mounting, close-range dismounting, and the emergency stop.
 
-## First Frontline test sequence
+### Stage C — external combat coordination
 
-Run the stages separately and use the master switch as the emergency stop.
+- master: on
+- navigation: on
+- combat provider: `External Combat / ACR`
 
-### Stage A — passive diagnostics
+Verify PvPSentinel stops its owned path while the local player is in combat, casting, or has a queued action, then generates/resumes strategic travel after the grace period. External targeting and actions should remain entirely independent.
 
-- Master enabled: **off**
-- Navigation: **off**
-- Combat: **off**
-- Target selection: **on**
+### Stage D — daily campaign and lifecycle
 
-Enter Frontline as MCH and verify map/mode/job detection, friendly and enemy counts, cluster membership, main-group confidence, target scores, finish flags, death, and respawn transitions.
+Keep the match limit at `1`. First verify the detected campaign and allowed-map decision without submitting. Then opt into queue automation and observe selection, join, Duty Ready acceptance, match count, natural duty exit, limit handling, and requeue behavior.
 
-For the classification re-test, expand **Nearby PCs within 40y** during both spawn and an active fight. Confirm that members of your own Frontline alliance are Friendly, visible opposing players are Enemy even when their Hostile flag is false, and no observed player is silently folded into Friendly. If **Classification reliable** is No or any nearby PC is Unknown, stop after Stage A and capture the expanded row plus the alliance roster counts.
+### Stage E — native MCH shadow comparison
 
-The **Show diagnostic window** checkbox now changes the live window immediately and persists that visibility preference. **Verbose logging** emits throttled development decisions to `Dalamud.log`; switching it on clears prior suppression state so the current classification, cluster, behavior, targeting, navigation, and combat details appear promptly without being repeated every update.
+- master: on
+- navigation: as required for the strategic test
+- combat provider: `Native PvPSentinel (experimental)`
+- native development mode: `Shadow / Observe`
+- verbose logging: on
 
-### Stage B — movement only
+Run the external ACR normally and compare its observed choices with `WOULD TARGET` and `WOULD USE`. Confirm there are no PvPSentinel-originated target changes or actions. Record target scores/switches, defensive threshold decisions, primed-tool and Analysis state, Wildfire state, allied focus, limit gauge, and rejection details. Do not select Active until the shadow trace has been reviewed.
 
-- Master enabled: **on**
-- Navigation: **on**
-- Combat: **off**
+The first live pass must specifically validate:
 
-Verify that movement follows the main force from a ranged offset, does not bounce between small splinter groups, and stops immediately when the master switch is disabled.
+- whether player `TargetObjectId` observations reliably represent allied focus and incoming enemy pressure in a 72-player Frontline;
+- current PvP status visibility/ownership for Guard, Resilience, removable controls, Analysis/tool priming, Overheated, Wildfire, and Chain Saw vulnerability;
+- PvP limit-gauge unit scaling and Marksman's Spite readiness across death/respawn;
+- self/enemy target semantics and client action-readiness results for Recuperate, Purify, Guard, Dervish, Bishop, Wildfire, and Full Metal Field;
+- whether the equipped Frontline role action makes Dervish locally available while Bravery/Eagle Eye remain cleanly unavailable;
+- target hysteresis and overextension behavior during dense fights; and
+- Wildfire target retention, four-hit progression, expiry, invalid-target abandonment, and unsafe-continuation abandonment.
 
-### Stage C — combat opt-in
+Active Native MCH remains blocked by release discipline, not by architecture: it is an explicit local development selection and requires the shadow findings above before live control testing.
 
-Only after Stage A and Stage B diagnostics are credible:
+## Release discipline
 
-- Master enabled: **on**
-- Navigation: as appropriate for the test
-- Combat: **on**
+This work must not be distributed from an untagged development checkpoint. A release requires:
 
-Observe the desired action, last accepted action, Guard handling, target changes, and finish-opportunity reasoning. Disable the master switch at once if targeting or action choice is wrong.
+- clean current-API build and passing logic tests;
+- reviewed Native MCH Shadow / Observe traces with no target/action mutations attributable to PvPSentinel;
+- Stage A classification evidence;
+- staged live path, mount, external-yield, campaign-detection, and queue-lifecycle validation;
+- any required fixes from those tests;
+- a version bump and matching `v<Version>` tag; and
+- a subsequent `MarshalTitan/Sentinel` catalog update only after the release asset succeeds.
 
-## Feedback needed from the first in-game test
-
-Capture the diagnostic values before and after any incorrect decision:
-
-- territory/map and detected mode
-- behavior and commitment time
-- every visible cluster's player count, confidence, and center
-- nearby 20y/40y friendly and enemy counts
-- chosen target, HP, distance, statuses, score, and finish flag
-- destination and vnavmesh path state
-- desired/last action and explanation
-- relevant `Dalamud.log` lines containing `PvPSentinel`
-
-## Third-party boundaries
-
-PvPSentinel uses vnavmesh only through documented IPC endpoints. Wrath Combo is optional and inactive in this milestone because its documented IPC explicitly does not support PvP combo/options control. The MCH controller is an independent implementation; current action identifiers were cross-checked against local game data and the BSD-3-Clause Wrath Combo source.
+Until those gates pass, do not create a release tag or update the public catalog.

@@ -1,4 +1,3 @@
-using Dalamud.Game.ClientState.Objects.Enums;
 using PvPSentinel.Models;
 
 namespace PvPSentinel.GameState;
@@ -10,12 +9,10 @@ internal static class FrontlinePlayerResolver
         bool isFrontline,
         bool canClassifyNonMembers,
         bool isRosterMember,
-        StatusFlags flags)
+        bool partyMember,
+        bool allianceMember,
+        bool hostile)
     {
-        var partyMember = flags.HasFlag(StatusFlags.PartyMember);
-        var allianceMember = flags.HasFlag(StatusFlags.AllianceMember);
-        var hostile = flags.HasFlag(StatusFlags.Hostile);
-
         // Positive membership is authoritative. It wins over contradictory raw
         // hostility flags so a team member can never become an attack candidate.
         if (isLocalPlayer || isRosterMember || partyMember || allianceMember)

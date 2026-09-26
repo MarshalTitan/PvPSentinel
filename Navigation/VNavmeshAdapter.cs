@@ -8,9 +8,12 @@ namespace PvPSentinel.Navigation;
 internal sealed class VNavmeshAdapter : IVNavmeshAdapter
 {
     private readonly ICallGateSubscriber<bool> navReady;
-    private readonly ICallGateSubscriber<Vector3, bool, float, bool> moveCloseTo;
+    private readonly ICallGateSubscriber<Vector3, Vector3, bool, float, Task<List<Vector3>>> pathfind;
+    private readonly ICallGateSubscriber<List<Vector3>, bool, object> moveTo;
+    private readonly ICallGateSubscriber<float, object> setTolerance;
     private readonly ICallGateSubscriber<bool> pathRunning;
     private readonly ICallGateSubscriber<bool> pathfindRunning;
+    private readonly ICallGateSubscriber<int> waypointCount;
     private readonly ICallGateSubscriber<object> stop;
     private readonly DevelopmentLogger developmentLog;
 
@@ -18,25 +21,50 @@ internal sealed class VNavmeshAdapter : IVNavmeshAdapter
     {
         this.developmentLog = developmentLog;
         navReady = pi.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady");
-        moveCloseTo = pi.GetIpcSubscriber<Vector3, bool, float, bool>("vnavmesh.SimpleMove.PathfindAndMoveCloseTo");
+        pathfind = pi.GetIpcSubscriber<Vector3, Vector3, bool, float, Task<List<Vector3>>>("vnavmesh.Nav.PathfindWithTolerance");
+        moveTo = pi.GetIpcSubscriber<List<Vector3>, bool, object>("vnavmesh.Path.MoveTo");
+        setTolerance = pi.GetIpcSubscriber<float, object>("vnavmesh.Path.SetTolerance");
         pathRunning = pi.GetIpcSubscriber<bool>("vnavmesh.Path.IsRunning");
-        pathfindRunning = pi.GetIpcSubscriber<bool>("vnavmesh.SimpleMove.PathfindInProgress");
+        pathfindRunning = pi.GetIpcSubscriber<bool>("vnavmesh.Nav.PathfindInProgress");
+        waypointCount = pi.GetIpcSubscriber<int>("vnavmesh.Path.NumWaypoints");
         stop = pi.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
     }
 
     public bool IsReady => SafeInvoke("nav-ready-ipc", navReady, false);
     public bool IsPathRunning => SafeInvoke("nav-running-ipc", pathRunning, false);
     public bool IsPathfindInProgress => SafeInvoke("nav-pathfind-ipc", pathfindRunning, false);
+    public int WaypointCount => SafeInvoke("nav-waypoint-count-ipc", waypointCount, 0);
 
-    public bool MoveCloseTo(Vector3 destination, float tolerance)
+    public async Task<IReadOnlyList<Vector3>> FindPathAsync(Vector3 origin, Vector3 destination, float tolerance)
     {
         try
         {
-            return moveCloseTo.InvokeFunc(destination, false, tolerance);
+            var task = pathfind.InvokeFunc(origin, destination, false, tolerance);
+            if (task is null)
+                return [];
+            return await task.ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            developmentLog.Throttled("nav-move-ipc-failure", $"vnavmesh move IPC threw {ex.GetType().Name}: {ex.Message}");
+            developmentLog.Throttled("nav-pathfind-ipc-failure", $"vnavmesh pathfind IPC threw {ex.GetType().Name}: {ex.Message}");
+            return [];
+        }
+    }
+
+    public bool StartPath(IReadOnlyList<Vector3> waypoints, float tolerance)
+    {
+        if (waypoints.Count < 2)
+            return false;
+
+        try
+        {
+            setTolerance.InvokeAction(tolerance);
+            moveTo.InvokeAction(waypoints.ToList(), false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            developmentLog.Throttled("nav-start-ipc-failure", $"vnavmesh Path.MoveTo IPC threw {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }

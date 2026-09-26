@@ -44,7 +44,10 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Bound by duty", YesNo(game.IsBoundByDuty));
         KeyValue("Mode", game.IsFrontline ? "Frontline" : "Unsupported / none");
         KeyValue("Map", $"{game.MapName} ({game.TerritoryId}/{game.MapId})");
+        KeyValue("Frontline campaign", $"{game.FrontlineMap.DisplayName()} (CF {game.ContentFinderConditionId})");
         KeyValue("Job", local is null ? "Unavailable" : $"{local.JobAbbreviation} ({local.JobId})");
+        KeyValue("Combat / casting / queued action", $"{YesNo(game.IsInCombat)} / {YesNo(game.IsCasting)} / {YesNo(game.IsActionQueued)}");
+        KeyValue("Animation lock / mounted", $"{game.AnimationLockSeconds:F2}s / {YesNo(game.IsMounted)}");
         if (!string.IsNullOrEmpty(game.ReadError))
             ColoredText(new Vector4(1f, 0.45f, 0.3f, 1f), game.ReadError);
 
@@ -53,7 +56,7 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Declared / resolved members", $"{game.TeamStatus.DeclaredMemberCount} / {game.TeamStatus.ResolvedMemberCount}");
         KeyValue("Non-member rule available", YesNo(game.TeamStatus.CanClassifyNonMembers));
         KeyValue("Classification reliable", YesNo(game.IsClassificationReliable));
-        ImGui.TextWrapped(game.TeamStatus.Explanation);
+        ImGui.TextWrapped(game.ClassificationReliabilityExplanation);
 
         Section("Behavior");
         ColoredText(BehaviorColor(state.Behavior), state.Behavior.ToString().ToUpperInvariant());
@@ -116,7 +119,7 @@ internal sealed class DiagnosticWindow : Window
             ImGui.TreePop();
         }
 
-        Section("Current Target");
+        Section("Strategic Target Recommendation");
         if (state.Target is null)
         {
             ImGui.TextDisabled("None");
@@ -133,18 +136,75 @@ internal sealed class DiagnosticWindow : Window
             ImGui.TextWrapped(state.Target.Explanation);
         }
 
+        Section("Map Strategy / Objectives");
+        if (state.Objective is null)
+        {
+            ImGui.TextDisabled("No recognized objective candidate. Research observations remain available below.");
+        }
+        else
+        {
+            KeyValue("Strategy", state.Objective.Strategy);
+            KeyValue("Objective", $"{state.Objective.Objective.Name} (base {state.Objective.Objective.BaseId})");
+            KeyValue("Score / confidence", $"{state.Objective.Score:F1} / {state.Objective.Confidence:F2}");
+            KeyValue("Actionable", YesNo(state.Objective.IsActionable));
+            KeyValue("Position", FormatVector(state.Objective.Objective.Position));
+            ImGui.TextWrapped(state.Objective.Explanation);
+        }
+
+        if (ImGui.TreeNode($"Objective research objects ({game.ObjectiveObservations.Count})"))
+        {
+            foreach (var observation in game.ObjectiveObservations.OrderBy(item => local is null ? 0f : HorizontalDistance(local.Position, item.Position)).Take(100))
+            {
+                var distance = local is null ? 0f : HorizontalDistance(local.Position, observation.Position);
+                ImGui.BulletText($"{observation.ObjectKind} '{observation.Name}' base={observation.BaseId} targetable={observation.IsTargetable} hp={observation.CurrentHp}/{observation.MaxHp} distance={distance:F1}y pos={FormatVector(observation.Position)}");
+            }
+            ImGui.TreePop();
+        }
+
         Section("Navigation");
         KeyValue("vnavmesh available", YesNo(vnav.IsReady));
         KeyValue("Pathing / pathfinding", $"{YesNo(vnav.IsPathRunning)} / {YesNo(vnav.IsPathfindInProgress)}");
+        KeyValue("Owned path state", state.Navigation.PathState.ToString());
+        KeyValue("Waypoints / failures", $"{state.Navigation.WaypointCount} / {state.Navigation.ConsecutiveFailures}");
+        KeyValue("Mount state", state.Navigation.MountState.ToString());
         KeyValue("Destination", state.Navigation.Destination is { } destination ? FormatVector(destination) : "None");
         ImGui.TextWrapped(state.Navigation.Explanation);
 
         Section("Combat");
-        KeyValue("MCH controller active", YesNo(state.Combat.ControllerActive));
+        KeyValue("Provider", state.Combat.Provider.ToString());
+        KeyValue("Controller active", YesNo(state.Combat.ControllerActive));
+        KeyValue("Yield owned navigation", YesNo(state.Combat.YieldNavigation));
         KeyValue("Last accepted action", lastAction());
         KeyValue("Next desired action", state.Combat.DesiredAction);
         ImGui.TextWrapped(state.Combat.Explanation);
+        if (state.Combat.Native is { } native)
+        {
+            KeyValue("Native mode / state", $"{native.Mode} / {native.CombatState}");
+            KeyValue("Native selected target", native.SelectedTarget);
+            KeyValue("Target score / competitor", $"{native.SelectedTargetScore:F1} / {native.CompetingTarget}");
+            KeyValue("Target switch reason", native.TargetSwitchReason);
+            KeyValue("Player HP / MP", native.PlayerResources);
+            KeyValue("Target HP / Guard / allied focus", $"{native.TargetHealth} / {YesNo(native.TargetGuarding)} / {native.AlliedFocus}");
+            KeyValue("Analysis / tool state", native.ToolState);
+            KeyValue("Wildfire state", native.WildfireState);
+            KeyValue("Overheated", YesNo(native.Overheated));
+            KeyValue("Limit gauge", native.LimitBreakState);
+            KeyValue("Action resolution", native.ActionResolution);
+            if (ImGui.TreeNode($"Important native rejections ({native.Rejections.Count})"))
+            {
+                foreach (var rejection in native.Rejections)
+                    ImGui.BulletText(rejection);
+                ImGui.TreePop();
+            }
+        }
         KeyValue("Wrath", wrath.Status);
+
+        Section("Frontline Lifecycle");
+        KeyValue("Queue state", state.Queue.State.ToString());
+        KeyValue("Detected daily campaign", state.Queue.DailyCampaign.DisplayName());
+        KeyValue("Completed / limit", $"{state.Queue.CompletedMatches} / {state.Queue.MatchLimit}");
+        KeyValue("Emergency stop latched", YesNo(state.Queue.EmergencyStopLatched));
+        ImGui.TextWrapped(state.Queue.Explanation);
     }
 
     private static void KeyValue(string key, string value)

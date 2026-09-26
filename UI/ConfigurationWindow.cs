@@ -1,5 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using PvPSentinel.Models;
 using System.Numerics;
 
 namespace PvPSentinel.UI;
@@ -9,31 +10,63 @@ internal sealed class ConfigurationWindow : Window
     private readonly Configuration config;
     private readonly Action<bool> diagnosticsVisibilityChanged;
     private readonly Action<bool> verboseLoggingChanged;
+    private readonly Action emergencyStop;
+    private readonly Action clearEmergencyStop;
+    private readonly Action resetMatchCounter;
+    private readonly Func<bool> isEmergencyStopped;
 
     public ConfigurationWindow(
         Configuration config,
         Action<bool> diagnosticsVisibilityChanged,
-        Action<bool> verboseLoggingChanged)
+        Action<bool> verboseLoggingChanged,
+        Action emergencyStop,
+        Action clearEmergencyStop,
+        Action resetMatchCounter,
+        Func<bool> isEmergencyStopped)
         : base("PvP Sentinel - Configuration###PvPSentinelConfiguration")
     {
         this.config = config;
         this.diagnosticsVisibilityChanged = diagnosticsVisibilityChanged;
         this.verboseLoggingChanged = verboseLoggingChanged;
-        Size = new Vector2(520, 620);
+        this.emergencyStop = emergencyStop;
+        this.clearEmergencyStop = clearEmergencyStop;
+        this.resetMatchCounter = resetMatchCounter;
+        this.isEmergencyStopped = isEmergencyStopped;
+        Size = new Vector2(620, 820);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
     public override void Draw()
     {
-        ImGui.TextWrapped("Development controls. The master switch and combat execution are off by default. PvPSentinel also refuses to automate outside a recognized Frontline territory.");
+        ImGui.TextWrapped("Development controls. Master, navigation, queue lifecycle, mounting, objective navigation, and combat provider are fail-closed. Match movement/combat requires a recognized Frontline; the out-of-duty lifecycle is limited to Daily Challenge: Frontline.");
+        ImGui.Separator();
+
+        if (ImGui.Button("EMERGENCY STOP", new Vector2(180, 34)))
+            emergencyStop();
+        ImGui.SameLine();
+        if (isEmergencyStopped())
+        {
+            ImGui.TextWrapped("STOP LATCHED");
+            if (ImGui.Button("Clear emergency-stop latch"))
+                clearEmergencyStop();
+        }
+        else
+        {
+            ImGui.TextDisabled("Stops owned movement/queue and disables every action-capable switch.");
+        }
+
         ImGui.Separator();
 
         DrawCheckbox("Enable PvPSentinel", config.Enabled, value => config.Enabled = value);
         ImGui.Indent();
         DrawCheckbox("Enable navigation", config.NavigationEnabled, value => config.NavigationEnabled = value);
-        DrawCheckbox("Enable combat execution", config.CombatEnabled, value => config.CombatEnabled = value);
-        DrawCheckbox("Enable target selection", config.TargetSelectionEnabled, value => config.TargetSelectionEnabled = value);
+        DrawCombatProvider();
+        if (config.CombatProvider == CombatProvider.NativePvPSentinel)
+            DrawNativeCombatMode();
+        DrawCheckbox("Enable strategic target scoring", config.TargetSelectionEnabled, value => config.TargetSelectionEnabled = value);
         DrawCheckbox("Prioritize safe finish-KO opportunities", config.FinishKoPriorityEnabled, value => config.FinishKoPriorityEnabled = value);
+        DrawCheckbox("Enable long-distance mounting", config.MountingEnabled, value => config.MountingEnabled = value);
+        DrawCheckbox("Enable validated objective navigation", config.ObjectiveNavigationEnabled, value => config.ObjectiveNavigationEnabled = value);
         ImGui.Unindent();
 
         ImGui.Spacing();
@@ -55,6 +88,12 @@ internal sealed class ConfigurationWindow : Window
         DrawFloat("MCH ranged position offset", config.RangedPositionOffset, 4f, 30f, value => config.RangedPositionOffset = value, "%.1f y");
         DrawFloat("Destination switch threshold", config.DestinationSwitchDistance, 3f, 25f, value => config.DestinationSwitchDistance = value, "%.1f y");
         DrawFloat("Minimum destination commitment", config.MinimumDestinationCommitmentSeconds, 1f, 15f, value => config.MinimumDestinationCommitmentSeconds = value, "%.1f s");
+        DrawFloat("Path request timeout", config.PathRequestTimeoutSeconds, 2f, 20f, value => config.PathRequestTimeoutSeconds = value, "%.1f s");
+        DrawFloat("Stuck timeout", config.StuckTimeoutSeconds, 2f, 12f, value => config.StuckTimeoutSeconds = value, "%.1f s");
+        DrawInt("Maximum consecutive path failures", config.MaximumPathFailures, 1, 8, value => config.MaximumPathFailures = value);
+        DrawFloat("Mount distance", config.MountDistance, 30f, 120f, value => config.MountDistance = value, "%.1f y");
+        DrawFloat("Dismount distance", config.DismountDistance, 10f, 45f, value => config.DismountDistance = value, "%.1f y");
+        DrawFloat("Mount enemy safety radius", config.MountEnemySafetyRadius, 15f, 50f, value => config.MountEnemySafetyRadius = value, "%.1f y");
 
         Section("Targets");
         DrawFloat("Enemy engagement radius", config.EnemyEngagementRadius, 10f, 40f, value => config.EnemyEngagementRadius = value, "%.1f y");
@@ -62,6 +101,47 @@ internal sealed class ConfigurationWindow : Window
         DrawFloat("Finish target max chase", config.FinishTargetMaxChaseDistance, 10f, 40f, value => config.FinishTargetMaxChaseDistance = value, "%.1f y");
         DrawFloat("Target switch score advantage", config.TargetSwitchScoreAdvantage, 0f, 40f, value => config.TargetSwitchScoreAdvantage = value, "%.0f");
         DrawFloat("Minimum target commitment", config.MinimumTargetCommitmentSeconds, 0f, 8f, value => config.MinimumTargetCommitmentSeconds = value, "%.1f s");
+        DrawFloat("External ACR yield grace", config.ExternalCombatYieldSeconds, 0.5f, 10f, value => config.ExternalCombatYieldSeconds = value, "%.1f s");
+
+        Section("Native PvP combat (experimental)");
+        ImGui.TextWrapped("Shadow / Observe is the safe default: the native combat subsystem evaluates and logs targets/actions but cannot target, act, or move. Active permits verified native actions; strategic navigation remains a separate controller.");
+        DrawFloat("Recuperate below HP", config.NativeRecuperateHpPercent, 25f, 95f, value => config.NativeRecuperateHpPercent = value, "%.0f %%");
+        DrawFloat("Guard danger HP", config.NativeGuardHpPercent, 10f, 60f, value => config.NativeGuardHpPercent = value, "%.0f %%");
+        DrawInt("Guard minimum threats", config.NativeGuardMinimumThreats, 1, 6, value => config.NativeGuardMinimumThreats = value);
+        DrawFloat("Native target evaluation range", config.NativeTargetMaximumRange, 25f, 60f, value => config.NativeTargetMaximumRange = value, "%.0f y");
+        DrawFloat("Native overextension range", config.NativeTargetOverextensionRange, 20f, 50f, value => config.NativeTargetOverextensionRange = value, "%.0f y");
+        DrawFloat("Native switch score advantage", config.NativeTargetSwitchAdvantage, 0f, 60f, value => config.NativeTargetSwitchAdvantage = value, "%.0f");
+        DrawFloat("Native target commitment", config.NativeTargetMinimumCommitmentSeconds, 0f, 8f, value => config.NativeTargetMinimumCommitmentSeconds = value, "%.1f s");
+        DrawInt("Marksman's Spite base damage", (int)config.NativeMarksmanBaseDamage, 20000, 60000, value => config.NativeMarksmanBaseDamage = (uint)value);
+        DrawInt("Marksman's Spite focus allowance", (int)config.NativeMarksmanFocusAllowance, 0, 20000, value => config.NativeMarksmanFocusAllowance = (uint)value);
+        DrawInt("Marksman's Spite max effective HP", (int)config.NativeMarksmanMaximumEffectiveHp, 40000, 120000, value => config.NativeMarksmanMaximumEffectiveHp = (uint)value);
+        if (ImGui.TreeNode("Advanced native target-score weights"))
+        {
+            DrawFloat("Range weight", config.NativeTargetRangeWeight, 0f, 80f, value => config.NativeTargetRangeWeight = value, "%.0f");
+            DrawFloat("HP-percent weight", config.NativeTargetHpPercentWeight, 0f, 80f, value => config.NativeTargetHpPercentWeight = value, "%.0f");
+            DrawFloat("Absolute-HP weight", config.NativeTargetAbsoluteHpWeight, 0f, 80f, value => config.NativeTargetAbsoluteHpWeight = value, "%.0f");
+            DrawFloat("Maximum-HP weight", config.NativeTargetMaximumHpWeight, 0f, 80f, value => config.NativeTargetMaximumHpWeight = value, "%.0f");
+            DrawFloat("Allied-focus per player", config.NativeTargetAlliedFocusPerPlayer, 0f, 30f, value => config.NativeTargetAlliedFocusPerPlayer = value, "%.0f");
+            DrawFloat("Allied-focus cap", config.NativeTargetAlliedFocusCap, 0f, 100f, value => config.NativeTargetAlliedFocusCap = value, "%.0f");
+            DrawFloat("Execute score bonus", config.NativeTargetExecuteBonus, 0f, 80f, value => config.NativeTargetExecuteBonus = value, "%.0f");
+            DrawFloat("Current-target stickiness", config.NativeTargetStickinessBonus, 0f, 60f, value => config.NativeTargetStickinessBonus = value, "%.0f");
+            DrawFloat("Guard penalty", config.NativeTargetGuardPenalty, 0f, 100f, value => config.NativeTargetGuardPenalty = value, "%.0f");
+            DrawFloat("Overextension penalty", config.NativeTargetOverextensionPenalty, 0f, 120f, value => config.NativeTargetOverextensionPenalty = value, "%.0f");
+            DrawFloat("Unsupported-target penalty", config.NativeTargetUnsupportedPenalty, 0f, 80f, value => config.NativeTargetUnsupportedPenalty = value, "%.0f");
+            ImGui.TreePop();
+        }
+
+        Section("Frontline lifecycle and allowed maps");
+        DrawCheckbox("Enable automatic queue / accept / requeue", config.QueueAutomationEnabled, value => config.QueueAutomationEnabled = value);
+        ImGui.TextWrapped("The current campaign must be detected from the game's Daily Challenge details. If detection is uncertain or today's map is unchecked, PvPSentinel will not queue.");
+        DrawCheckbox("The Borderland Ruins (Secure)", config.AllowBorderlandRuins, value => config.AllowBorderlandRuins = value);
+        DrawCheckbox("Seal Rock (Seize)", config.AllowSealRock, value => config.AllowSealRock = value);
+        DrawCheckbox("The Fields of Glory (Shatter)", config.AllowFieldsOfGlory, value => config.AllowFieldsOfGlory = value);
+        DrawCheckbox("Onsal Hakair (Danshig Naadam)", config.AllowOnsalHakair, value => config.AllowOnsalHakair = value);
+        DrawCheckbox("Worqor Chirteh (Triumph)", config.AllowWorqorChirteh, value => config.AllowWorqorChirteh = value);
+        DrawInt("Match limit (this session)", config.MatchLimit, 1, 100, value => config.MatchLimit = value);
+        if (ImGui.Button("Reset session match counter"))
+            resetMatchCounter();
 
         ImGui.Spacing();
         if (ImGui.Button("Save configuration"))
@@ -86,6 +166,72 @@ internal sealed class ConfigurationWindow : Window
             return;
         setter(value);
         config.Save();
+    }
+
+    private void DrawInt(string label, int current, int min, int max, Action<int> setter)
+    {
+        var value = current;
+        if (!ImGui.SliderInt(label, ref value, min, max))
+            return;
+        setter(value);
+        config.Save();
+    }
+
+    private void DrawCombatProvider()
+    {
+        var label = config.CombatProvider switch
+        {
+            CombatProvider.ExternalAcr => "External Combat / ACR",
+            CombatProvider.NativePvPSentinel => "Native PvPSentinel (experimental)",
+            _ => "Off",
+        };
+
+        if (ImGui.BeginCombo("Combat provider", label))
+        {
+            SelectProvider(CombatProvider.Off, "Off");
+            SelectProvider(CombatProvider.ExternalAcr, "External Combat / ACR");
+            SelectProvider(CombatProvider.NativePvPSentinel, "Native PvPSentinel (experimental)");
+            ImGui.EndCombo();
+        }
+
+        ImGui.TextWrapped("External mode has no MMOMinion or Champion IPC. It only yields PvPSentinel-owned movement from local combat/action state.");
+    }
+
+    private void SelectProvider(CombatProvider provider, string label)
+    {
+        var selected = config.CombatProvider == provider;
+        if (ImGui.Selectable(label, selected))
+        {
+            config.CombatProvider = provider;
+            config.Save();
+        }
+        if (selected)
+            ImGui.SetItemDefaultFocus();
+    }
+
+    private void DrawNativeCombatMode()
+    {
+        var label = config.NativeCombatMode == NativeCombatMode.Active
+            ? "Active (experimental)"
+            : "Shadow / Observe (safe default)";
+        if (!ImGui.BeginCombo("Native development mode", label))
+            return;
+
+        SelectNativeMode(NativeCombatMode.ShadowObserve, "Shadow / Observe (safe default)");
+        SelectNativeMode(NativeCombatMode.Active, "Active (experimental)");
+        ImGui.EndCombo();
+    }
+
+    private void SelectNativeMode(NativeCombatMode mode, string label)
+    {
+        var selected = config.NativeCombatMode == mode;
+        if (ImGui.Selectable(label, selected))
+        {
+            config.NativeCombatMode = mode;
+            config.Save();
+        }
+        if (selected)
+            ImGui.SetItemDefaultFocus();
     }
 
     private static void Section(string title)

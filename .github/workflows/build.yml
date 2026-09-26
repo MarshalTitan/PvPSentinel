@@ -46,6 +46,9 @@ jobs:
 
       - run: dotnet build PvPSentinel.csproj -c Release --no-restore
 
+      - name: Run pure logic tests
+        run: dotnet run --project Tests/PvPSentinel.LogicTests.csproj -c Release
+
       - name: Prepare installable package
         shell: pwsh
         run: Copy-Item bin/Release/PvPSentinel/latest.zip bin/Release/PvPSentinel/PvPSentinel.zip
@@ -57,13 +60,24 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = $env:GITHUB_REF_NAME.TrimStart('v')
-          gh release create $env:GITHUB_REF_NAME bin/Release/PvPSentinel/PvPSentinel.zip `
-            --verify-tag `
+          [xml]$project = Get-Content PvPSentinel.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          $tag = "v$version"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists; build verification is complete."
+            exit 0
+          }
+
+          gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
+            --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "PvPSentinel active beta release. Keep automation disabled until the current staged test has been approved."
+            --notes "Frontline strategy/navigation/lifecycle milestone and first modular Native MCH provider. Native MCH defaults to Shadow / Observe and cannot target or execute actions until Active is explicitly selected."
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to publish release $tag."
+          }

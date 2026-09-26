@@ -13,6 +13,7 @@ internal sealed class BehaviorEngine
         GameStateSnapshot game,
         FriendlyCluster? mainCluster,
         TargetDecision? target,
+        ObjectiveDecision? objective,
         Configuration config)
     {
         if (!config.Enabled)
@@ -25,7 +26,7 @@ internal sealed class BehaviorEngine
             return Set(BehaviorState.Idle, game.CapturedAtUtc, game.IsPvP ? "PvP territory is not a recognized Frontline map." : "Not inside Frontline.", immediate: true);
 
         if (!game.IsClassificationReliable)
-            return Set(BehaviorState.Paused, game.CapturedAtUtc, $"Player classification is uncertain; automation is paused. {game.TeamStatus.Explanation}", immediate: true);
+            return Set(BehaviorState.Paused, game.CapturedAtUtc, $"Player classification is uncertain; automation is paused. {game.ClassificationReliabilityExplanation}", immediate: true);
 
         if (game.LocalPlayer.IsDead)
         {
@@ -61,6 +62,10 @@ internal sealed class BehaviorEngine
 
         if (target is not null)
             return Set(BehaviorState.Engage, game.CapturedAtUtc, target.Explanation);
+
+        if (objective?.IsActionable == true)
+            return Set(BehaviorState.Travel, game.CapturedAtUtc,
+                $"{objective.Strategy}: {objective.Objective.Name}. {objective.Explanation}");
 
         return Set(BehaviorState.FollowGroup, game.CapturedAtUtc, "Stay with the established main friendly force.");
     }
