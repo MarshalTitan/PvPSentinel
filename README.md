@@ -34,6 +34,8 @@ Implemented in source:
 - configurable commitment time and meaningful score advantage before a valid native target can be replaced
 - hard defensive preemption: an eligible Recuperate, urgent Purify, or threat-aware Guard prevents burst/pressure fall-through even when the external ACR has already consumed the defensive cooldown
 - common PvP defense for repeatable sub-75% Recuperate; Stun, Heavy, Bind, Silence, Deep Freeze, and Miracle of Nature Purify with Resilience protection; and a tunable Guard threshold that rises with targeters, enemy density, numerical disadvantage, and observed rapid HP loss; automatic Elixir remains intentionally disabled
+- a shared `PvPThreatTracker` used by both Native defense and the UI, reporting currently observed enemy hard targets, their jobs/distances, nearby enemy/friendly density, and a derived threat level
+- an optional movable targeting-me counter, enabled by default only in PvP and hidden at zero, with position locking, count/job-text sizes, background transparency, and an optional job-abbreviation row
 - independent MCH policy for Analysis/tool preservation, Wildfire target memory and Full Metal continuation, conservative contextual Marksman's Spite confidence, Dervish, proactive Bishop Autoturret, and normal pressure
 - structured native diagnostics including `WOULD TARGET`, `WOULD TARGET: NONE`, `WOULD USE`, competing/rejected scores, defensive preemption, dynamic Guard factors, Purify and LB rejection reasons, action-layer resolution, HP/MP, allied focus, tools, Wildfire, Overheated, and limit gauge
 - external-combat coordination based only on local combat, casting, and queued-action state, with a configurable resume grace period
@@ -48,7 +50,9 @@ Objective navigation and queue automation are deliberately separate opt-ins. Obj
 
 ## Safety model
 
-Configuration version 4 preserves the earlier fail-closed automation migration, keeps new Native installations in `Shadow / Observe`, and migrates v0.2.0.0 observers to the safer target, Guard, and Marksman's Spite defaults. Master enable, navigation, mounting, objective navigation, queue automation, and the combat provider all require explicit selection. Selecting Native does not silently activate combat execution.
+Configuration version 5 preserves the earlier fail-closed automation migration, keeps new Native installations in `Shadow / Observe`, retains the safer target, Guard, and Marksman's Spite defaults, and adds observation-only target-counter preferences. Master enable, navigation, mounting, objective navigation, queue automation, and the combat provider all require explicit selection. Selecting Native does not silently activate combat execution.
+
+The targeting-me counter is deliberately limited to enemy players currently loaded and classified whose observable hard target is the local player. It cannot detect soft targeting, queued attacks, future intent, or an enemy that has not yet switched its observable target. The HUD shows every such observed hard target; Guard consumes the within-30y subset from that same shared observation so the live-validated defensive tuning is not silently widened.
 
 Strategic movement requires:
 
@@ -79,6 +83,7 @@ PvPSentinel
 ├── Behavior        high-level state and safety decisions
 ├── Navigation      mount control, generated path validation, stuck/repath logic
 ├── Combat          Off/external/native provider coordination
+│   ├── Threat      shared hard-target/density tracking for defense and HUD
 │   └── Native      target evaluation, common defense, action executor, job modules
 │       └── Jobs
 │           └── Machinist  state, Analysis, burst, execute, utility, pressure
@@ -153,7 +158,11 @@ Keep the match limit at `1`. First verify the detected campaign and allowed-map 
 
 Run the external ACR normally and compare its observed choices with `WOULD TARGET` and `WOULD USE`. Confirm there are no PvPSentinel-originated target changes or actions. Record target scores/switches, defensive threshold decisions, primed-tool and Analysis state, Wildfire state, allied focus, limit gauge, and rejection details. Do not select Active until the shadow trace has been reviewed.
 
-For v0.2.0.1, specifically verify that unsafe candidates produce `WOULD TARGET: NONE`, eligible defense produces `OFFENSE SUPPRESSED`, Guard thresholds rise before focus-fire deaths, and Purify/LB rejections state their confidence reason. The manually triggered limit break at match clock 11:52 in the first comparison trace is excluded from external-provider behavior analysis.
+The four-match v0.2.0.1 Shadow pass validated the safety refinement: no selected target fell below the configured score floor, no offensive decision bypassed an eligible defensive preemption, Guard rose as high as its configured 65% cap under severe focus, and the Purify evaluator recognized every control type observed in the trace (Stun, Bind, Heavy, Silence, and Miracle of Nature). Therefore v0.2.0.2 preserves those combat thresholds rather than tuning toward Champion action counts.
+
+For the next Shadow pass, validate that the compact counter matches the expanded targeter list, that distances/jobs update without stale entries, and that Guard diagnostics use the shared within-30y targeter count. Also confirm the coarser `WOULD TARGET: NONE` change detection remains informative without repeating on insignificant score movement.
+
+Manual actions excluded from external-provider behavior analysis are: the earlier comparison's LB at match clock 11:52; Standard-issue Elixir in match 2 at approximately 16:33:10 in the four-match trace; and Marksman's Spite against the Bard in match 3 at approximately 16:43:02. Automatic Elixir remains intentionally unimplemented.
 
 The first live pass must specifically validate:
 

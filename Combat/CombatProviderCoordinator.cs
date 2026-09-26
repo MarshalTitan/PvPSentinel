@@ -1,5 +1,6 @@
 using PvPSentinel.Diagnostics;
 using PvPSentinel.Models;
+using PvPSentinel.Combat.Threat;
 
 namespace PvPSentinel.Combat;
 
@@ -15,7 +16,8 @@ internal sealed class CombatProviderCoordinator(
         GameStateSnapshot game,
         BehaviorState behavior,
         TargetDecision? target,
-        Configuration config)
+        Configuration config,
+        PvPThreatSnapshot threat)
     {
         if (!config.Enabled)
         {
@@ -35,7 +37,7 @@ internal sealed class CombatProviderCoordinator(
         var decision = config.CombatProvider switch
         {
             CombatProvider.ExternalAcr => UpdateExternal(game, config),
-            CombatProvider.NativePvPSentinel => nativeController.Update(game, behavior, target, config),
+            CombatProvider.NativePvPSentinel => nativeController.Update(game, behavior, target, config, threat),
             _ => new CombatDecision(
                 CombatProvider.Off,
                 false,

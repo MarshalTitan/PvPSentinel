@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="../Combat/ExternalCombatYieldTracker.cs" Link="Combat/ExternalCombatYieldTracker.cs" />
     <Compile Include="../Combat/Native/NativeCombatPolicy.cs" Link="Combat/Native/NativeCombatPolicy.cs" />
+    <Compile Include="../Combat/Threat/PvPThreatPolicy.cs" Link="Combat/Threat/PvPThreatPolicy.cs" />
     <Compile Include="../GameState/FrontlinePlayerResolver.cs" Link="GameState/FrontlinePlayerResolver.cs" />
     <Compile Include="../Models/FrontlineMap.cs" Link="Models/FrontlineMap.cs" />
     <Compile Include="../Models/PlayerClassification.cs" Link="Models/PlayerClassification.cs" />

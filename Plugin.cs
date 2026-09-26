@@ -6,6 +6,7 @@ using PvPSentinel.Behavior;
 using PvPSentinel.Combat;
 using PvPSentinel.Combat.Native;
 using PvPSentinel.Combat.Native.Jobs.Machinist;
+using PvPSentinel.Combat.Threat;
 using PvPSentinel.Diagnostics;
 using PvPSentinel.GameState;
 using PvPSentinel.Integrations;
@@ -39,10 +40,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly VNavmeshAdapter vnav;
     private readonly NavigationController navigation;
     private readonly CombatProviderCoordinator combat;
+    private readonly PvPThreatTracker threatTracker;
     private readonly QueueLifecycleController queueLifecycle;
     private readonly WrathAdapter wrath = new();
     private readonly DiagnosticWindow diagnostics;
     private readonly ConfigurationWindow configurationWindow;
+    private readonly TargetCounterWindow targetCounter;
 
     private DateTime nextUpdateUtc = DateTime.MinValue;
     private BehaviorState lastLoggedBehavior = BehaviorState.Idle;
@@ -84,6 +87,7 @@ public sealed class Plugin : IDalamudPlugin
         IPvpJobCombatModule[] jobModules = [new MachinistCombatModule()];
         var nativeCombat = new NativeCombatProvider(dataManager, executor, jobModules, developmentLog, log);
         combat = new CombatProviderCoordinator(nativeCombat, developmentLog);
+        threatTracker = new PvPThreatTracker(developmentLog);
         var queueAdapter = new FrontlineQueueAdapter(gameGui, dataManager, developmentLog);
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
@@ -99,8 +103,10 @@ public sealed class Plugin : IDalamudPlugin
             ClearEmergencyStop,
             queueLifecycle.ResetMatchCounter,
             () => queueLifecycle.EmergencyStopLatched);
+        targetCounter = new TargetCounterWindow(config, () => current);
         windows.AddWindow(diagnostics);
         windows.AddWindow(configurationWindow);
+        windows.AddWindow(targetCounter);
 
         commands.AddHandler(Command, new CommandInfo(OnCommand)
         {
@@ -147,7 +153,8 @@ public sealed class Plugin : IDalamudPlugin
         var target = targetSelector.Select(game, mainCluster, config);
         var objective = objectiveStrategy.Select(game, config);
         var (behavior, behaviorSince, reason) = behaviorEngine.Evaluate(game, mainCluster, target, objective, config);
-        var combatDecision = combat.Update(game, behavior, target, config);
+        var threat = threatTracker.Evaluate(game);
+        var combatDecision = combat.Update(game, behavior, target, config, threat);
         var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, config);
         var queueDecision = queueLifecycle.Update(game, config);
         developmentLog.Throttled("behavior-evaluation", $"State {behavior}; committed {(game.CapturedAtUtc - behaviorSince).TotalSeconds:F1}s; {reason}");
@@ -165,6 +172,7 @@ public sealed class Plugin : IDalamudPlugin
             navDecision,
             combatDecision,
             queueDecision,
+            threat,
             CountNear(game.Friendlies, localPosition, 20f),
             CountNear(game.Enemies, localPosition, 20f),
             CountNear(game.UnknownPlayers, localPosition, 20f),
@@ -246,6 +254,7 @@ public sealed class Plugin : IDalamudPlugin
             new NavigationDecision(false, null, NavigationPathState.Idle, 0, 0, MountState.Disabled, "Waiting."),
             new CombatDecision(CombatProvider.Off, false, false, 0, "None", "Waiting."),
             new QueueDecision(QueueLifecycleState.Disabled, FrontlineMap.Unknown, 0, 1, false, "Waiting."),
+            PvPThreatSnapshot.Unavailable(game.CapturedAtUtc, "Waiting for first threat observation."),
             0, 0, 0, 0, 0, 0,
             "Waiting for first update.");
     }

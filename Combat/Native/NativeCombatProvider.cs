@@ -3,6 +3,7 @@ using Dalamud.Plugin.Services;
 using PvPSentinel.Combat.Native.Defense;
 using PvPSentinel.Combat.Native.Jobs.Machinist;
 using PvPSentinel.Combat.Native.Targeting;
+using PvPSentinel.Combat.Threat;
 using PvPSentinel.Diagnostics;
 using PvPSentinel.Models;
 
@@ -45,7 +46,8 @@ internal sealed class NativeCombatProvider : ICombatController
         GameStateSnapshot game,
         BehaviorState behavior,
         TargetDecision? strategicTarget,
-        Configuration config)
+        Configuration config,
+        PvPThreatSnapshot threat)
     {
         if (!game.IsFrontline || !game.IsClassificationReliable || game.LocalPlayer is null || game.LocalPlayer.IsDead)
         {
@@ -75,7 +77,7 @@ internal sealed class NativeCombatProvider : ICombatController
         var actionPermission = !game.IsBetweenAreas && !game.IsMounted && !game.IsMounting;
         var offensePermitted = actionPermission && behavior is (BehaviorState.Engage or BehaviorState.FinishKill);
         var context = new NativeCombatContext(game, local, behavior, target, config, offensePermitted, marksmanReady);
-        var defensive = defense.Evaluate(game, config);
+        var defensive = defense.Evaluate(game, threat, config);
         var job = module.Evaluate(context);
         var rejected = new List<string>(defensive.Rejections);
         rejected.AddRange(job.Rejections);
@@ -215,7 +217,11 @@ internal sealed class NativeCombatProvider : ICombatController
         {
             var rejected = evaluation.BestRejected;
             var nonePrefix = mode == NativeCombatMode.ShadowObserve ? "WOULD TARGET: NONE" : "TARGET: NONE";
-            var noneSignature = $"{mode}|NONE|{rejected?.Player.GameObjectId ?? 0}|{MathF.Round(rejected?.SafetyScore ?? 0f)}|{rejected?.IsOverextended ?? false}";
+            // Keep the precise score in the message, but only re-log when the
+            // rejected target, safety class, or coarse score band changes. Dense
+            // fights otherwise produced hundreds of near-identical transitions.
+            var scoreBand = MathF.Floor((rejected?.SafetyScore ?? 0f) / 10f);
+            var noneSignature = $"{mode}|NONE|{rejected?.Player.GameObjectId ?? 0}|{scoreBand}|{rejected?.IsOverextended ?? false}";
             developmentLog.Changed("native-target", noneSignature,
                 rejected is null
                     ? $"{nonePrefix}. {evaluation.SelectionReason}"

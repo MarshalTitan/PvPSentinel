@@ -1,4 +1,5 @@
 using System.Numerics;
+using PvPSentinel.Combat.Threat;
 
 namespace PvPSentinel.Models;
 
@@ -128,6 +129,7 @@ internal sealed record TacticalSnapshot(
     NavigationDecision Navigation,
     CombatDecision Combat,
     QueueDecision Queue,
+    PvPThreatSnapshot Threat,
     int Friendly20,
     int Enemy20,
     int Unknown20,

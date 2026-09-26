@@ -89,6 +89,21 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Friendly / enemy / unknown within 20y", $"{state.Friendly20} / {state.Enemy20} / {state.Unknown20}");
         KeyValue("Friendly / enemy / unknown within 40y", $"{state.Friendly40} / {state.Enemy40} / {state.Unknown40}");
 
+        Section("Observed Threat");
+        KeyValue("Threat observation reliable", YesNo(state.Threat.IsReliable));
+        KeyValue("Targeting me", state.Threat.TargeterCount.ToString());
+        KeyValue("Combat-relevant targeters (within 30y)", state.Threat.CombatRelevantTargeterCount.ToString());
+        KeyValue("Nearby enemies / allies (within 18y)", $"{state.Threat.NearbyEnemyCount} / {state.Threat.NearbyFriendlyCount}");
+        KeyValue("Threat level", state.Threat.Level.ToString());
+        ImGui.TextWrapped(state.Threat.Explanation);
+        ImGui.TextDisabled("Hard-target observations only; soft targeting, queued attacks, and future intent are not observable.");
+        if (ImGui.TreeNode($"Enemies currently targeting me ({state.Threat.TargeterCount})"))
+        {
+            foreach (var targeter in state.Threat.Targeters)
+                ImGui.BulletText($"{targeter.JobAbbreviation} - {targeter.Name}, {targeter.Distance:F1}y");
+            ImGui.TreePop();
+        }
+
         var nearbyPlayers = local is null
             ? []
             : game.ObservedPlayers

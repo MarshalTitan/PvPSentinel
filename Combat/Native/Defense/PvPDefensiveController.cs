@@ -1,5 +1,5 @@
-using System.Numerics;
 using PvPSentinel.Models;
+using PvPSentinel.Combat.Threat;
 
 namespace PvPSentinel.Combat.Native.Defense;
 
@@ -44,7 +44,10 @@ internal sealed class PvPDefensiveController
         "Miracle of Nature",
     };
 
-    public DefensiveEvaluation Evaluate(GameStateSnapshot game, Configuration config)
+    public DefensiveEvaluation Evaluate(
+        GameStateSnapshot game,
+        PvPThreatSnapshot threat,
+        Configuration config)
     {
         var local = game.LocalPlayer;
         if (local is null)
@@ -55,13 +58,9 @@ internal sealed class PvPDefensiveController
 
         var candidates = new List<NativeActionCandidate>();
         var rejections = new List<string>();
-        var incomingTargeters = game.Enemies.Count(enemy =>
-            !enemy.IsDead && enemy.TargetObjectId == local.GameObjectId &&
-            HorizontalDistance(enemy.Position, local.Position) <= 30f);
-        var nearbyThreats = game.Enemies.Count(enemy =>
-            !enemy.IsDead && enemy.IsTargetable && HorizontalDistance(enemy.Position, local.Position) <= 18f);
-        var nearbyFriendlies = game.Friendlies.Count(ally =>
-            !ally.IsDead && HorizontalDistance(ally.Position, local.Position) <= 18f);
+        var incomingTargeters = threat.IsReliable ? threat.CombatRelevantTargeterCount : 0;
+        var nearbyThreats = threat.IsReliable ? threat.NearbyEnemyCount : 0;
+        var nearbyFriendlies = threat.IsReliable ? threat.NearbyFriendlyCount : 0;
         var incomingThreats = Math.Max(incomingTargeters, nearbyThreats);
         var selfTarget = (local.GameObjectId, local.EntityId);
         var hpLossPerSecond = UpdateHpLossRate(game.CapturedAtUtc, local.HpPercent);
@@ -202,7 +201,4 @@ internal sealed class PvPDefensiveController
         (ulong ObjectId, uint EntityId) target,
         string reason) =>
         new(NativeActionLayer.EmergencyDefense, id, name, NativeActionTarget.Self, target.ObjectId, target.EntityId, reason);
-
-    private static float HorizontalDistance(Vector3 a, Vector3 b) =>
-        Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));
 }

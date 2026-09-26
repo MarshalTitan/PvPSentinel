@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Native MCH Shadow safety refinement: target-score floor, hard defensive preemption, threat-aware Guard, complete current Purify control coverage, more conservative contextual Marksman's Spite confidence, and expanded decision diagnostics. Native MCH remains in Shadow / Observe by default; Active is still an explicit development choice."
+            --notes "Four-match Native MCH Shadow validation and shared threat telemetry: adds a movable targeting-me counter, one PvPThreatTracker shared by the HUD and threat-aware Guard, targeter job/distance diagnostics, tunable counter presentation, and quieter no-suitable-target logging. The validated v0.2.0.1 safety/defensive thresholds are preserved. Native MCH remains in Shadow / Observe by default; Active is still an explicit development choice."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

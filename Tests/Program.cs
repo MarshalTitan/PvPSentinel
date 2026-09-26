@@ -1,6 +1,7 @@
 using System.Numerics;
 using PvPSentinel.Combat;
 using PvPSentinel.Combat.Native;
+using PvPSentinel.Combat.Threat;
 using PvPSentinel.GameState;
 using PvPSentinel.Models;
 using PvPSentinel.Navigation;
@@ -120,6 +121,17 @@ Check("Marksman rejects above-solo HP without strong focus", false,
 Check("Marksman accepts above-solo HP with strong focus", true,
     NativeCombatPolicy.HasMarksmanHighHpConfidence(41000, 40000, 1f, 3, 3));
 
+Check("no observed pressure has no threat level", PvPThreatLevel.None,
+    PvPThreatPolicy.EvaluateLevel(0, 0));
+Check("one nearby enemy is low observed threat", PvPThreatLevel.Low,
+    PvPThreatPolicy.EvaluateLevel(0, 1));
+Check("two hard targeters are moderate threat", PvPThreatLevel.Moderate,
+    PvPThreatPolicy.EvaluateLevel(2, 2));
+Check("combined targeters and density are high threat", PvPThreatLevel.High,
+    PvPThreatPolicy.EvaluateLevel(2, 6));
+Check("six hard targeters are extreme threat", PvPThreatLevel.Extreme,
+    PvPThreatPolicy.EvaluateLevel(6, 3));
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine($"{failures.Count} logic test(s) failed:");
@@ -128,7 +140,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("PvPSentinel logic tests passed (classification, maps, paths, external yield, native combat policies). ");
+Console.WriteLine("PvPSentinel logic tests passed (classification, maps, paths, external yield, native combat, and shared threat policies). ");
 return 0;
 
 void Check<T>(string name, T expected, T actual) where T : notnull

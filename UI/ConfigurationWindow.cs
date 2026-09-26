@@ -81,6 +81,17 @@ internal sealed class ConfigurationWindow : Window
             verboseLoggingChanged(value);
         });
 
+        Section("Targeting-me counter");
+        DrawCheckbox("Enable Target Counter", config.TargetCounterEnabled, value => config.TargetCounterEnabled = value);
+        DrawCheckbox("Show only in PvP", config.TargetCounterOnlyInPvp, value => config.TargetCounterOnlyInPvp = value);
+        DrawCheckbox("Hide when count is 0", config.TargetCounterHideAtZero, value => config.TargetCounterHideAtZero = value);
+        DrawCheckbox("Show targeting jobs", config.TargetCounterShowJobs, value => config.TargetCounterShowJobs = value);
+        DrawCheckbox("Lock position", config.TargetCounterLocked, value => config.TargetCounterLocked = value);
+        DrawFloat("Number size", config.TargetCounterNumberSize, 24f, 120f, value => config.TargetCounterNumberSize = value, "%.0f px");
+        DrawFloat("Job text size", config.TargetCounterJobSize, 10f, 40f, value => config.TargetCounterJobSize = value, "%.0f px");
+        DrawFloat("Background transparency", config.TargetCounterBackgroundTransparency, 0f, 1f, value => config.TargetCounterBackgroundTransparency = value, "%.2f");
+        ImGui.TextWrapped("Counts only currently observed enemy players whose hard target is you. It cannot detect soft targeting, queued attacks, future intent, or enemies whose observable target has not switched.");
+
         Section("Movement and clustering");
         DrawFloat("Friendly cluster link radius", config.FriendlyClusterLinkRadius, 6f, 30f, value => config.FriendlyClusterLinkRadius = value, "%.1f y");
         DrawFloat("Main-group follow radius", config.MainGroupFollowRadius, 8f, 40f, value => config.MainGroupFollowRadius = value, "%.1f y");

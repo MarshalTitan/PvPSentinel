@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = 5;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public CombatProvider CombatProvider { get; set; } = CombatProvider.Off;
@@ -19,6 +19,14 @@ public sealed class Configuration : IPluginConfiguration
     public bool QueueAutomationEnabled { get; set; }
     public bool ShowDiagnostics { get; set; } = true;
     public bool VerboseLogging { get; set; }
+    public bool TargetCounterEnabled { get; set; } = true;
+    public bool TargetCounterOnlyInPvp { get; set; } = true;
+    public bool TargetCounterHideAtZero { get; set; } = true;
+    public bool TargetCounterShowJobs { get; set; }
+    public bool TargetCounterLocked { get; set; }
+    public float TargetCounterNumberSize { get; set; } = 64f;
+    public float TargetCounterJobSize { get; set; } = 16f;
+    public float TargetCounterBackgroundTransparency { get; set; } = 0.65f;
 
     public bool AllowBorderlandRuins { get; set; } = true;
     public bool AllowSealRock { get; set; } = true;
@@ -98,7 +106,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 4)
+        if (Version >= 5)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -141,7 +149,22 @@ public sealed class Configuration : IPluginConfiguration
             NativeMarksmanMaximumEffectiveHp = 56000;
         }
 
-        Version = 4;
+        if (Version < 5)
+        {
+            // The targeting-me counter is observational only and does not widen
+            // any combat or navigation permission. Existing users receive the
+            // compact PvP-only display with zero-count hiding and no job row.
+            TargetCounterEnabled = true;
+            TargetCounterOnlyInPvp = true;
+            TargetCounterHideAtZero = true;
+            TargetCounterShowJobs = false;
+            TargetCounterLocked = false;
+            TargetCounterNumberSize = 64f;
+            TargetCounterJobSize = 16f;
+            TargetCounterBackgroundTransparency = 0.65f;
+        }
+
+        Version = 5;
         Save();
     }
 
