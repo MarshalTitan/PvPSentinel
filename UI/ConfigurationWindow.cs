@@ -89,7 +89,6 @@ internal sealed class ConfigurationWindow : Window
         DrawCheckbox("Lock position", config.TargetCounterLocked, value => config.TargetCounterLocked = value);
         DrawFloat("Number size", config.TargetCounterNumberSize, 24f, 120f, value => config.TargetCounterNumberSize = value, "%.0f px");
         DrawFloat("Job text size", config.TargetCounterJobSize, 10f, 40f, value => config.TargetCounterJobSize = value, "%.0f px");
-        DrawFloat("Background transparency", config.TargetCounterBackgroundTransparency, 0f, 1f, value => config.TargetCounterBackgroundTransparency = value, "%.2f");
         ImGui.TextWrapped("Counts only currently observed enemy players whose hard target is you. It cannot detect soft targeting, queued attacks, future intent, or enemies whose observable target has not switched.");
 
         Section("Movement and clustering");
@@ -131,6 +130,10 @@ internal sealed class ConfigurationWindow : Window
         DrawInt("Marksman's Spite high-HP minimum focus", config.NativeMarksmanHighHpMinimumFocus, 0, 8, value => config.NativeMarksmanHighHpMinimumFocus = value);
         DrawInt("Marksman's Spite focus allowance", (int)config.NativeMarksmanFocusAllowance, 0, 20000, value => config.NativeMarksmanFocusAllowance = (uint)value);
         DrawInt("Marksman's Spite max effective HP", (int)config.NativeMarksmanMaximumEffectiveHp, 40000, 120000, value => config.NativeMarksmanMaximumEffectiveHp = (uint)value);
+        DrawInt("Wildfire minimum effective HP", (int)config.NativeWildfireMinimumEffectiveHp, 18000, 60000, value => config.NativeWildfireMinimumEffectiveHp = (uint)value);
+        DrawInt("Wildfire HP per focused ally", (int)config.NativeWildfireFocusHpPerPlayer, 0, 10000, value => config.NativeWildfireFocusHpPerPlayer = (uint)value);
+        DrawInt("Wildfire uncredited focus", config.NativeWildfireUncreditedFocus, 0, 4, value => config.NativeWildfireUncreditedFocus = value);
+        DrawInt("Wildfire maximum survival floor", (int)config.NativeWildfireMaximumMinimumHp, 18000, 80000, value => config.NativeWildfireMaximumMinimumHp = (uint)value);
         if (ImGui.TreeNode("Advanced native Guard threat weights"))
         {
             DrawFloat("HP bonus per active targeter", config.NativeGuardTargeterHpBonus, 0f, 12f, value => config.NativeGuardTargeterHpBonus = value, "%.1f");
