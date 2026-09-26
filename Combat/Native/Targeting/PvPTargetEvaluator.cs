@@ -29,30 +29,36 @@ internal sealed class PvPTargetEvaluator
         }
 
         var acceptableCandidates = candidates
-            .Where(candidate => NativeCombatPolicy.IsTargetScoreAcceptable(
-                candidate.SafetyScore, config.NativeTargetMinimumScore))
+            .Where(candidate => NativeCombatPolicy.IsTargetAcceptable(
+                candidate.SafetyScore,
+                config.NativeTargetMinimumScore,
+                candidate.IsOverextended))
             .ToArray();
         if (acceptableCandidates.Length == 0)
         {
             var bestRejected = candidates.OrderByDescending(candidate => candidate.SafetyScore).First();
             selectedTargetId = 0;
             selectedAtUtc = DateTime.MinValue;
-            var safetyReason = bestRejected.IsOverextended || bestRejected.Score.Overextension < 0f
-                ? "unsafe pursuit/overextension penalties"
-                : "insufficient contextual value";
+            var safetyReason = bestRejected.IsOverextended
+                ? $"is categorically rejected for severe unsafe pursuit/overextension even though its safety score is {bestRejected.SafetyScore:F1}"
+                : $"has safety score {bestRejected.SafetyScore:F1}, below the configured {config.NativeTargetMinimumScore:F1} floor because of insufficient contextual value or soft pursuit penalties";
             return new TargetEvaluation(
                 null,
                 null,
                 bestRejected,
                 false,
-                $"No suitable combat target: best candidate {bestRejected.Player.Name} ({bestRejected.Player.JobAbbreviation}) has safety score {bestRejected.SafetyScore:F1}, below the configured {config.NativeTargetMinimumScore:F1} floor because of {safetyReason}. Ranking score {bestRejected.Score.Total:F1}; stickiness is excluded from the safety floor. {bestRejected.Score.Summary}.",
+                $"No suitable combat target: best rejected candidate {bestRejected.Player.Name} ({bestRejected.Player.JobAbbreviation}) {safetyReason}. Ranking score {bestRejected.Score.Total:F1}; stickiness is excluded from the safety floor. {bestRejected.Score.Summary}.",
                 candidates);
         }
 
         var best = acceptableCandidates[0];
         var current = candidates.FirstOrDefault(candidate => candidate.Player.GameObjectId == selectedTargetId);
+        var currentRejectedForOverextension = current?.IsOverextended == true;
         var currentRejectedBySafety = current is not null &&
-                                      !NativeCombatPolicy.IsTargetScoreAcceptable(current.SafetyScore, config.NativeTargetMinimumScore);
+                                      !NativeCombatPolicy.IsTargetAcceptable(
+                                          current.SafetyScore,
+                                          config.NativeTargetMinimumScore,
+                                          current.IsOverextended);
         if (currentRejectedBySafety)
             current = null;
         var switched = false;
@@ -78,7 +84,9 @@ internal sealed class PvPTargetEvaluator
         {
             switched = selectedTargetId != 0;
             reason = currentRejectedBySafety
-                ? $"Safety overrode current-target stickiness because the prior target fell below the {config.NativeTargetMinimumScore:F1} score floor; selected the highest acceptable target: {best.Score.Summary}."
+                ? currentRejectedForOverextension
+                    ? $"Safety overrode current-target stickiness because the prior target became severely overextended; selected the highest acceptable target: {best.Score.Summary}."
+                    : $"Safety overrode current-target stickiness because the prior target fell below the {config.NativeTargetMinimumScore:F1} score floor; selected the highest acceptable target: {best.Score.Summary}."
                 : selectedTargetId == 0
                 ? $"Selected highest contextual score: {best.Score.Summary}."
                 : $"Previous native target became invalid; selected highest valid score: {best.Score.Summary}.";
@@ -158,7 +166,18 @@ internal sealed class PvPTargetEvaluator
             enemy.HasStatus(3154) ? 1.2f : 1f,
             alliedFocus,
             config.NativeMarksmanHighHpMinimumFocus);
-        var execute = !guarding && distance <= 50f && effectiveHp <= executeThreshold && executeConfidence;
+        var executeOverkillFloor = NativeCombatPolicy.MarksmanOverkillFloor(
+            config.NativeMarksmanOverkillMinimumHp,
+            alliedFocus,
+            config.NativeMarksmanOverkillFocusHpPerPlayer,
+            config.NativeMarksmanUncreditedFocus,
+            config.NativeMarksmanOverkillMaximumMinimumHp);
+        var executeOverkillRisk = NativeCombatPolicy.IsMarksmanOverkillRisk(
+            (uint)effectiveHp,
+            distance,
+            25f,
+            executeOverkillFloor);
+        var execute = !guarding && distance <= 50f && effectiveHp <= executeThreshold && executeConfidence && !executeOverkillRisk;
 
         var rangeScore = Math.Clamp(1f - distance / Math.Max(1f, config.NativeTargetMaximumRange), 0f, 1f) * weights.RangeWeight;
         var healthScore = Math.Clamp(1f - enemy.HpPercent / 100f, 0f, 1f) * weights.HpPercentWeight;
