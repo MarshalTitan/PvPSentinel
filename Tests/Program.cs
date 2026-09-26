@@ -79,18 +79,46 @@ Check("Recuperate not eligible at 75%", false,
     NativeCombatPolicy.RecuperateEligible(75f, 75f, 10000));
 Check("Recuperate requires MP", false,
     NativeCombatPolicy.RecuperateEligible(20f, 75f, 1999));
+Check("Recuperate hard-preempts offense", "Recuperate priority",
+    NativeCombatPolicy.DefensePreemptionReason(false, false, true));
+Check("Guard preempts simultaneous Recuperate", "Guard priority",
+    NativeCombatPolicy.DefensePreemptionReason(false, true, true));
+Check("Purify has highest defensive preemption", "Purify priority",
+    NativeCombatPolicy.DefensePreemptionReason(true, true, true));
+Check("no defensive condition leaves offense open", "None",
+    NativeCombatPolicy.DefensePreemptionReason(false, false, false));
 Check("target commitment blocks early switch", false,
     NativeCombatPolicy.ShouldSwitchTarget(1.9, 2f, 40f, 18f));
 Check("target score threshold blocks small switch", false,
     NativeCombatPolicy.ShouldSwitchTarget(3, 2f, 17.9f, 18f));
 Check("meaningful target improvement switches", true,
     NativeCombatPolicy.ShouldSwitchTarget(3, 2f, 18f, 18f));
-Check("Marksman focus allowance is contextual", 56000u,
-    NativeCombatPolicy.MarksmanEffectiveHpAllowance(40000, 2, 8000, 72000));
-Check("Marksman allowance respects cap", 72000u,
-    NativeCombatPolicy.MarksmanEffectiveHpAllowance(40000, 9, 8000, 72000));
-Check("Marksman includes reliable Chain Saw modifier", 48000u,
-    NativeCombatPolicy.MarksmanEffectiveHpAllowance(40000, 0, 8000, 72000, 1.2f));
+Check("target score floor rejects negative least-bad target", false,
+    NativeCombatPolicy.IsTargetScoreAcceptable(-1f, 10f));
+Check("target score floor accepts exact boundary", true,
+    NativeCombatPolicy.IsTargetScoreAcceptable(10f, 10f));
+
+var lowPressureGuard = NativeCombatPolicy.CalculateGuardThreshold(
+    35f, 65f, 0, 2, 3, 4f, 1.5f, 2, 2f, 0f, 12f, 8f);
+var focusFireGuard = NativeCombatPolicy.CalculateGuardThreshold(
+    35f, 65f, 4, 8, 2, 4f, 1.5f, 2, 2f, 16f, 12f, 8f);
+Check("low-pressure Guard retains base threshold", 35f, lowPressureGuard.Threshold);
+Check("focus fire raises Guard threshold", true, focusFireGuard.Threshold > lowPressureGuard.Threshold);
+Check("Guard threat threshold respects cap", 65f, focusFireGuard.Threshold);
+Check("rapid collapse contributes to Guard threshold", 8f, focusFireGuard.RapidLossContribution);
+
+Check("Marksman low focus receives no speculative allowance", 36000u,
+    NativeCombatPolicy.MarksmanEffectiveHpAllowance(40000, 1, 3000, 56000));
+Check("Marksman only credits focus beyond grace", 39000u,
+    NativeCombatPolicy.MarksmanEffectiveHpAllowance(40000, 2, 3000, 56000));
+Check("Marksman conservative allowance respects cap", 56000u,
+    NativeCombatPolicy.MarksmanEffectiveHpAllowance(40000, 9, 3000, 56000));
+Check("Marksman applies confidence margin to Chain Saw modifier", 43200u,
+    NativeCombatPolicy.MarksmanEffectiveHpAllowance(40000, 0, 3000, 56000, 1.2f));
+Check("Marksman rejects above-solo HP without strong focus", false,
+    NativeCombatPolicy.HasMarksmanHighHpConfidence(41000, 40000, 1f, 2, 3));
+Check("Marksman accepts above-solo HP with strong focus", true,
+    NativeCombatPolicy.HasMarksmanHighHpConfidence(41000, 40000, 1f, 3, 3));
 
 if (failures.Count > 0)
 {

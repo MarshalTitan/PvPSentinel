@@ -19,6 +19,8 @@ internal sealed class NativeCombatProvider : ICombatController
     private readonly IPluginLog log;
     private string lastTargetLogSignature = string.Empty;
     private string lastActionLogSignature = string.Empty;
+    private string lastDefenseLogSignature = string.Empty;
+    private string lastPurifyRejectionSignature = string.Empty;
 
     public NativeCombatProvider(
         IDataManager data,
@@ -77,10 +79,15 @@ internal sealed class NativeCombatProvider : ICombatController
         var job = module.Evaluate(context);
         var rejected = new List<string>(defensive.Rejections);
         rejected.AddRange(job.Rejections);
+        if (defensive.SuppressOffense)
+            rejected.Insert(0, $"OFFENSE SUPPRESSED: {defensive.PreemptionReason}.");
         if (!actionPermission)
             rejected.Insert(0, $"Combat permission rejected: between areas={game.IsBetweenAreas}, mounted={game.IsMounted}, mounting={game.IsMounting}.");
+        LogDefenseDecision(defensive, config.NativeCombatMode);
 
-        var ordered = defensive.Candidates.Concat(job.Candidates);
+        IEnumerable<NativeActionCandidate> ordered = defensive.SuppressOffense
+            ? defensive.Candidates
+            : defensive.Candidates.Concat(job.Candidates);
         NativeActionCandidate? chosen = null;
         foreach (var candidate in actionPermission ? ordered : [])
         {
@@ -118,15 +125,20 @@ internal sealed class NativeCombatProvider : ICombatController
             targetEvaluation,
             local,
             limitState,
+            defensive,
             chosen,
             rejected);
 
         if (chosen is null)
         {
             lastActionLogSignature = string.Empty;
-            var holdReason = offensePermitted
+            var holdReason = defensive.SuppressOffense
+                ? $"OFFENSE SUPPRESSED: {defensive.PreemptionReason}; no eligible defensive action was client-ready, so Native holds."
+                : offensePermitted
                 ? "No verified and client-ready action passed the ordered native decision layers."
                 : "Only emergency defense is permitted in the current strategic behavior; no defensive action is ready.";
+            if (defensive.SuppressOffense)
+                diagnostics = diagnostics with { ActionResolution = holdReason };
             return Decision(true, 0, "Hold", holdReason, diagnostics);
         }
 
@@ -157,11 +169,12 @@ internal sealed class NativeCombatProvider : ICombatController
         TargetEvaluation targetEvaluation,
         PlayerSnapshot local,
         string limitState,
+        DefensiveEvaluation defensive,
         NativeActionCandidate? chosen,
         IReadOnlyList<string> rejections)
     {
         var target = targetEvaluation.Selected;
-        var runnerUp = targetEvaluation.RunnerUp;
+        var runnerUp = targetEvaluation.RunnerUp ?? targetEvaluation.BestRejected;
         return new NativeCombatDiagnostics(
             mode,
             job.CombatState,
@@ -170,7 +183,11 @@ internal sealed class NativeCombatProvider : ICombatController
                 ? "None"
                 : $"{(mode == NativeCombatMode.ShadowObserve ? "WOULD TARGET " : string.Empty)}{target.Player.JobAbbreviation} - {target.Player.Name}",
             target?.Score.Total ?? 0f,
-            runnerUp is null ? "None" : $"{runnerUp.Player.JobAbbreviation} - {runnerUp.Player.Name}: {runnerUp.Score.Total:F1}",
+            runnerUp is null
+                ? "None"
+                : target is null
+                    ? $"Best rejected {runnerUp.Player.JobAbbreviation} - {runnerUp.Player.Name}: safety {runnerUp.SafetyScore:F1}, ranking {runnerUp.Score.Total:F1}"
+                    : $"{runnerUp.Player.JobAbbreviation} - {runnerUp.Player.Name}: {runnerUp.Score.Total:F1}",
             target is null ? targetEvaluation.SelectionReason : targetEvaluation.SelectionReason + " " + target.Score.Summary,
             $"HP {local.CurrentHp:N0}/{local.MaxHp:N0} ({local.HpPercent:F1}%); MP {local.CurrentMp:N0}/{local.MaxMp:N0}",
             target is null ? "None" : $"{target.Player.CurrentHp:N0}/{target.Player.MaxHp:N0} ({target.Player.HpPercent:F1}%); shield {target.Player.ShieldPercent}%",
@@ -180,14 +197,42 @@ internal sealed class NativeCombatProvider : ICombatController
             job.WildfireState,
             job.Overheated,
             limitState,
-            chosen is null ? "HOLD" : $"SELECTED {chosen.Layer}: {chosen.ActionName}",
+            defensive.GuardState + " " + defensive.PurifyState,
+            defensive.SuppressOffense
+                ? $"OFFENSE SUPPRESSED: {defensive.PreemptionReason}"
+                : "None",
+            chosen is null
+                ? defensive.SuppressOffense
+                    ? $"OFFENSE SUPPRESSED: {defensive.PreemptionReason}; HOLD"
+                    : "HOLD"
+                : $"SELECTED {chosen.Layer}: {chosen.ActionName}",
             rejections.Take(12).ToArray());
     }
 
     private void LogTargetDecision(TargetEvaluation evaluation, PlayerSnapshot local, NativeCombatMode mode)
     {
         if (evaluation.Selected is null)
+        {
+            var rejected = evaluation.BestRejected;
+            var nonePrefix = mode == NativeCombatMode.ShadowObserve ? "WOULD TARGET: NONE" : "TARGET: NONE";
+            var noneSignature = $"{mode}|NONE|{rejected?.Player.GameObjectId ?? 0}|{MathF.Round(rejected?.SafetyScore ?? 0f)}|{rejected?.IsOverextended ?? false}";
+            developmentLog.Changed("native-target", noneSignature,
+                rejected is null
+                    ? $"{nonePrefix}. {evaluation.SelectionReason}"
+                    : $"{nonePrefix}; best rejected {rejected.Player.Name} ({rejected.Player.JobAbbreviation}), safety score {rejected.SafetyScore:F1}, ranking score {rejected.Score.Total:F1}. {evaluation.SelectionReason}");
+            if (noneSignature != lastTargetLogSignature)
+            {
+                log.Information(
+                    "PvPSentinel native {Decision}; best rejected {BestRejected}, safety score {SafetyScore:F1}, ranking score {RankingScore:F1}. {Reason}",
+                    nonePrefix,
+                    rejected is null ? "none" : $"{rejected.Player.Name} ({rejected.Player.JobAbbreviation})",
+                    rejected?.SafetyScore ?? 0f,
+                    rejected?.Score.Total ?? 0f,
+                    evaluation.SelectionReason);
+                lastTargetLogSignature = noneSignature;
+            }
             return;
+        }
 
         var target = evaluation.Selected;
         var shadowPrefix = mode == NativeCombatMode.ShadowObserve ? "WOULD TARGET" : "SELECTED TARGET";
@@ -200,6 +245,42 @@ internal sealed class NativeCombatProvider : ICombatController
             log.Information("PvPSentinel native {Decision}: {Target} ({Job}), score {Score:F1}. {Reason}",
                 shadowPrefix, target.Player.Name, target.Player.JobAbbreviation, target.Score.Total, evaluation.SelectionReason);
             lastTargetLogSignature = signature;
+        }
+    }
+
+    private void LogDefenseDecision(DefensiveEvaluation evaluation, NativeCombatMode mode)
+    {
+        developmentLog.Throttled(
+            "native-guard-threshold",
+            evaluation.GuardState,
+            TimeSpan.FromSeconds(2));
+
+        var decision = evaluation.SuppressOffense ? evaluation.PreemptionReason : "None";
+        var signature = $"{mode}|{decision}";
+        if (signature != lastDefenseLogSignature)
+        {
+            var prefix = mode == NativeCombatMode.ShadowObserve ? "WOULD PREEMPT" : "PREEMPT";
+            var message = evaluation.SuppressOffense
+                ? $"{prefix} OFFENSE: {evaluation.PreemptionReason}. {evaluation.GuardState} {evaluation.PurifyState}"
+                : $"DEFENSE CLEAR. {evaluation.GuardState} {evaluation.PurifyState}";
+            developmentLog.Changed("native-defense", signature, message);
+            log.Information("PvPSentinel native defense: {Decision}", message);
+            lastDefenseLogSignature = signature;
+        }
+
+        if (evaluation.PurifyState.StartsWith("Purify rejected despite CC", StringComparison.Ordinal))
+        {
+            var purifySignature = evaluation.PurifyState;
+            developmentLog.Changed("native-purify-rejection", purifySignature, evaluation.PurifyState);
+            if (purifySignature != lastPurifyRejectionSignature)
+            {
+                log.Information("PvPSentinel native {PurifyDecision}", evaluation.PurifyState);
+                lastPurifyRejectionSignature = purifySignature;
+            }
+        }
+        else
+        {
+            lastPurifyRejectionSignature = string.Empty;
         }
     }
 
@@ -219,10 +300,13 @@ internal sealed class NativeCombatProvider : ICombatController
     private void ResetState()
     {
         targetEvaluator.Reset();
+        defense.Reset();
         foreach (var module in modules.Values)
             module.Reset();
         lastTargetLogSignature = string.Empty;
         lastActionLogSignature = string.Empty;
+        lastDefenseLogSignature = string.Empty;
+        lastPurifyRejectionSignature = string.Empty;
     }
 
     private bool VerifyAction(IDataManager data, uint id, string expectedName)

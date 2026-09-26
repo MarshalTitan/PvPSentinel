@@ -30,23 +30,25 @@ Implemented in source:
   - `Active`: permits the same independently implemented decision pipeline to issue verified native actions
 - a job-neutral native combat provider and `IPvpJobCombatModule` boundary, with the initial Machinist module separated into state, Analysis, burst, execute, and pressure controllers
 - contextual native target evaluation using validity, PvP classification, range, percentage and absolute HP, shields, Guard, observable allied focus, execute potential, current-target stickiness, local support, and overextension
+- a configurable target-score safety floor that returns `WOULD TARGET: NONE` instead of choosing a least-bad unsafe/overextended enemy; safety overrides target stickiness and burst commitment
 - configurable commitment time and meaningful score advantage before a valid native target can be replaced
-- common PvP defense for repeatable sub-75% Recuperate, supported-control Purify with Resilience protection, and conservative pressure-aware Guard; automatic Elixir remains intentionally disabled
-- independent MCH policy for Analysis/tool preservation, Wildfire target memory and Full Metal continuation, contextual Marksman's Spite, Dervish, proactive Bishop Autoturret, and normal pressure
-- structured native diagnostics including `WOULD TARGET` and `WOULD USE`, competing scores, action-layer resolution, HP/MP, Guard, allied focus, tools, Wildfire, Overheated, limit gauge, and important rejections
+- hard defensive preemption: an eligible Recuperate, urgent Purify, or threat-aware Guard prevents burst/pressure fall-through even when the external ACR has already consumed the defensive cooldown
+- common PvP defense for repeatable sub-75% Recuperate; Stun, Heavy, Bind, Silence, Deep Freeze, and Miracle of Nature Purify with Resilience protection; and a tunable Guard threshold that rises with targeters, enemy density, numerical disadvantage, and observed rapid HP loss; automatic Elixir remains intentionally disabled
+- independent MCH policy for Analysis/tool preservation, Wildfire target memory and Full Metal continuation, conservative contextual Marksman's Spite confidence, Dervish, proactive Bishop Autoturret, and normal pressure
+- structured native diagnostics including `WOULD TARGET`, `WOULD TARGET: NONE`, `WOULD USE`, competing/rejected scores, defensive preemption, dynamic Guard factors, Purify and LB rejection reasons, action-layer resolution, HP/MP, allied focus, tools, Wildfire, Overheated, and limit gauge
 - external-combat coordination based only on local combat, casting, and queued-action state, with a configurable resume grace period
 - Daily Challenge: Frontline inspection through the game's Duty Finder, including localized game-data names
 - per-map queue allow-list semantics: an unchecked active campaign means “do not queue today”
 - automatic PvPSentinel-owned queue submission, owned duty acceptance, match observation, completion counting, and requeue
 - configurable session match limit and a latched emergency stop
 - detailed diagnostics for classification, map, objectives, group choice, path state, mounting, combat yield, and queue lifecycle
-- pure logic tests for classification priority, all five map identifiers, generated-path rejection rules, external-combat yield timing, Recuperate boundary/MP rules, target-switch hysteresis, and contextual Marksman's Spite allowance
+- pure logic tests for classification priority, all five map identifiers, generated-path rejection rules, external-combat yield timing, Recuperate boundary/MP rules, defensive preemption, target-score acceptance, target-switch hysteresis, dynamic Guard escalation/capping, and conservative contextual Marksman's Spite confidence
 
 Objective navigation and queue automation are deliberately separate opt-ins. Objective observations remain visible while objective navigation is off, allowing live object IDs and states to be validated before they steer movement. Secure and Triumph passive capture objects currently remain research-only unless the client exposes positive active-state evidence.
 
 ## Safety model
 
-Configuration version 3 preserves the earlier fail-closed automation migration and forces every upgraded installation's native development mode to `Shadow / Observe`. Master enable, navigation, mounting, objective navigation, queue automation, and the combat provider all require explicit selection. Selecting Native does not silently activate combat execution.
+Configuration version 4 preserves the earlier fail-closed automation migration, keeps new Native installations in `Shadow / Observe`, and migrates v0.2.0.0 observers to the safer target, Guard, and Marksman's Spite defaults. Master enable, navigation, mounting, objective navigation, queue automation, and the combat provider all require explicit selection. Selecting Native does not silently activate combat execution.
 
 Strategic movement requires:
 
@@ -150,6 +152,8 @@ Keep the match limit at `1`. First verify the detected campaign and allowed-map 
 - verbose logging: on
 
 Run the external ACR normally and compare its observed choices with `WOULD TARGET` and `WOULD USE`. Confirm there are no PvPSentinel-originated target changes or actions. Record target scores/switches, defensive threshold decisions, primed-tool and Analysis state, Wildfire state, allied focus, limit gauge, and rejection details. Do not select Active until the shadow trace has been reviewed.
+
+For v0.2.0.1, specifically verify that unsafe candidates produce `WOULD TARGET: NONE`, eligible defense produces `OFFENSE SUPPRESSED`, Guard thresholds rise before focus-fire deaths, and Purify/LB rejections state their confidence reason. The manually triggered limit break at match clock 11:52 in the first comparison trace is excluded from external-provider behavior analysis.
 
 The first live pass must specifically validate:
 

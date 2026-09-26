@@ -12,7 +12,7 @@ internal sealed class PvPTargetEvaluator
     {
         var local = game.LocalPlayer;
         if (local is null)
-            return new TargetEvaluation(null, null, false, "Local player unavailable.", []);
+            return new TargetEvaluation(null, null, null, false, "Local player unavailable.", []);
 
         var candidates = game.Enemies
             .Where(enemy => enemy.IsEnemy && !enemy.IsDead && enemy.IsTargetable && enemy.CurrentHp > 0)
@@ -25,16 +25,43 @@ internal sealed class PvPTargetEvaluator
         {
             selectedTargetId = 0;
             selectedAtUtc = DateTime.MinValue;
-            return new TargetEvaluation(null, null, false, "No alive, targetable, classified PvP enemy is in the configured evaluation range.", candidates);
+            return new TargetEvaluation(null, null, null, false, "No alive, targetable, classified PvP enemy is in the configured evaluation range.", candidates);
         }
 
-        var best = candidates[0];
+        var acceptableCandidates = candidates
+            .Where(candidate => NativeCombatPolicy.IsTargetScoreAcceptable(
+                candidate.SafetyScore, config.NativeTargetMinimumScore))
+            .ToArray();
+        if (acceptableCandidates.Length == 0)
+        {
+            var bestRejected = candidates.OrderByDescending(candidate => candidate.SafetyScore).First();
+            selectedTargetId = 0;
+            selectedAtUtc = DateTime.MinValue;
+            var safetyReason = bestRejected.IsOverextended || bestRejected.Score.Overextension < 0f
+                ? "unsafe pursuit/overextension penalties"
+                : "insufficient contextual value";
+            return new TargetEvaluation(
+                null,
+                null,
+                bestRejected,
+                false,
+                $"No suitable combat target: best candidate {bestRejected.Player.Name} ({bestRejected.Player.JobAbbreviation}) has safety score {bestRejected.SafetyScore:F1}, below the configured {config.NativeTargetMinimumScore:F1} floor because of {safetyReason}. Ranking score {bestRejected.Score.Total:F1}; stickiness is excluded from the safety floor. {bestRejected.Score.Summary}.",
+                candidates);
+        }
+
+        var best = acceptableCandidates[0];
         var current = candidates.FirstOrDefault(candidate => candidate.Player.GameObjectId == selectedTargetId);
+        var currentRejectedBySafety = current is not null &&
+                                      !NativeCombatPolicy.IsTargetScoreAcceptable(current.SafetyScore, config.NativeTargetMinimumScore);
+        if (currentRejectedBySafety)
+            current = null;
         var switched = false;
         string reason;
 
         var committed = candidates.FirstOrDefault(candidate =>
-            candidate.Player.GameObjectId == committedTargetId && !candidate.IsOverextended);
+            candidate.Player.GameObjectId == committedTargetId &&
+            !candidate.IsOverextended &&
+            NativeCombatPolicy.IsTargetScoreAcceptable(candidate.SafetyScore, config.NativeTargetMinimumScore));
         if (committed is not null)
         {
             switched = selectedTargetId != 0 && selectedTargetId != committed.Player.GameObjectId;
@@ -43,14 +70,16 @@ internal sealed class PvPTargetEvaluator
             if (selectedTargetId != best.Player.GameObjectId)
                 Commit(best, game.CapturedAtUtc);
 
-            var committedRunnerUp = candidates.FirstOrDefault(candidate => candidate.Player.GameObjectId != best.Player.GameObjectId);
-            return new TargetEvaluation(best, committedRunnerUp, switched, reason, candidates);
+            var committedRunnerUp = acceptableCandidates.FirstOrDefault(candidate => candidate.Player.GameObjectId != best.Player.GameObjectId);
+            return new TargetEvaluation(best, committedRunnerUp, null, switched, reason, candidates);
         }
 
         if (current is null)
         {
             switched = selectedTargetId != 0;
-            reason = selectedTargetId == 0
+            reason = currentRejectedBySafety
+                ? $"Safety overrode current-target stickiness because the prior target fell below the {config.NativeTargetMinimumScore:F1} score floor; selected the highest acceptable target: {best.Score.Summary}."
+                : selectedTargetId == 0
                 ? $"Selected highest contextual score: {best.Score.Summary}."
                 : $"Previous native target became invalid; selected highest valid score: {best.Score.Summary}.";
             Commit(best, game.CapturedAtUtc);
@@ -86,8 +115,8 @@ internal sealed class PvPTargetEvaluator
             }
         }
 
-        var runnerUp = candidates.FirstOrDefault(candidate => candidate.Player.GameObjectId != best.Player.GameObjectId);
-        return new TargetEvaluation(best, runnerUp, switched, reason, candidates);
+        var runnerUp = acceptableCandidates.FirstOrDefault(candidate => candidate.Player.GameObjectId != best.Player.GameObjectId);
+        return new TargetEvaluation(best, runnerUp, null, switched, reason, candidates);
     }
 
     public void Reset()
@@ -120,8 +149,16 @@ internal sealed class PvPTargetEvaluator
             alliedFocus,
             config.NativeMarksmanFocusAllowance,
             config.NativeMarksmanMaximumEffectiveHp,
-            enemy.HasStatus(3154) ? 1.2f : 1f);
-        var execute = !guarding && distance <= 50f && effectiveHp <= executeThreshold;
+            enemy.HasStatus(3154) ? 1.2f : 1f,
+            config.NativeMarksmanSoloConfidence,
+            config.NativeMarksmanUncreditedFocus);
+        var executeConfidence = NativeCombatPolicy.HasMarksmanHighHpConfidence(
+            (uint)effectiveHp,
+            config.NativeMarksmanBaseDamage,
+            enemy.HasStatus(3154) ? 1.2f : 1f,
+            alliedFocus,
+            config.NativeMarksmanHighHpMinimumFocus);
+        var execute = !guarding && distance <= 50f && effectiveHp <= executeThreshold && executeConfidence;
 
         var rangeScore = Math.Clamp(1f - distance / Math.Max(1f, config.NativeTargetMaximumRange), 0f, 1f) * weights.RangeWeight;
         var healthScore = Math.Clamp(1f - enemy.HpPercent / 100f, 0f, 1f) * weights.HpPercentWeight;

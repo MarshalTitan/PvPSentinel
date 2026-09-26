@@ -189,6 +189,8 @@ internal sealed class DiagnosticWindow : Window
             KeyValue("Wildfire state", native.WildfireState);
             KeyValue("Overheated", YesNo(native.Overheated));
             KeyValue("Limit gauge", native.LimitBreakState);
+            KeyValue("Defense state", native.DefenseState);
+            KeyValue("Offense suppression", native.OffenseSuppression);
             KeyValue("Action resolution", native.ActionResolution);
             if (ImGui.TreeNode($"Important native rejections ({native.Rejections.Count})"))
             {

@@ -14,11 +14,13 @@ internal sealed record TargetCandidate(
     TargetScore Score)
 {
     public uint EffectiveHp => Player.CurrentHp + (uint)(Player.MaxHp * Player.ShieldPercent / 100f);
+    public float SafetyScore => Score.Total - Score.Stickiness;
 }
 
 internal sealed record TargetEvaluation(
     TargetCandidate? Selected,
     TargetCandidate? RunnerUp,
+    TargetCandidate? BestRejected,
     bool Switched,
     string SelectionReason,
     IReadOnlyList<TargetCandidate> Candidates);

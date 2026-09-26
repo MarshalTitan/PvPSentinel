@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public CombatProvider CombatProvider { get; set; } = CombatProvider.Off;
@@ -41,9 +41,17 @@ public sealed class Configuration : IPluginConfiguration
     public float ExternalCombatYieldSeconds { get; set; } = 2.5f;
     public float NativeRecuperateHpPercent { get; set; } = 75f;
     public float NativeGuardHpPercent { get; set; } = 35f;
+    public float NativeGuardMaximumHpPercent { get; set; } = 65f;
     public int NativeGuardMinimumThreats { get; set; } = 2;
+    public float NativeGuardTargeterHpBonus { get; set; } = 4f;
+    public float NativeGuardNearbyThreatHpBonus { get; set; } = 1.5f;
+    public int NativeGuardNearbyThreatBaseline { get; set; } = 2;
+    public float NativeGuardDisadvantageHpBonus { get; set; } = 2f;
+    public float NativeGuardRapidLossPercentPerSecond { get; set; } = 12f;
+    public float NativeGuardRapidLossHpBonus { get; set; } = 8f;
     public float NativeTargetMaximumRange { get; set; } = 50f;
     public float NativeTargetOverextensionRange { get; set; } = 35f;
+    public float NativeTargetMinimumScore { get; set; } = 10f;
     public float NativeTargetSwitchAdvantage { get; set; } = 18f;
     public float NativeTargetMinimumCommitmentSeconds { get; set; } = 2.5f;
     public float NativeTargetRangeWeight { get; set; } = 28f;
@@ -58,8 +66,11 @@ public sealed class Configuration : IPluginConfiguration
     public float NativeTargetOverextensionPenalty { get; set; } = 45f;
     public float NativeTargetUnsupportedPenalty { get; set; } = 16f;
     public uint NativeMarksmanBaseDamage { get; set; } = 40000;
-    public uint NativeMarksmanFocusAllowance { get; set; } = 8000;
-    public uint NativeMarksmanMaximumEffectiveHp { get; set; } = 72000;
+    public float NativeMarksmanSoloConfidence { get; set; } = 0.9f;
+    public int NativeMarksmanUncreditedFocus { get; set; } = 1;
+    public int NativeMarksmanHighHpMinimumFocus { get; set; } = 3;
+    public uint NativeMarksmanFocusAllowance { get; set; } = 3000;
+    public uint NativeMarksmanMaximumEffectiveHp { get; set; } = 56000;
     public float MountDistance { get; set; } = 55f;
     public float DismountDistance { get; set; } = 28f;
     public float MountEnemySafetyRadius { get; set; } = 30f;
@@ -87,7 +98,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 3)
+        if (Version >= 4)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -103,10 +114,34 @@ public sealed class Configuration : IPluginConfiguration
             QueueAutomationEnabled = false;
         }
 
-        // Native execution did not exist as an explicit development mode before
-        // version 3. Existing installations always enter the read-only observer.
-        NativeCombatMode = NativeCombatMode.ShadowObserve;
-        Version = 3;
+        if (Version < 3)
+        {
+            // Native execution did not exist as an explicit development mode before
+            // version 3. Existing installations always enter the read-only observer.
+            NativeCombatMode = NativeCombatMode.ShadowObserve;
+        }
+
+        if (Version < 4)
+        {
+            // v0.2.0.1 deliberately narrows the observer's safety envelope. Apply
+            // these safer defaults to existing v0.2.0.0 installations rather than
+            // retaining the earlier, more speculative LB values.
+            NativeTargetMinimumScore = 10f;
+            NativeGuardMaximumHpPercent = 65f;
+            NativeGuardTargeterHpBonus = 4f;
+            NativeGuardNearbyThreatHpBonus = 1.5f;
+            NativeGuardNearbyThreatBaseline = 2;
+            NativeGuardDisadvantageHpBonus = 2f;
+            NativeGuardRapidLossPercentPerSecond = 12f;
+            NativeGuardRapidLossHpBonus = 8f;
+            NativeMarksmanSoloConfidence = 0.9f;
+            NativeMarksmanUncreditedFocus = 1;
+            NativeMarksmanHighHpMinimumFocus = 3;
+            NativeMarksmanFocusAllowance = 3000;
+            NativeMarksmanMaximumEffectiveHp = 56000;
+        }
+
+        Version = 4;
         Save();
     }
 

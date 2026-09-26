@@ -23,20 +23,35 @@ internal sealed class MachinistExecuteController
         var config = context.Configuration;
         var chainSawVulnerability = target.Player.HasStatus(3154);
         var damageMultiplier = chainSawVulnerability ? 1.2f : 1f;
+        var expectedSoloDamage = (uint)MathF.Round(config.NativeMarksmanBaseDamage * damageMultiplier);
         var allowance = NativeCombatPolicy.MarksmanEffectiveHpAllowance(
             config.NativeMarksmanBaseDamage,
             target.AlliedFocus,
             config.NativeMarksmanFocusAllowance,
             config.NativeMarksmanMaximumEffectiveHp,
-            damageMultiplier);
+            damageMultiplier,
+            config.NativeMarksmanSoloConfidence,
+            config.NativeMarksmanUncreditedFocus);
+        var highHpConfidence = NativeCombatPolicy.HasMarksmanHighHpConfidence(
+            target.EffectiveHp,
+            config.NativeMarksmanBaseDamage,
+            damageMultiplier,
+            target.AlliedFocus,
+            config.NativeMarksmanHighHpMinimumFocus);
         if (target.EffectiveHp > allowance)
         {
             return new ExecuteEvaluation(null,
-                $"Marksman's Spite rejected: effective HP {target.EffectiveHp:N0} exceeds contextual allowance {allowance:N0} (base {config.NativeMarksmanBaseDamage:N0} + focus {target.AlliedFocus}).");
+                $"Marksman's Spite confidence rejected: effective HP {target.EffectiveHp:N0} exceeds conservative allowance {allowance:N0} (expected solo damage {expectedSoloDamage:N0}, confidence {config.NativeMarksmanSoloConfidence:P0}, allied focus {target.AlliedFocus}, first {config.NativeMarksmanUncreditedFocus} focus uncredited, {config.NativeMarksmanFocusAllowance:N0} per additional focus, cap {config.NativeMarksmanMaximumEffectiveHp:N0}).");
+        }
+
+        if (!highHpConfidence)
+        {
+            return new ExecuteEvaluation(null,
+                $"Marksman's Spite confidence rejected: effective HP {target.EffectiveHp:N0} is above expected solo damage {expectedSoloDamage:N0}; allied focus {target.AlliedFocus} is below the configured high-HP evidence requirement {config.NativeMarksmanHighHpMinimumFocus}.");
         }
 
         var reason =
-            $"Contextual execute: effective HP {target.EffectiveHp:N0} <= {allowance:N0}, Guard absent, {target.AlliedFocus} allied focus, range {target.Distance:F1}y, {config.NativeMarksmanBaseDamage:N0} base LB damage available, Chain Saw vulnerability={chainSawVulnerability}.";
+            $"Contextual execute confidence passed: effective HP {target.EffectiveHp:N0} <= conservative allowance {allowance:N0}; expected solo damage {expectedSoloDamage:N0}, Guard absent, allied focus {target.AlliedFocus}, high-HP evidence={highHpConfidence}, range {target.Distance:F1}y, Chain Saw vulnerability={chainSawVulnerability}.";
         return new ExecuteEvaluation(
             new NativeActionCandidate(
                 NativeActionLayer.Execute,

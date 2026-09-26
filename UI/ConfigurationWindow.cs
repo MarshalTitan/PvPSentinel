@@ -106,15 +106,30 @@ internal sealed class ConfigurationWindow : Window
         Section("Native PvP combat (experimental)");
         ImGui.TextWrapped("Shadow / Observe is the safe default: the native combat subsystem evaluates and logs targets/actions but cannot target, act, or move. Active permits verified native actions; strategic navigation remains a separate controller.");
         DrawFloat("Recuperate below HP", config.NativeRecuperateHpPercent, 25f, 95f, value => config.NativeRecuperateHpPercent = value, "%.0f %%");
-        DrawFloat("Guard danger HP", config.NativeGuardHpPercent, 10f, 60f, value => config.NativeGuardHpPercent = value, "%.0f %%");
+        DrawFloat("Guard base danger HP", config.NativeGuardHpPercent, 10f, 60f, value => config.NativeGuardHpPercent = value, "%.0f %%");
+        DrawFloat("Guard maximum danger HP", config.NativeGuardMaximumHpPercent, 35f, 90f, value => config.NativeGuardMaximumHpPercent = value, "%.0f %%");
         DrawInt("Guard minimum threats", config.NativeGuardMinimumThreats, 1, 6, value => config.NativeGuardMinimumThreats = value);
         DrawFloat("Native target evaluation range", config.NativeTargetMaximumRange, 25f, 60f, value => config.NativeTargetMaximumRange = value, "%.0f y");
         DrawFloat("Native overextension range", config.NativeTargetOverextensionRange, 20f, 50f, value => config.NativeTargetOverextensionRange = value, "%.0f y");
+        DrawFloat("Native minimum target safety score", config.NativeTargetMinimumScore, -20f, 80f, value => config.NativeTargetMinimumScore = value, "%.0f");
         DrawFloat("Native switch score advantage", config.NativeTargetSwitchAdvantage, 0f, 60f, value => config.NativeTargetSwitchAdvantage = value, "%.0f");
         DrawFloat("Native target commitment", config.NativeTargetMinimumCommitmentSeconds, 0f, 8f, value => config.NativeTargetMinimumCommitmentSeconds = value, "%.1f s");
         DrawInt("Marksman's Spite base damage", (int)config.NativeMarksmanBaseDamage, 20000, 60000, value => config.NativeMarksmanBaseDamage = (uint)value);
+        DrawFloat("Marksman's Spite solo confidence", config.NativeMarksmanSoloConfidence, 0.5f, 1f, value => config.NativeMarksmanSoloConfidence = value, "%.2f");
+        DrawInt("Marksman's Spite uncredited focus", config.NativeMarksmanUncreditedFocus, 0, 4, value => config.NativeMarksmanUncreditedFocus = value);
+        DrawInt("Marksman's Spite high-HP minimum focus", config.NativeMarksmanHighHpMinimumFocus, 0, 8, value => config.NativeMarksmanHighHpMinimumFocus = value);
         DrawInt("Marksman's Spite focus allowance", (int)config.NativeMarksmanFocusAllowance, 0, 20000, value => config.NativeMarksmanFocusAllowance = (uint)value);
         DrawInt("Marksman's Spite max effective HP", (int)config.NativeMarksmanMaximumEffectiveHp, 40000, 120000, value => config.NativeMarksmanMaximumEffectiveHp = (uint)value);
+        if (ImGui.TreeNode("Advanced native Guard threat weights"))
+        {
+            DrawFloat("HP bonus per active targeter", config.NativeGuardTargeterHpBonus, 0f, 12f, value => config.NativeGuardTargeterHpBonus = value, "%.1f");
+            DrawFloat("HP bonus per nearby threat", config.NativeGuardNearbyThreatHpBonus, 0f, 6f, value => config.NativeGuardNearbyThreatHpBonus = value, "%.1f");
+            DrawInt("Nearby-threat bonus baseline", config.NativeGuardNearbyThreatBaseline, 0, 8, value => config.NativeGuardNearbyThreatBaseline = value);
+            DrawFloat("HP bonus per numerical disadvantage", config.NativeGuardDisadvantageHpBonus, 0f, 6f, value => config.NativeGuardDisadvantageHpBonus = value, "%.1f");
+            DrawFloat("Rapid HP-loss threshold", config.NativeGuardRapidLossPercentPerSecond, 2f, 40f, value => config.NativeGuardRapidLossPercentPerSecond = value, "%.1f %%/s");
+            DrawFloat("Rapid HP-loss threshold bonus", config.NativeGuardRapidLossHpBonus, 0f, 25f, value => config.NativeGuardRapidLossHpBonus = value, "%.1f");
+            ImGui.TreePop();
+        }
         if (ImGui.TreeNode("Advanced native target-score weights"))
         {
             DrawFloat("Range weight", config.NativeTargetRangeWeight, 0f, 80f, value => config.NativeTargetRangeWeight = value, "%.0f");

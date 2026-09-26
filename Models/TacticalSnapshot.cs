@@ -85,6 +85,8 @@ internal sealed record NativeCombatDiagnostics(
     string WildfireState,
     bool Overheated,
     string LimitBreakState,
+    string DefenseState,
+    string OffenseSuppression,
     string ActionResolution,
     IReadOnlyList<string> Rejections);
 
