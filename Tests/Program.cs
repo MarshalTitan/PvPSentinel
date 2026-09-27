@@ -72,31 +72,33 @@ Check("reset clears external yield", false,
 var rebornEngagement = new RotationSolverEngagementTracker();
 var rebornStart = new DateTime(2026, 9, 27, 1, 0, 0, DateTimeKind.Utc);
 Check("inactive Reborn does not claim combat ownership", ExternalEngagementState.Unavailable,
-    rebornEngagement.Update(rebornStart, false, false, false, false, true, false, false, 3, false, 5f).State);
+    rebornEngagement.Update(rebornStart, false, false, false, false, false, true, false, false, 3, false, 5f).State);
 Check("active Reborn begins in transit", ExternalEngagementState.Transit,
-    rebornEngagement.Update(rebornStart, true, false, false, false, false, false, false, 0, false, 5f).State);
+    rebornEngagement.Update(rebornStart, true, false, false, false, false, false, false, false, 0, false, 5f).State);
 Check("mount cast does not latch a combat engagement", false,
-    rebornEngagement.Update(rebornStart.AddSeconds(1), true, false, false, true, false, true, true, 0, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(1), true, false, false, true, false, false, true, true, 0, false, 5f).ShouldYield);
 Check("unflagged mount cast without nearby enemies does not latch combat", false,
-    rebornEngagement.Update(rebornStart.AddSeconds(1.5), true, false, false, false, false, true, true, 0, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(1.5), true, false, false, false, false, false, true, true, 0, false, 5f).ShouldYield);
+Check("Sentinel mount request latch suppresses the pre-condition cast frame", false,
+    rebornEngagement.Update(rebornStart.AddSeconds(1.75), true, false, false, false, true, false, true, true, 2, false, 5f).ShouldYield);
 Check("combat latches the Reborn engagement", true,
-    rebornEngagement.Update(rebornStart.AddSeconds(2), true, false, false, false, true, false, false, 4, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(2), true, false, false, false, false, true, false, false, 4, false, 5f).ShouldYield);
 Check("nearby enemies hold engagement after combat flag clears", true,
-    rebornEngagement.Update(rebornStart.AddSeconds(3), true, false, false, false, false, false, false, 2, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(3), true, false, false, false, false, false, false, false, 2, false, 5f).ShouldYield);
 Check("clear battlefield starts quiet period", true,
-    rebornEngagement.Update(rebornStart.AddSeconds(4), true, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(4), true, false, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
 Check("quiet period continues before configured boundary", true,
-    rebornEngagement.Update(rebornStart.AddSeconds(8.9), true, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(8.9), true, false, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
 var rebornCleared = rebornEngagement.Update(
-    rebornStart.AddSeconds(9), true, false, false, false, false, false, false, 0, false, 5f);
+    rebornStart.AddSeconds(9), true, false, false, false, false, false, false, false, 0, false, 5f);
 Check("strategic travel resumes after clear quiet period", false, rebornCleared.ShouldYield);
 Check("cleared engagement returns to transit", ExternalEngagementState.Transit, rebornCleared.State);
 Check("death releases navigation yield", false,
-    rebornEngagement.Update(rebornStart.AddSeconds(10), true, true, false, false, true, false, false, 5, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(10), true, true, false, false, false, true, false, false, 5, false, 5f).ShouldYield);
 Check("death is reported distinctly", ExternalEngagementState.Dead,
-    rebornEngagement.Update(rebornStart.AddSeconds(10.1), true, true, false, false, false, false, false, 0, false, 5f).State);
+    rebornEngagement.Update(rebornStart.AddSeconds(10.1), true, true, false, false, false, false, false, false, 0, false, 5f).State);
 Check("respawn enters regroup state without combat yield", ExternalEngagementState.Regrouping,
-    rebornEngagement.Update(rebornStart.AddSeconds(11), true, false, false, false, false, false, false, 0, true, 5f).State);
+    rebornEngagement.Update(rebornStart.AddSeconds(11), true, false, false, false, false, false, false, false, 0, true, 5f).State);
 
 Check("Recuperate eligible below 75%", true,
     NativeCombatPolicy.RecuperateEligible(74.9f, 75f, 2000));
@@ -323,6 +325,26 @@ var transientSecure = SecureMarker(60360, 0, 1115742468, securePosition, "", 0);
 Check("live-verified moving Secure marker family is raw-only", SecureMarkerPromotionClass.RawObservationOnly,
     SecureObjectiveAggregator.ClassifyPromotionEvidence(
         SecureObjectiveAggregator.Aggregate([transientSecure])[0], false));
+var traderSecure = SecureMarker(60935, 0, 721735, securePosition, "Trader", 0);
+Check("live-verified Secure Trader marker remains raw-only", SecureMarkerPromotionClass.RawObservationOnly,
+    SecureObjectiveAggregator.ClassifyPromotionEvidence(
+        SecureObjectiveAggregator.Aggregate([traderSecure])[0], false));
+var objectivePresent = SecureObjectiveAggregator.Aggregate(
+    [SecureMarker(60575, 0, 486, securePosition, "South", 0)])[0];
+var objectiveFlicker = SecureObjectiveAggregator.Aggregate(
+    [SecureMarker(60575, 0, 0, securePosition, "South", 0)])[0];
+Check("Secure 486/zero objective-field flicker is not a semantic transition",
+    objectivePresent.TransitionFingerprint, objectiveFlicker.TransitionFingerprint);
+var countdownA = SecureObjectiveAggregator.Aggregate(
+    [SecureMarker(63979, 0, 486, securePosition, "Spawns in: 2:36", 0)])[0];
+var countdownB = SecureObjectiveAggregator.Aggregate(
+    [SecureMarker(63979, 0, 486, securePosition, "Spawns in: 2:35", 0)])[0];
+Check("Secure countdown ticks are retained as evidence without transition spam",
+    countdownA.TransitionFingerprint, countdownB.TransitionFingerprint);
+var hpEvidence = SecureObjectiveAggregator.Aggregate(
+    [SecureMarker(60999, 0, 486, securePosition, "HP: 20%", 0)])[0];
+Check("Secure lifecycle shape change remains a semantic transition", false,
+    countdownA.TransitionFingerprint == hpEvidence.TransitionFingerprint);
 
 var secureAdapter = new SecureAdapter();
 secureAdapter.Reset(trackingNow);

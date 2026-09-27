@@ -114,7 +114,7 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     now,
                     now,
                     1,
-                    aggregate.EvidenceFingerprint,
+                    aggregate.TransitionFingerprint,
                     sanitizedEvidence,
                     true,
                     promotionClass,
@@ -153,15 +153,15 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     candidate.StabilityStartedUtc = now;
                     candidate.ScanCount = 1;
                 }
-                if (!string.Equals(candidate.EvidenceFingerprint, aggregate.EvidenceFingerprint, StringComparison.Ordinal))
+                var previousEvidence = candidate.EvidenceSummary;
+                candidate.EvidenceSummary = sanitizedEvidence;
+                if (!string.Equals(candidate.EvidenceFingerprint, aggregate.TransitionFingerprint, StringComparison.Ordinal))
                 {
-                    var before = candidate.EvidenceSummary;
-                    candidate.EvidenceFingerprint = aggregate.EvidenceFingerprint;
-                    candidate.EvidenceSummary = sanitizedEvidence;
+                    candidate.EvidenceFingerprint = aggregate.TransitionFingerprint;
                     changes.Add(new ObjectiveChange(
                         "secure_observable_transition",
                         LogicalOrCandidateId(candidate.PositionKey),
-                        $"before={before}; after={sanitizedEvidence}; position={FormatVector(aggregate.Position)}"));
+                        $"before={previousEvidence}; after={sanitizedEvidence}; position={FormatVector(aggregate.Position)}"));
                 }
             }
 

@@ -175,7 +175,13 @@ public sealed class Plugin : IDalamudPlugin
         var target = targetSelector.Select(game, mainCluster, config);
         var objective = objectiveStrategy.Select(game, config);
         var (behavior, behaviorSince, reason) = behaviorEngine.Evaluate(game, mainCluster, target, objective, config);
-        var combatDecision = combat.Update(game, behavior, target, config, threat);
+        var combatDecision = combat.Update(
+            game,
+            behavior,
+            target,
+            config,
+            threat,
+            navigation.IsMountTransitionPending(game.CapturedAtUtc));
         var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, battlefieldState, config);
         foreach (var navigationEvent in navigation.DrainManualEvents())
             battlefield.RecordNavigationEvent(navigationEvent);
@@ -264,7 +270,10 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private static int CountNear(IEnumerable<PlayerSnapshot> players, Vector3 origin, float radius) =>
-        players.Count(player => Vector2.Distance(new Vector2(player.Position.X, player.Position.Z), new Vector2(origin.X, origin.Z)) <= radius);
+        players.Count(player =>
+            !player.IsDead &&
+            player.CurrentHp > 0 &&
+            Vector2.Distance(new Vector2(player.Position.X, player.Position.Z), new Vector2(origin.X, origin.Z)) <= radius);
 
     private static TacticalSnapshot EmptySnapshot()
     {

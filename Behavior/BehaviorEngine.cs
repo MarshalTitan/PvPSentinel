@@ -89,7 +89,10 @@ internal sealed class BehaviorEngine
     }
 
     private static int CountNear(IEnumerable<PlayerSnapshot> players, Vector3 point, float radius) =>
-        players.Count(player => HorizontalDistance(player.Position, point) <= radius);
+        players.Count(player =>
+            !player.IsDead &&
+            player.CurrentHp > 0 &&
+            HorizontalDistance(player.Position, point) <= radius);
 
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));

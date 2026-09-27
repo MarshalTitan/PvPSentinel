@@ -6,6 +6,8 @@ internal sealed record MountDecision(MountState State, bool WaitBeforeMovement, 
 
 internal interface IMountController
 {
+    bool IsTransitionPending(DateTime now);
+
     MountDecision Update(
         GameStateSnapshot game,
         bool longDistanceTravel,
@@ -13,4 +15,3 @@ internal interface IMountController
         int nearbyEnemies,
         Configuration config);
 }
-

@@ -9,6 +9,7 @@ internal sealed record SecureMarkerAggregate(
     int EvidenceCount,
     string MarkerFamilyFingerprint,
     string EvidenceFingerprint,
+    string TransitionFingerprint,
     string EvidenceSummary,
     IReadOnlyList<FrontlineMapMarkerObservation> Observations);
 
@@ -31,6 +32,8 @@ internal static class SecureObjectiveAggregator
     // evidence, but are never navigation destinations.
     private static readonly HashSet<uint> LiveVerifiedTransientIcons = [60360, 60361];
     private const uint ObservedTransientObjectiveSentinel = 1115742468;
+    private const uint LiveVerifiedTraderIcon = 60935;
+    private const uint LiveVerifiedTraderObjective = 721735;
 
     public const int ObjectiveSignalStableScans = 8;
     public static readonly TimeSpan ObjectiveSignalStableAge = TimeSpan.FromSeconds(2);
@@ -60,7 +63,7 @@ internal static class SecureObjectiveAggregator
                     observations.Average(marker => marker.Position.Z));
                 var rows = observations.Select(EvidenceRow).Distinct(StringComparer.Ordinal).ToArray();
                 var families = observations
-                    .Select(marker => $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}")
+                    .Select(marker => $"{marker.IconId}/{marker.DataId}/{NormalizeFlickeringObjectiveId(marker.ObjectiveId)}")
                     .Distinct(StringComparer.Ordinal)
                     .Order(StringComparer.Ordinal)
                     .ToArray();
@@ -79,6 +82,7 @@ internal static class SecureObjectiveAggregator
                     observations.Length,
                     string.Join('|', families),
                     string.Join('|', rows),
+                    string.Join('|', observations.Select(TransitionEvidenceRow).Distinct(StringComparer.Ordinal)),
                     $"ids=[{string.Join(',', identities)}]; text=[{(tooltips.Length == 0 ? "<none>" : string.Join(" | ", tooltips))}]",
                     observations);
             })
@@ -92,7 +96,8 @@ internal static class SecureObjectiveAggregator
         SecureMarkerAggregate aggregate,
         bool hasPhysicalCorroboration)
     {
-        if (aggregate.Observations.Any(IsLiveVerifiedTransientMarker))
+        if (aggregate.Observations.Any(marker =>
+                IsLiveVerifiedTransientMarker(marker) || IsLiveVerifiedNonObjectiveMarker(marker)))
             return SecureMarkerPromotionClass.RawObservationOnly;
 
         if (hasPhysicalCorroboration)
@@ -137,6 +142,12 @@ internal static class SecureObjectiveAggregator
         marker.DataId == 0 &&
         marker.ObjectiveId == ObservedTransientObjectiveSentinel;
 
+    public static bool IsLiveVerifiedNonObjectiveMarker(FrontlineMapMarkerObservation marker) =>
+        marker.IconId == LiveVerifiedTraderIcon &&
+        marker.DataId == 0 &&
+        marker.ObjectiveId == LiveVerifiedTraderObjective &&
+        marker.Tooltip.Trim().Equals("Trader", StringComparison.OrdinalIgnoreCase);
+
     public static string FamilyKey(FrontlineMapMarkerObservation marker) =>
         $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}/e{marker.EventState}";
 
@@ -157,6 +168,40 @@ internal static class SecureObjectiveAggregator
             : marker.Tooltip.Trim().Replace('\r', ' ').Replace('\n', ' ');
         return string.Create(CultureInfo.InvariantCulture,
             $"icon={marker.IconId},data={marker.DataId},objective={marker.ObjectiveId},event={marker.EventState},end={marker.EndTimestamp},text={tooltip}");
+    }
+
+    private static string TransitionEvidenceRow(FrontlineMapMarkerObservation marker)
+    {
+        var tooltip = string.IsNullOrWhiteSpace(marker.Tooltip)
+            ? "<none>"
+            : NormalizeVolatileNumbers(marker.Tooltip.Trim().Replace('\r', ' ').Replace('\n', ' '));
+        return string.Create(CultureInfo.InvariantCulture,
+            $"icon={marker.IconId},data={marker.DataId},objective={NormalizeFlickeringObjectiveId(marker.ObjectiveId)},event={marker.EventState},text={tooltip}");
+    }
+
+    private static uint NormalizeFlickeringObjectiveId(uint objectiveId) =>
+        objectiveId is 0 or 486 ? 0u : objectiveId;
+
+    private static string NormalizeVolatileNumbers(string value)
+    {
+        var result = new char[value.Length];
+        var length = 0;
+        var inDigits = false;
+        foreach (var character in value)
+        {
+            if (char.IsDigit(character))
+            {
+                if (!inDigits)
+                    result[length++] = '#';
+                inDigits = true;
+                continue;
+            }
+
+            inDigits = false;
+            result[length++] = character;
+        }
+
+        return new string(result, 0, length);
     }
 
     private static int Quantize(float value) =>

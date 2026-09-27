@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0.5 — Live-enemy clearance and Secure field-data cleanup
+
+- Correlated the second Secure v0.3.0.4 field trace with six recordings: automatic mounting and the targeting-me counter operated correctly, two generated routes reached `ARRIVED`, and the central-platform route rejected a bad direct path before recovering through a materially different stair route.
+- Fixed the Reborn engagement-clearance count to include only living, targetable enemy players with HP remaining. Enemy corpses can no longer keep a preserved strategic destination paused or prevent a post-fight mount indefinitely.
+- Shared Sentinel's mount-request latch with Reborn arbitration so the Mount Roulette cast frame before Dalamud exposes `IsMounting` cannot be mistaken for a combat cast and immediately trigger a dismount/yield cycle.
+- Made a destination selected during combat pause explicitly replace the preserved destination. The new destination remains paused safely, then repaths from the post-fight position after clearance; diagnostics emit `navigation_destination_replaced`.
+- Demoted the live-confirmed pre-match Trader marker (`60935/0/721735`) to bounded raw research evidence so it no longer becomes an impossible `SEC-xx` navigation button.
+- Normalized the observed Secure `ObjectiveId` 486/0 presentation flicker and changing countdown/HP numbers for transition comparison. Current raw evidence is still retained, while thousands of non-semantic per-frame `secure_observable_transition` records are suppressed.
+- Preserved the six central temporary-objective locations and their spawn/HP lifecycle evidence; these were correlated by stable coordinates and were not discarded as player-marker noise.
+- Kept death and explicit STOP terminal, Native MCH in Shadow / Observe by default, and autonomous strategy, objective capture, queue/requeue, and provider-independent Limit Break execution disabled.
+
 ## 0.3.0.4 — Resumable combat yield and stable mounted travel
 
 - Changed manual M2 combat handoff from terminal cancellation to a resumable pause: Sentinel stops its owned vnavmesh path, preserves the selected destination, lets RotationSolverReborn own the fight, then requests a fresh generated route from the post-fight position after combat, nearby enemies, and the configured quiet period clear.

@@ -21,7 +21,8 @@ internal sealed class CombatProviderCoordinator(
         BehaviorState behavior,
         TargetDecision? target,
         Configuration config,
-        PvPThreatSnapshot threat)
+        PvPThreatSnapshot threat,
+        bool sentinelMountTransitionPending)
     {
         if (!config.Enabled)
         {
@@ -44,7 +45,11 @@ internal sealed class CombatProviderCoordinator(
         var decision = config.CombatProvider switch
         {
             CombatProvider.ExternalAcr => UpdateExternal(game, config),
-            CombatProvider.RotationSolverReborn => UpdateRotationSolverReborn(game, behavior, config),
+            CombatProvider.RotationSolverReborn => UpdateRotationSolverReborn(
+                game,
+                behavior,
+                config,
+                sentinelMountTransitionPending),
             CombatProvider.NativePvPSentinel => nativeController.Update(game, behavior, target, config, threat),
             _ => new CombatDecision(
                 CombatProvider.Off,
@@ -65,7 +70,8 @@ internal sealed class CombatProviderCoordinator(
     private CombatDecision UpdateRotationSolverReborn(
         GameStateSnapshot game,
         BehaviorState behavior,
-        Configuration config)
+        Configuration config,
+        bool sentinelMountTransitionPending)
     {
         var status = rotationSolverReborn.GetStatus(game.CapturedAtUtc);
         var providerActive = status.Loaded && status.IpcAvailable && status.AutorotationActive;
@@ -78,6 +84,7 @@ internal sealed class CombatProviderCoordinator(
             game.LocalPlayer?.IsDead == true,
             game.IsMounted,
             game.IsMounting,
+            sentinelMountTransitionPending,
             game.IsInCombat,
             game.IsCasting,
             game.IsActionQueued,
@@ -167,7 +174,11 @@ internal sealed class CombatProviderCoordinator(
     }
 
     private static int CountNear(IEnumerable<PlayerSnapshot> players, Vector3 origin, float radius) =>
-        players.Count(player => Vector2.Distance(
-            new Vector2(player.Position.X, player.Position.Z),
-            new Vector2(origin.X, origin.Z)) <= Math.Clamp(radius, 10f, 60f));
+        players.Count(player =>
+            !player.IsDead &&
+            player.CurrentHp > 0 &&
+            player.IsTargetable &&
+            Vector2.Distance(
+                new Vector2(player.Position.X, player.Position.Z),
+                new Vector2(origin.X, origin.Z)) <= Math.Clamp(radius, 10f, 60f));
 }

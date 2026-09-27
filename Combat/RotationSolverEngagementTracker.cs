@@ -33,6 +33,7 @@ internal sealed class RotationSolverEngagementTracker
         bool isDead,
         bool isMounted,
         bool isMounting,
+        bool sentinelMountTransitionPending,
         bool isInCombat,
         bool isCasting,
         bool isActionQueued,
@@ -72,10 +73,13 @@ internal sealed class RotationSolverEngagementTracker
             quietSinceUtc = DateTime.MinValue;
         }
 
-        // Mount casts can surface as a cast/queued action. They are strategic
-        // travel, not evidence that Reborn has begun a combat engagement.
+        // Mount casts can surface before the client sets its mounting condition.
+        // The Sentinel mount owner therefore supplies its short request latch as
+        // well as the public mounted/mounting flags so our own cast cannot be
+        // mistaken for Reborn beginning an engagement.
+        var strategicMountTransition = isMounting || sentinelMountTransitionPending;
         var hasCombatEvidence = isInCombat ||
-                                (!isMounting && !isMounted && nearbyEnemies > 0 && (isCasting || isActionQueued));
+                                (!strategicMountTransition && !isMounted && nearbyEnemies > 0 && (isCasting || isActionQueued));
         if (hasCombatEvidence)
         {
             state = ExternalEngagementState.Engaged;

@@ -11,6 +11,8 @@ internal sealed class NativeMountController(DevelopmentLogger developmentLog) : 
     private DateTime lastAttemptUtc = DateTime.MinValue;
     private DateTime mountRequestPendingUntilUtc = DateTime.MinValue;
 
+    public bool IsTransitionPending(DateTime now) => now < mountRequestPendingUntilUtc;
+
     public unsafe MountDecision Update(
         GameStateSnapshot game,
         bool longDistanceTravel,

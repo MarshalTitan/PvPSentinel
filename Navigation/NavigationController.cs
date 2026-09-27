@@ -50,6 +50,7 @@ internal sealed class NavigationController(
     private ManualNavigationSnapshot manualSnapshot = ManualNavigationSnapshot.Disarmed;
 
     public ManualNavigationSnapshot ManualSnapshot => manualSnapshot;
+    public bool IsMountTransitionPending(DateTime now) => mount.IsTransitionPending(now);
 
     public void SetManualNavigationArmed(bool armed)
     {
@@ -79,12 +80,41 @@ internal sealed class NavigationController(
     {
         if (!manualArmed)
             return false;
-        manualRequest = new ManualNavigationRequest(
+        var replacement = new ManualNavigationRequest(
             destinationId,
             destinationName,
             referencePosition,
             validatedApproachAnchors ?? [],
             DateTime.UtcNow);
+
+        if (manualYieldedToCombat && activeManual is { } interrupted)
+        {
+            activeManual = replacement;
+            manualRequest = null;
+            manualCandidates = [];
+            manualCandidateIndex = 0;
+            manualSnapped = null;
+            manualPendingPath = null;
+            manualRoute = [];
+            failedManualCorridor = [];
+            manualPlan = null;
+            manualRouteCursor = 0;
+            manualStageEnd = 0;
+            manualRouteAttempt = 0;
+            manualRouteId = "NONE";
+            manualReplacementAttempt = false;
+            consecutiveFailures = 0;
+            manualStuckCount = 0;
+            manualPathFailureCount = 0;
+            manualMountSignature = string.Empty;
+            Emit(
+                "navigation_destination_replaced",
+                $"previous={interrupted.DestinationId}; destination={destinationId}; combat_pause_preserved=true; action=repath_after_clearance");
+        }
+        else
+        {
+            manualRequest = replacement;
+        }
         Emit("navigation_request", $"destination={destinationId}; reference={FormatVector(referencePosition)}");
         return true;
     }
@@ -962,7 +992,11 @@ internal sealed class NavigationController(
     }
 
     private static int CountNear(IEnumerable<PlayerSnapshot> players, Vector3 origin, float radius) =>
-        players.Count(player => HorizontalDistance(player.Position, origin) <= radius);
+        players.Count(player =>
+            !player.IsDead &&
+            player.CurrentHp > 0 &&
+            player.IsTargetable &&
+            HorizontalDistance(player.Position, origin) <= radius);
 
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));
