@@ -14,12 +14,18 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
     public const uint TerritoryId = 1273;
     public const uint ContentFinderConditionId = 127;
     private static readonly TimeSpan MissingEvidenceDelay = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan CandidateRetention = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan RawFamilyReportInterval = TimeSpan.FromSeconds(30);
+    private const int MaximumTrackedPromotionCandidates = 128;
+    private const int MaximumResearchObjects = 256;
     private readonly Dictionary<string, MarkerCandidate> markerCandidates = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, RawMarkerFamily> rawMarkerFamilies = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> logicalIdByPosition = new(StringComparer.Ordinal);
     private readonly Dictionary<string, MutableResearchObject> researchObjects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> physicalResearchIdByLocation = new(StringComparer.OrdinalIgnoreCase);
     private int nextLocationIndex = 1;
     private int nextResearchIndex = 1;
+    private int droppedResearchObjects;
 
     public override FrontlineMap Map => FrontlineMap.BorderlandRuins;
     public override string Name => "Borderland Ruins (Secure discovery)";
@@ -30,8 +36,9 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
     public override IReadOnlyList<string> ResearchNotes =>
     [
         "Secure objective names, types, ownership, active state, and tactical meaning remain UNRESOLVED.",
-        $"Stable SEC locations require {SecureObjectiveAggregator.RequiredStableScans} scans across at least {SecureObjectiveAggregator.RequiredStableAge.TotalSeconds:F2}s at the same quantized coordinate.",
-        $"Observed {markerCandidates.Count} marker coordinate candidate(s), promoted {Records.Count} stable SEC location(s), and retained {researchObjects.Count} physical research object(s).",
+        $"Promotion tiers: objective signal {SecureObjectiveAggregator.ObjectiveSignalStableScans} scans/{SecureObjectiveAggregator.ObjectiveSignalStableAge.TotalSeconds:F0}s; durable unknown {SecureObjectiveAggregator.DurableEvidenceStableScans} scans/{SecureObjectiveAggregator.DurableEvidenceStableAge.TotalSeconds:F0}s; physical corroboration {SecureObjectiveAggregator.PhysicalEvidenceStableScans} scans/{SecureObjectiveAggregator.PhysicalEvidenceStableAge.TotalSeconds:F0}s.",
+        $"Observed {markerCandidates.Count} promotion candidate(s) and {rawMarkerFamilies.Count} raw-only family/families; promoted {Records.Count}/{SecureObjectiveAggregator.MaximumPromotedLocations} bounded SEC location(s); retained {researchObjects.Count}/{MaximumResearchObjects} physical research object(s), dropped {droppedResearchObjects} after the bound.",
+        RawFamilySummary(),
         "Marker/object disappearance means no longer observed; it is not interpreted as deactivation or destruction.",
     ];
 
@@ -39,11 +46,13 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
     {
         Records.Clear();
         markerCandidates.Clear();
+        rawMarkerFamilies.Clear();
         logicalIdByPosition.Clear();
         researchObjects.Clear();
         physicalResearchIdByLocation.Clear();
         nextLocationIndex = 1;
         nextResearchIndex = 1;
+        droppedResearchObjects = 0;
     }
 
     public override IReadOnlyList<ObjectiveChange> Update(
@@ -53,7 +62,7 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         IReadOnlyList<TrackedPlayer> players)
     {
         var changes = new List<ObjectiveChange>();
-        UpdateMarkers(now, markers, changes);
+        UpdateMarkers(now, markers, physicalObservations, changes);
         UpdateResearchObjects(now, physicalObservations, changes);
         AssociatePhysicalEvidence(now, changes);
 
@@ -70,17 +79,35 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
     private void UpdateMarkers(
         DateTime now,
         IReadOnlyList<FrontlineMapMarkerObservation> markers,
+        IReadOnlyList<ObjectiveObservation> physicalObservations,
         List<ObjectiveChange> changes)
     {
         var aggregates = SecureObjectiveAggregator.Aggregate(markers);
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var aggregate in aggregates)
         {
+            var physicallyCorroborated = physicalObservations.Any(observation =>
+                HorizontalDistance(observation.Position, aggregate.Position) <= 8f &&
+                Math.Abs(observation.Position.Y - aggregate.Position.Y) <= 5f);
+            var promotionClass = SecureObjectiveAggregator.ClassifyPromotionEvidence(
+                aggregate,
+                physicallyCorroborated);
+            if (promotionClass == SecureMarkerPromotionClass.RawObservationOnly)
+            {
+                ObserveRawFamily(now, aggregate, changes);
+                continue;
+            }
+
             var candidateKey = ResolveCandidateKey(aggregate.Position, seenKeys) ?? aggregate.PositionKey;
             seenKeys.Add(candidateKey);
             var sanitizedEvidence = PrivacySanitizer.Sanitize(aggregate.EvidenceSummary);
             if (!markerCandidates.TryGetValue(candidateKey, out var candidate))
             {
+                if (markerCandidates.Count >= MaximumTrackedPromotionCandidates)
+                {
+                    ObserveRawFamily(now, aggregate, changes, "promotion-candidate-cap");
+                    continue;
+                }
                 candidate = new MarkerCandidate(
                     candidateKey,
                     aggregate.Position,
@@ -89,12 +116,14 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     1,
                     aggregate.EvidenceFingerprint,
                     sanitizedEvidence,
-                    true);
+                    true,
+                    promotionClass,
+                    aggregate.MarkerFamilyFingerprint);
                 markerCandidates[candidateKey] = candidate;
                 changes.Add(new ObjectiveChange(
                     "secure_marker_candidate_appeared",
                     $"UNRESOLVED@{candidateKey}",
-                    $"position={FormatVector(aggregate.Position)}; records={aggregate.EvidenceCount}; evidence={sanitizedEvidence}"));
+                    $"position={FormatVector(aggregate.Position)}; class={promotionClass}; records={aggregate.EvidenceCount}; evidence={sanitizedEvidence}"));
             }
             else
             {
@@ -108,9 +137,22 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                         LogicalOrCandidateId(candidate.PositionKey),
                         $"position={FormatVector(aggregate.Position)}; evidence={sanitizedEvidence}"));
                 }
+                var familyChanged = !string.Equals(
+                    candidate.MarkerFamilyFingerprint,
+                    aggregate.MarkerFamilyFingerprint,
+                    StringComparison.Ordinal);
+                var drifted = HorizontalDistance(candidate.AnchorPosition, aggregate.Position) > 1.25f;
                 candidate.Position = aggregate.Position;
                 candidate.LastSeenUtc = now;
                 candidate.ScanCount++;
+                if (promotionClass != candidate.PromotionClass || familyChanged || drifted)
+                {
+                    candidate.PromotionClass = promotionClass;
+                    candidate.MarkerFamilyFingerprint = aggregate.MarkerFamilyFingerprint;
+                    candidate.AnchorPosition = aggregate.Position;
+                    candidate.StabilityStartedUtc = now;
+                    candidate.ScanCount = 1;
+                }
                 if (!string.Equals(candidate.EvidenceFingerprint, aggregate.EvidenceFingerprint, StringComparison.Ordinal))
                 {
                     var before = candidate.EvidenceSummary;
@@ -124,7 +166,12 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
             }
 
             if (!logicalIdByPosition.TryGetValue(candidate.PositionKey, out var logicalId) &&
-                SecureObjectiveAggregator.IsStable(candidate.StabilityStartedUtc, candidate.LastSeenUtc, candidate.ScanCount))
+                Records.Count < SecureObjectiveAggregator.MaximumPromotedLocations &&
+                SecureObjectiveAggregator.IsStable(
+                    candidate.StabilityStartedUtc,
+                    candidate.LastSeenUtc,
+                    candidate.ScanCount,
+                    candidate.PromotionClass))
             {
                 logicalId = $"SEC-{nextLocationIndex:00}";
                 logicalIdByPosition[candidate.PositionKey] = logicalId;
@@ -146,7 +193,17 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                 changes.Add(new ObjectiveChange(
                     "secure_location_discovered",
                     logicalId,
-                    $"position={FormatVector(candidate.Position)}; stable_scans={candidate.ScanCount}; evidence={candidate.EvidenceSummary}"));
+                    $"position={FormatVector(candidate.Position)}; promotion={candidate.PromotionClass}; stable_scans={candidate.ScanCount}; stable_age={(candidate.LastSeenUtc - candidate.StabilityStartedUtc).TotalSeconds:F1}s; evidence={candidate.EvidenceSummary}"));
+            }
+            else if (!logicalIdByPosition.ContainsKey(candidate.PositionKey) &&
+                     Records.Count >= SecureObjectiveAggregator.MaximumPromotedLocations &&
+                     !candidate.PromotionCeilingReported)
+            {
+                candidate.PromotionCeilingReported = true;
+                changes.Add(new ObjectiveChange(
+                    "secure_location_promotion_rejected",
+                    $"UNRESOLVED@{candidate.PositionKey}",
+                    $"reason=sanity ceiling {SecureObjectiveAggregator.MaximumPromotedLocations}; position={FormatVector(candidate.Position)}; class={candidate.PromotionClass}; evidence={candidate.EvidenceSummary}"));
             }
 
             if (logicalId is not null && Records.TryGetValue(logicalId, out var record))
@@ -175,6 +232,60 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                 record.Evidence = $"last observed: {candidate.EvidenceSummary}";
             }
         }
+
+        foreach (var staleKey in markerCandidates.Values
+                     .Where(candidate => !candidate.CurrentlyObserved &&
+                                         !logicalIdByPosition.ContainsKey(candidate.PositionKey) &&
+                                         now - candidate.LastSeenUtc >= CandidateRetention)
+                     .Select(candidate => candidate.PositionKey)
+                     .ToArray())
+            markerCandidates.Remove(staleKey);
+    }
+
+    private void ObserveRawFamily(
+        DateTime now,
+        SecureMarkerAggregate aggregate,
+        List<ObjectiveChange> changes,
+        string reason = "raw-observation-only")
+    {
+        foreach (var familyGroup in aggregate.Observations.GroupBy(SecureObjectiveAggregator.FamilyKey, StringComparer.Ordinal))
+        {
+            var familyKey = familyGroup.Key;
+            var sample = familyGroup.First();
+            if (!rawMarkerFamilies.TryGetValue(familyKey, out var family))
+            {
+                family = new RawMarkerFamily(familyKey, now);
+                rawMarkerFamilies[familyKey] = family;
+            }
+
+            family.ObservationCount += familyGroup.Count();
+            family.ScanCount++;
+            family.LastSeenUtc = now;
+            family.LastPosition = aggregate.Position;
+            family.Reason = reason;
+            family.AddSample(aggregate.Position);
+
+            if (family.LastReportedUtc != DateTime.MinValue &&
+                now - family.LastReportedUtc < RawFamilyReportInterval)
+                continue;
+
+            family.LastReportedUtc = now;
+            var sanitizedText = PrivacySanitizer.Sanitize(sample.Tooltip);
+            changes.Add(new ObjectiveChange(
+                "secure_raw_marker_family_observed",
+                $"RAW:{familyKey}",
+                $"reason={reason}; observations={family.ObservationCount}; scans={family.ScanCount}; last_position={FormatVector(aggregate.Position)}; samples=[{string.Join(',', family.SamplePositions.Select(FormatVector))}]; text={(string.IsNullOrWhiteSpace(sanitizedText) ? "<none>" : sanitizedText)}"));
+        }
+    }
+
+    private string RawFamilySummary()
+    {
+        if (rawMarkerFamilies.Count == 0)
+            return "Raw-only marker evidence: none observed.";
+        return "Raw-only marker families (not clickable): " + string.Join("; ", rawMarkerFamilies.Values
+            .OrderByDescending(family => family.ObservationCount)
+            .Take(8)
+            .Select(family => $"{family.FamilyKey}={family.ObservationCount}"));
     }
 
     private void UpdateResearchObjects(
@@ -192,6 +303,21 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
             var evidence = PhysicalEvidence(observation, sanitizedName);
             if (!researchObjects.TryGetValue(key, out var record))
             {
+                if (researchObjects.Count >= MaximumResearchObjects)
+                {
+                    var eviction = researchObjects
+                        .Where(pair => !pair.Value.CurrentlyObserved)
+                        .OrderBy(pair => pair.Value.LastSeenUtc)
+                        .Select(pair => pair.Key)
+                        .FirstOrDefault();
+                    if (eviction is not null)
+                        researchObjects.Remove(eviction);
+                }
+                if (researchObjects.Count >= MaximumResearchObjects)
+                {
+                    droppedResearchObjects++;
+                    continue;
+                }
                 record = new MutableResearchObject(
                     $"SEC-OBJ-{nextResearchIndex:000}",
                     nextResearchIndex,
@@ -331,10 +457,13 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         int scanCount,
         string evidenceFingerprint,
         string evidenceSummary,
-        bool currentlyObserved)
+        bool currentlyObserved,
+        SecureMarkerPromotionClass promotionClass,
+        string markerFamilyFingerprint)
     {
         public string PositionKey { get; } = positionKey;
         public Vector3 Position { get; set; } = position;
+        public Vector3 AnchorPosition { get; set; } = position;
         public DateTime FirstSeenUtc { get; } = firstSeenUtc;
         public DateTime StabilityStartedUtc { get; set; } = firstSeenUtc;
         public DateTime LastSeenUtc { get; set; } = lastSeenUtc;
@@ -342,6 +471,32 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         public string EvidenceFingerprint { get; set; } = evidenceFingerprint;
         public string EvidenceSummary { get; set; } = evidenceSummary;
         public bool CurrentlyObserved { get; set; } = currentlyObserved;
+        public SecureMarkerPromotionClass PromotionClass { get; set; } = promotionClass;
+        public string MarkerFamilyFingerprint { get; set; } = markerFamilyFingerprint;
+        public bool PromotionCeilingReported { get; set; }
+    }
+
+    private sealed class RawMarkerFamily(string familyKey, DateTime firstSeenUtc)
+    {
+        private const int MaximumSamples = 8;
+        public string FamilyKey { get; } = familyKey;
+        public DateTime FirstSeenUtc { get; } = firstSeenUtc;
+        public DateTime LastSeenUtc { get; set; } = firstSeenUtc;
+        public DateTime LastReportedUtc { get; set; } = DateTime.MinValue;
+        public int ObservationCount { get; set; }
+        public int ScanCount { get; set; }
+        public Vector3 LastPosition { get; set; }
+        public string Reason { get; set; } = "raw-observation-only";
+        public List<Vector3> SamplePositions { get; } = [];
+
+        public void AddSample(Vector3 position)
+        {
+            if (SamplePositions.Any(sample => HorizontalDistance(sample, position) <= 2f))
+                return;
+            if (SamplePositions.Count >= MaximumSamples)
+                SamplePositions.RemoveAt(0);
+            SamplePositions.Add(position);
+        }
     }
 
     private sealed class MutableResearchObject(

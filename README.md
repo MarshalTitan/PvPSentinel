@@ -59,7 +59,7 @@ Implemented in source:
 - collapsible Configuration groups plus a Development window organized around an always-visible Testing Controls foldout and separate Frontline/Team, Battlefield/Sensors, Threat, Objectives/Research, M2 Navigation, Combat, and Lifecycle foldouts
 - pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, Secure coordinate aggregation/stability/unresolved-state safety/evidence transitions, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
 
-Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.1. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only after repeated coordinate evidence remains stable. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
+Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.2. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only from bounded, stationary objective-like evidence. Live-verified moving marker families remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
 
 ## Safety model
 
@@ -84,7 +84,7 @@ In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat 
 
 In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
 
-Queue/accept/requeue code remains preserved, but v0.3.0.1 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
+Queue/accept/requeue code remains preserved, but v0.3.0.2 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
 
 The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
 

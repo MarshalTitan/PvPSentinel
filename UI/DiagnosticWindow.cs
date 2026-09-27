@@ -65,6 +65,8 @@ internal sealed class DiagnosticWindow : Window
 
         Section("Frontline Classification");
         KeyValue("Local PvP team", game.TeamStatus.LocalPvPTeam > 0 ? game.TeamStatus.LocalPvPTeam.ToString() : "UNRESOLVED");
+        KeyValue("Raw local Battalion", local is null ? "UNAVAILABLE" : local.PvPTeam.ToString());
+        KeyValue("Local StatusFlags", local is null ? "UNAVAILABLE" : $"{local.StatusFlags} (0x{(uint)local.StatusFlags:X8})");
         KeyValue("Positive PvP-team classification", YesNo(game.TeamStatus.UsesPositivePvPTeam));
         KeyValue("Alliance roster", YesNo(game.TeamStatus.IsAlliance));
         KeyValue("Declared / resolved members", $"{game.TeamStatus.DeclaredMemberCount} / {game.TeamStatus.ResolvedMemberCount}");
@@ -111,6 +113,7 @@ internal sealed class DiagnosticWindow : Window
         if (BeginSection("Threat"))
         {
         KeyValue("Threat observation reliable", YesNo(state.Threat.IsReliable));
+        KeyValue("Threat observation source", state.Threat.Source.ToString());
         KeyValue("Targeting me", state.Threat.TargeterCount.ToString());
         KeyValue("Combat-relevant targeters (within 30y)", state.Threat.CombatRelevantTargeterCount.ToString());
         KeyValue("Nearby enemies / allies (within 18y)", $"{state.Threat.NearbyEnemyCount} / {state.Threat.NearbyFriendlyCount}");
@@ -413,9 +416,16 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Combat Context", state.Battlefield.Combat.Context.ToString());
         KeyValue("Movement Blocked", YesNo(state.Battlefield.Combat.BlocksMovement));
         KeyValue("Route State", manual.State.ToString());
-        KeyValue("Waypoint Count", manual.WaypointCount.ToString());
-        KeyValue("Current Waypoint", manual.CurrentWaypoint.ToString());
+        KeyValue("Route / attempt", $"{manual.RouteId} / {manual.RouteAttempt}");
+        KeyValue("Waypoint Count / route length", $"{manual.WaypointCount} / {manual.RouteLength:F1}y");
+        KeyValue("Current / stage-end waypoint", $"{manual.CurrentWaypoint} / {manual.StageEndWaypoint}");
+        KeyValue("Previous Waypoint", manual.PreviousWaypoint is { } previous ? FormatVector(previous) : "NONE");
+        KeyValue("Current Waypoint Position", manual.CurrentWaypointPosition is { } current ? FormatVector(current) : "NONE");
         KeyValue("Next Waypoint", manual.NextWaypoint is { } next ? FormatVector(next) : "NONE");
+        KeyValue("Distance to Next Waypoint",
+            manual.NextWaypoint is { } nextPoint && state.Game.LocalPlayer is { } local
+                ? $"{Vector3.Distance(local.Position, nextPoint):F1}y (3D)"
+                : "UNRESOLVED");
         KeyValue("Distance Remaining", $"{manual.DistanceRemaining:F1}y");
         KeyValue("Progress Age", $"{manual.ProgressAgeSeconds:F1}s");
         KeyValue("Stuck Count", manual.StuckCount.ToString());

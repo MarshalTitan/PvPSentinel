@@ -104,6 +104,7 @@ internal sealed class BattlefieldService
             Failure("PvP team/player tracker", ex);
             players = Current.TrackedPlayers;
         }
+        EmitTeamProbe(game);
 
         var markers = CaptureMarkers(game.CapturedAtUtc);
         var ui = CaptureUi(game.CapturedAtUtc);
@@ -308,6 +309,64 @@ internal sealed class BattlefieldService
                 priorRelationships[player.EntityId] = player.Relationship;
             }
         }
+    }
+
+    private void EmitTeamProbe(GameStateSnapshot game)
+    {
+        var local = game.LocalPlayer;
+        if (local is null)
+            return;
+
+        var teamHistogram = game.ObservedPlayers
+            .GroupBy(player => player.PvPTeam)
+            .OrderBy(group => group.Key)
+            .ToDictionary(group => group.Key.ToString(CultureInfo.InvariantCulture), group => group.Count());
+        var rosterTeamHistogram = game.ObservedPlayers
+            .Where(player => player.IsRosterMember)
+            .GroupBy(player => player.PvPTeam)
+            .OrderBy(group => group.Key)
+            .ToDictionary(group => group.Key.ToString(CultureInfo.InvariantCulture), group => group.Count());
+        var statusHistogram = game.ObservedPlayers
+            .GroupBy(player => (uint)player.StatusFlags)
+            .OrderByDescending(group => group.Count())
+            .Take(12)
+            .ToDictionary(group => $"0x{group.Key:X8}", group => group.Count());
+        var signature = string.Join('|', new[]
+        {
+            local.PvPTeam.ToString(CultureInfo.InvariantCulture),
+            ((uint)local.StatusFlags).ToString("X8", CultureInfo.InvariantCulture),
+            game.TeamStatus.IsAlliance.ToString(),
+            game.TeamStatus.DeclaredMemberCount.ToString(CultureInfo.InvariantCulture),
+            game.TeamStatus.ResolvedMemberCount.ToString(CultureInfo.InvariantCulture),
+            string.Join(',', teamHistogram.Select(pair => $"{pair.Key}:{pair.Value}")),
+            string.Join(',', rosterTeamHistogram.Select(pair => $"{pair.Key}:{pair.Value}")),
+            game.ObservedPlayers.Count(player => player.HostileFlag).ToString(CultureInfo.InvariantCulture),
+        });
+        if (!diffs.ShouldEmit("pvp-team-probe", signature, game.CapturedAtUtc))
+            return;
+
+        Record("pvp_team_probe", game.CapturedAtUtc, new
+        {
+            local_entity = $"0x{local.EntityId:X8}",
+            raw_local_battalion = local.PvPTeam,
+            local_status_flags = $"0x{(uint)local.StatusFlags:X8}",
+            local_party_flag = local.PartyMemberFlag,
+            local_alliance_flag = local.AllianceMemberFlag,
+            local_hostile_flag = local.HostileFlag,
+            local_targetable = local.IsTargetable,
+            alliance_roster = game.TeamStatus.IsAlliance,
+            declared_roster_members = game.TeamStatus.DeclaredMemberCount,
+            resolved_roster_members = game.TeamStatus.ResolvedMemberCount,
+            observed_team_histogram = teamHistogram,
+            roster_team_histogram = rosterTeamHistogram,
+            observed_status_flag_histogram = statusHistogram,
+            observed_hostile_flags = game.ObservedPlayers.Count(player => player.HostileFlag),
+            observed_targetable = game.ObservedPlayers.Count(player => player.IsTargetable),
+            classification_reliable = game.IsClassificationReliable,
+            conclusion = game.IsClassificationReliable
+                ? "positive local Battalion available"
+                : "UNRESOLVED: raw local Battalion is not positive; no roster/team inference applied",
+        });
     }
 
     private void EmitStateChanges(BattlefieldState state)

@@ -136,14 +136,15 @@ internal sealed class GameStateService(
             // Including ourselves gives clustering a stable anchor and makes a lone
             // visible ally a meaningful two-person group.
             friendlies.Add(local);
+            var teamStatus = AddTeamProbeExplanation(roster.Status, local, observedPlayers);
             var objectiveObservations = isFrontline
                 ? CaptureObjectiveObservations(local.Position)
                 : [];
 
             developmentLog.Changed(
                 "classification-roster",
-                $"{roster.Status.IsAlliance}|{roster.Status.DeclaredMemberCount}|{roster.Status.ResolvedMemberCount}|{roster.Status.LocalPvPTeam}",
-                $"PvP team={roster.Status.LocalPvPTeam}; alliance={roster.Status.IsAlliance}; declared={roster.Status.DeclaredMemberCount}; resolved={roster.Status.ResolvedMemberCount}. {roster.Status.Explanation}");
+                $"{teamStatus.IsAlliance}|{teamStatus.DeclaredMemberCount}|{teamStatus.ResolvedMemberCount}|{teamStatus.LocalPvPTeam}",
+                $"PvP team={teamStatus.LocalPvPTeam}; alliance={teamStatus.IsAlliance}; declared={teamStatus.DeclaredMemberCount}; resolved={teamStatus.ResolvedMemberCount}. {teamStatus.Explanation}");
             developmentLog.Throttled(
                 "classification-summary",
                 $"Observed {observedPlayers.Count}: {friendlies.Count} friendly (including self), {enemies.Count} enemy, {unknownPlayers.Count} unknown.");
@@ -176,7 +177,7 @@ internal sealed class GameStateService(
                 unknownPlayers,
                 observedPlayers,
                 objectiveObservations,
-                roster.Status,
+                teamStatus,
                 string.Empty);
         }
         catch (Exception ex)
@@ -277,6 +278,37 @@ internal sealed class GameStateService(
     {
         var native = (NativeCharacter*)player.Address;
         return native is not null && native->InCombat;
+    }
+
+    private static FrontlineTeamStatus AddTeamProbeExplanation(
+        FrontlineTeamStatus status,
+        PlayerSnapshot local,
+        IReadOnlyList<PlayerSnapshot> observedPlayers)
+    {
+        if (!status.UsesPositivePvPTeam)
+        {
+            var observedTeams = observedPlayers
+                .Where(player => player.PvPTeam > 0)
+                .GroupBy(player => player.PvPTeam)
+                .OrderBy(group => group.Key)
+                .Select(group => $"{group.Key}:{group.Count()}")
+                .ToArray();
+            var rosterTeams = observedPlayers
+                .Where(player => player.IsRosterMember && player.PvPTeam > 0)
+                .GroupBy(player => player.PvPTeam)
+                .OrderBy(group => group.Key)
+                .Select(group => $"{group.Key}:{group.Count()}")
+                .ToArray();
+            return status with
+            {
+                Explanation = status.Explanation +
+                              $" Raw local Character.Battalion={local.PvPTeam}; local StatusFlags=0x{(uint)local.StatusFlags:X8}." +
+                              $" Observed positive Battalion histogram=[{string.Join(',', observedTeams)}]; roster-positive histogram=[{string.Join(',', rosterTeams)}]." +
+                              " No team is inferred from these observations."
+            };
+        }
+
+        return status;
     }
 
     private sealed record TeamRoster(

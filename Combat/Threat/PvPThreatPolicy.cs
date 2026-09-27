@@ -9,8 +9,27 @@ internal enum PvPThreatLevel
     Extreme,
 }
 
+internal enum PvPThreatObservationSource
+{
+    Unavailable,
+    PositivePvpTeam,
+    NativeHostileFlagFallback,
+}
+
 internal static class PvPThreatPolicy
 {
+    public static bool IsFallbackHostile(
+        bool isLocalPlayer,
+        bool hostileFlag,
+        bool partyMemberFlag,
+        bool allianceMemberFlag,
+        bool isRosterMember) =>
+        !isLocalPlayer &&
+        hostileFlag &&
+        !partyMemberFlag &&
+        !allianceMemberFlag &&
+        !isRosterMember;
+
     public static PvPThreatLevel EvaluateLevel(int targeters, int nearbyEnemies)
     {
         targeters = Math.Max(0, targeters);

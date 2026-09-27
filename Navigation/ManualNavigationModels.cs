@@ -41,7 +41,13 @@ internal sealed record ManualNavigationSnapshot(
     Vector3? SnappedPosition,
     int WaypointCount,
     int CurrentWaypoint,
+    Vector3? PreviousWaypoint,
+    Vector3? CurrentWaypointPosition,
     Vector3? NextWaypoint,
+    int StageEndWaypoint,
+    string RouteId,
+    int RouteAttempt,
+    float RouteLength,
     float DistanceRemaining,
     float ProgressAgeSeconds,
     int StuckCount,
@@ -50,7 +56,8 @@ internal sealed record ManualNavigationSnapshot(
 {
     public static ManualNavigationSnapshot Disarmed => new(
         false, MovementOwner.None, ManualRouteState.Disarmed, "NONE", "None", null, null,
-        0, 0, null, 0f, 0f, 0, 0, "Manual navigation is disarmed.");
+        0, 0, null, null, null, 0, "NONE", 0, 0f,
+        0f, 0f, 0, 0, "Manual navigation is disarmed.");
 }
 
 internal sealed record ManualNavigationEvent(string Name, string Detail, DateTime AtUtc);

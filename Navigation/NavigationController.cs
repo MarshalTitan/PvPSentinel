@@ -31,7 +31,12 @@ internal sealed class NavigationController(
     private Vector3? manualSnapped;
     private Task<IReadOnlyList<Vector3>>? manualPendingPath;
     private IReadOnlyList<Vector3> manualRoute = [];
-    private IReadOnlyList<Vector3> failedManualRoute = [];
+    private IReadOnlyList<Vector3> failedManualCorridor = [];
+    private RouteExecutionPlan? manualPlan;
+    private int manualRouteCursor;
+    private int manualStageEnd;
+    private int manualRouteAttempt;
+    private string manualRouteId = "NONE";
     private bool manualReplacementAttempt;
     private int manualStuckCount;
     private int manualPathFailureCount;
@@ -333,7 +338,12 @@ internal sealed class NavigationController(
             manualSnapped = null;
             manualPendingPath = null;
             manualRoute = [];
-            failedManualRoute = [];
+            failedManualCorridor = [];
+            manualPlan = null;
+            manualRouteCursor = 0;
+            manualStageEnd = 0;
+            manualRouteAttempt = 0;
+            manualRouteId = "NONE";
             manualReplacementAttempt = false;
             consecutiveFailures = 0;
             manualStuckCount = 0;
@@ -352,7 +362,10 @@ internal sealed class NavigationController(
         var distance = manualSnapped is { } target
             ? HorizontalDistance(local.Position, target)
             : HorizontalDistance(local.Position, activeManual.ReferencePosition);
-        if (manualSnapped is not null && distance <= 3f)
+        var arrivalDistance = manualSnapped is { } arrivalTarget
+            ? Vector3.Distance(local.Position, arrivalTarget)
+            : float.MaxValue;
+        if (manualSnapped is not null && arrivalDistance <= 3f)
         {
             var arrivedRequest = activeManual;
             if (ownsPath)
@@ -363,12 +376,27 @@ internal sealed class NavigationController(
             manualSnapshot = new ManualNavigationSnapshot(
                 manualArmed, MovementOwner.None, ManualRouteState.Arrived,
                 arrivedRequest.DestinationId, arrivedRequest.DestinationName,
-                arrivedRequest.ReferencePosition, manualSnapped, vnav.WaypointCount,
-                Math.Max(0, manualRoute.Count - vnav.WaypointCount), vnav.Waypoints.FirstOrDefault(),
-                distance, 0f, manualStuckCount, manualPathFailureCount,
-                $"ARRIVED within {distance:F1}y of the validated approach point.");
+                arrivedRequest.ReferencePosition, manualSnapped, manualPlan?.Waypoints.Count ?? manualRoute.Count,
+                manualRouteCursor,
+                WaypointAt(manualRouteCursor - 1), WaypointAt(manualRouteCursor), WaypointAt(manualRouteCursor + 1),
+                manualStageEnd, manualRouteId, manualRouteAttempt, manualPlan?.Length ?? 0f,
+                arrivalDistance, 0f, manualStuckCount, manualPathFailureCount,
+                $"ARRIVED within {arrivalDistance:F1}y (3D) of the validated approach point.");
             Emit("navigation_arrived", $"destination={arrivedRequest.DestinationId}; approach={FormatVector(manualSnapped.Value)}");
             return Decision(false, manualSnapped, NavigationPathState.Idle, MountState.OnFoot, manualSnapshot.Explanation);
+        }
+
+        if (ownsPath && manualPlan is not null && manualStageEnd > manualRouteCursor &&
+            StageReached(local.Position, manualPlan.Waypoints[manualStageEnd].Position,
+                manualPlan.Waypoints[manualStageEnd].Protected))
+        {
+            vnav.Stop();
+            ownsPath = false;
+            manualRouteCursor = manualStageEnd;
+            manualLastProgressPosition = local.Position;
+            manualLastProgressUtc = now;
+            Emit("navigation_stage_completed",
+                $"destination={activeManual.DestinationId}; route={manualRouteId}; waypoint={manualRouteCursor}; position={FormatVector(manualPlan.Waypoints[manualRouteCursor].Position)}; reason={manualPlan.Waypoints[manualRouteCursor].Reason}");
         }
 
         if (ownsPath && vnav.IsPathRunning)
@@ -376,7 +404,8 @@ internal sealed class NavigationController(
             if (vnav.WaypointCount != lastReportedManualWaypointCount)
             {
                 lastReportedManualWaypointCount = vnav.WaypointCount;
-                Emit("navigation_waypoint_changed", $"destination={activeManual.DestinationId}; remaining_waypoints={vnav.WaypointCount}");
+                Emit("navigation_waypoint_changed",
+                    $"destination={activeManual.DestinationId}; route={manualRouteId}; route_cursor={manualRouteCursor}; stage_end={manualStageEnd}; vnav_remaining={vnav.WaypointCount}; previous={FormatOptional(WaypointAt(manualRouteCursor - 1))}; current={FormatOptional(WaypointAt(manualRouteCursor))}; next={FormatOptional(WaypointAt(manualRouteCursor + 1))}");
             }
             var moved = manualLastProgressPosition is null ? 0f : HorizontalDistance(manualLastProgressPosition.Value, local.Position);
             if (moved >= 1.5f)
@@ -387,15 +416,21 @@ internal sealed class NavigationController(
             }
             else if (now - manualLastProgressUtc >= TimeSpan.FromSeconds(Math.Clamp(config.StuckTimeoutSeconds, 2f, 15f)))
             {
-                failedManualRoute = manualRoute;
+                failedManualCorridor = RouteComparison.FailureCorridor(
+                    manualRoute, local.Position, minimumWaypointIndex: Math.Min(manualRouteCursor + 1, Math.Max(0, manualRoute.Count - 1)));
                 consecutiveFailures++;
                 manualStuckCount++;
-                Emit("navigation_stuck", $"destination={activeManual.DestinationId}; remaining={distance:F1}; attempt={consecutiveFailures}");
+                Emit("navigation_stuck",
+                    $"destination={activeManual.DestinationId}; route={manualRouteId}; remaining={distance:F1}; attempt={consecutiveFailures}; player={FormatVector(local.Position)}; previous={FormatOptional(WaypointAt(manualRouteCursor - 1))}; current={FormatOptional(WaypointAt(manualRouteCursor))}; next={FormatOptional(WaypointAt(manualRouteCursor + 1))}; failed_corridor={FormatRoute(failedManualCorridor)}");
                 vnav.Stop();
                 ownsPath = false;
                 manualReplacementAttempt = true;
                 manualPendingPath = null;
                 manualLastProgressUtc = now;
+                manualPlan = null;
+                manualRoute = [];
+                manualRouteCursor = 0;
+                manualStageEnd = 0;
             }
             else
             {
@@ -408,10 +443,16 @@ internal sealed class NavigationController(
         {
             consecutiveFailures++;
             manualStuckCount++;
-            Emit("navigation_stuck", $"destination={activeManual.DestinationId}; path stopped before arrival; attempt={consecutiveFailures}");
-            failedManualRoute = manualRoute;
+            failedManualCorridor = RouteComparison.FailureCorridor(
+                manualRoute, local.Position, minimumWaypointIndex: Math.Min(manualRouteCursor + 1, Math.Max(0, manualRoute.Count - 1)));
+            Emit("navigation_stuck",
+                $"destination={activeManual.DestinationId}; route={manualRouteId}; path stopped before stage arrival; attempt={consecutiveFailures}; player={FormatVector(local.Position)}; stage_target={FormatOptional(WaypointAt(manualStageEnd))}; failed_corridor={FormatRoute(failedManualCorridor)}");
             ownsPath = false;
             manualReplacementAttempt = true;
+            manualPlan = null;
+            manualRoute = [];
+            manualRouteCursor = 0;
+            manualStageEnd = 0;
         }
 
         if (!ManualNavigationPolicy.CanRetry(consecutiveFailures, config.MaximumPathFailures))
@@ -427,7 +468,7 @@ internal sealed class NavigationController(
                 consecutiveFailures++;
                 manualPathFailureCount++;
                 manualPendingPath = null;
-                AdvanceManualCandidate("Path generation timed out.");
+                AdvanceManualCandidate("Path generation timed out.", manualReplacementAttempt);
             }
             else if (manualPendingPath.IsCompleted)
             {
@@ -442,6 +483,30 @@ internal sealed class NavigationController(
             if (ownsPath)
                 return Decision(true, manualSnapped, NavigationPathState.PathValidated, MountState.OnFoot,
                     "Validated generated route submitted to vnavmesh.");
+        }
+
+        if (!ownsPath && manualPlan is not null && manualRouteCursor < manualPlan.LastIndex)
+        {
+            if (!StartManualStage(local.Position, now))
+            {
+                consecutiveFailures++;
+                manualPathFailureCount++;
+                failedManualCorridor = RouteComparison.FailureCorridor(
+                    manualRoute, local.Position, minimumWaypointIndex: Math.Min(manualRouteCursor + 1, Math.Max(0, manualRoute.Count - 1)));
+                manualReplacementAttempt = true;
+                manualPlan = null;
+                manualRoute = [];
+                manualRouteCursor = 0;
+                manualStageEnd = 0;
+                AdvanceManualCandidate("vnavmesh rejected a protected route stage.", true);
+            }
+            else
+            {
+                manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.Following,
+                    $"Following protected stage to waypoint {manualStageEnd}; Sentinel retains the generated route cursor.", local.Position);
+                return Decision(true, manualSnapped, NavigationPathState.FollowingPath, MountState.OnFoot,
+                    manualSnapshot.Explanation);
+            }
         }
 
         if (!ownsPath)
@@ -481,7 +546,7 @@ internal sealed class NavigationController(
         {
             consecutiveFailures++;
             manualPathFailureCount++;
-            AdvanceManualCandidate($"Path generation faulted: {ex.GetType().Name}.");
+            AdvanceManualCandidate($"Path generation faulted: {ex.GetType().Name}.", manualReplacementAttempt);
             return;
         }
         var validation = PathValidator.Validate(route, origin, manualSnapped!.Value, 2.5f);
@@ -489,35 +554,59 @@ internal sealed class NavigationController(
         {
             consecutiveFailures++;
             manualPathFailureCount++;
-            AdvanceManualCandidate($"Generated path rejected: {validation.Explanation}");
+            AdvanceManualCandidate($"Generated path rejected: {validation.Explanation}", manualReplacementAttempt);
             return;
         }
-        if (manualReplacementAttempt && RouteComparison.MateriallyIdentical(failedManualRoute, route))
+        if (manualReplacementAttempt && RouteComparison.RepeatsFailedCorridor(failedManualCorridor, route))
         {
             manualPathFailureCount++;
-            Emit("navigation_route_rejected", $"destination={activeManual?.DestinationId}; materially identical opening geometry");
-            manualReplacementAttempt = false;
-            AdvanceManualCandidate("Replacement path repeated the failed opening geometry.");
+            Emit("navigation_route_rejected",
+                $"destination={activeManual?.DestinationId}; candidate={manualCandidateIndex + 1}; reason=repeated failed corridor; failed={FormatRoute(failedManualCorridor)}; replacement={FormatRoute(route)}");
+            AdvanceManualCandidate("Replacement path repeated the failed corridor geometry.", true);
             return;
         }
-        if (!vnav.StartPath(route, 2.5f))
+
+        manualPlan = RouteExecutionPlan.Build(route);
+        if (manualPlan.Waypoints.Count < 2)
         {
             consecutiveFailures++;
             manualPathFailureCount++;
-            AdvanceManualCandidate("vnavmesh rejected Path.MoveTo.");
+            manualPlan = null;
+            AdvanceManualCandidate("Generated route collapsed below two distinct waypoints.");
             return;
         }
         manualRoute = route;
+        manualRouteCursor = 0;
+        manualStageEnd = 0;
+        manualRouteAttempt++;
+        manualRouteId = $"{activeManual?.DestinationId ?? "ROUTE"}-R{manualRouteAttempt:00}";
+        var recoveryResult = manualReplacementAttempt ? "replacement-materially-different" : "initial";
+        manualReplacementAttempt = false;
+        lastReportedManualWaypointCount = -1;
+        Emit("navigation_path_ready",
+            $"destination={activeManual?.DestinationId}; route={manualRouteId}; attempt={manualRouteAttempt}; candidate={manualCandidateIndex + 1}; recovery={recoveryResult}; origin={FormatVector(origin)}; endpoint={FormatVector(manualSnapped!.Value)}; raw_waypoints={route.Count}; execution_waypoints={manualPlan.Waypoints.Count}; length={manualPlan.Length:F1}; raw_geometry={FormatRoute(route, 128)}; execution_geometry={manualPlan.FormatGeometry()}");
+    }
+
+    private bool StartManualStage(Vector3 currentPosition, DateTime now)
+    {
+        if (manualPlan is null || manualRouteCursor >= manualPlan.LastIndex)
+            return false;
+        manualStageEnd = manualPlan.FindStageEnd(manualRouteCursor);
+        var stage = manualPlan.BuildStage(currentPosition, manualRouteCursor, manualStageEnd);
+        if (stage.Count < 2 || !vnav.StartPath(stage, manualPlan.Waypoints[manualStageEnd].Protected ? 0.75f : 1.5f))
+            return false;
+
         ownsPath = true;
         manualPathStartedUtc = now;
         manualLastProgressUtc = now;
-        manualLastProgressPosition = origin;
-        manualReplacementAttempt = false;
-        lastReportedManualWaypointCount = route.Count;
-        Emit("navigation_path_ready", $"destination={activeManual?.DestinationId}; waypoints={route.Count}");
+        manualLastProgressPosition = currentPosition;
+        lastReportedManualWaypointCount = -1;
+        Emit("navigation_stage_started",
+            $"destination={activeManual?.DestinationId}; route={manualRouteId}; cursor={manualRouteCursor}; stage_end={manualStageEnd}; target={FormatVector(manualPlan.Waypoints[manualStageEnd].Position)}; protected={manualPlan.Waypoints[manualStageEnd].Protected}; reason={manualPlan.Waypoints[manualStageEnd].Reason}; submitted={FormatRoute(stage)}");
+        return true;
     }
 
-    private void AdvanceManualCandidate(string reason)
+    private void AdvanceManualCandidate(string reason, bool preserveFailureComparison = false)
     {
         Emit("navigation_path_failed",
             $"destination={activeManual?.DestinationId ?? manualSnapshot.DestinationId}; candidate={manualCandidateIndex + 1}; reason={reason}");
@@ -525,7 +614,7 @@ internal sealed class NavigationController(
         manualSnapped = null;
         lastReportedManualWaypointCount = -1;
         manualPendingPath = null;
-        manualReplacementAttempt = false;
+        manualReplacementAttempt = preserveFailureComparison;
         developmentLog.Changed("manual-nav-candidate", $"{manualCandidateIndex}|{reason}", reason);
     }
 
@@ -540,11 +629,16 @@ internal sealed class NavigationController(
         manualPendingPath = null;
         manualCandidates.Clear();
         manualRoute = [];
-        failedManualRoute = [];
+        failedManualCorridor = [];
+        manualPlan = null;
+        manualRouteCursor = 0;
+        manualStageEnd = 0;
+        manualRouteId = "NONE";
         manualSnapped = null;
         manualSnapshot = new ManualNavigationSnapshot(
-            manualArmed, MovementOwner.None, state, id, "None", null, null, 0, 0, null, 0f, 0f,
-            manualStuckCount, manualPathFailureCount, reason);
+            manualArmed, MovementOwner.None, state, id, "None", null, null,
+            0, 0, null, null, null, 0, "NONE", manualRouteAttempt, 0f,
+            0f, 0f, manualStuckCount, manualPathFailureCount, reason);
         Emit(eventName, $"destination={id}; reason={reason}");
     }
 
@@ -555,10 +649,12 @@ internal sealed class NavigationController(
         Vector3? playerPosition)
     {
         var request = activeManual ?? manualRequest;
-        var waypoints = vnav.Waypoints;
-        var next = waypoints.Count > 0 ? waypoints[0] : (Vector3?)null;
-        var remaining = playerPosition is not null && manualSnapped is not null
-            ? HorizontalDistance(playerPosition.Value, manualSnapped.Value)
+        var waypointCount = manualPlan?.Waypoints.Count ?? manualRoute.Count;
+        var next = WaypointAt(manualRouteCursor + 1);
+        var remaining = playerPosition is not null && manualPlan is not null
+            ? manualPlan.RemainingLength(playerPosition.Value, manualRouteCursor)
+            : playerPosition is not null && manualSnapped is not null
+                ? HorizontalDistance(playerPosition.Value, manualSnapped.Value)
             : 0f;
         var progressAge = manualLastProgressUtc == DateTime.MinValue
             ? 0f
@@ -569,9 +665,15 @@ internal sealed class NavigationController(
             request?.DestinationName ?? manualSnapshot.DestinationName,
             request?.ReferencePosition ?? manualSnapshot.ReferencePosition,
             manualSnapped,
-            waypoints.Count,
-            Math.Max(0, manualRoute.Count - waypoints.Count),
+            waypointCount,
+            manualRouteCursor,
+            WaypointAt(manualRouteCursor - 1),
+            WaypointAt(manualRouteCursor),
             next,
+            manualStageEnd,
+            manualRouteId,
+            manualRouteAttempt,
+            manualPlan?.Length ?? 0f,
             remaining,
             progressAge,
             manualStuckCount,
@@ -706,6 +808,27 @@ internal sealed class NavigationController(
 
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));
+
+    private Vector3? WaypointAt(int index) => manualPlan is not null && index >= 0 && index < manualPlan.Waypoints.Count
+        ? manualPlan.Waypoints[index].Position
+        : null;
+
+    private static bool StageReached(Vector3 player, Vector3 target, bool protectedWaypoint)
+    {
+        var horizontalTolerance = protectedWaypoint ? 0.9f : 1.5f;
+        var verticalTolerance = protectedWaypoint ? 1.25f : 2f;
+        return HorizontalDistance(player, target) <= horizontalTolerance &&
+               Math.Abs(player.Y - target.Y) <= verticalTolerance;
+    }
+
+    private static string FormatOptional(Vector3? value) => value is { } point ? FormatVector(point) : "NONE";
+
+    private static string FormatRoute(IReadOnlyList<Vector3> route, int maximumPoints = 64)
+    {
+        var points = route.Take(maximumPoints).Select((point, index) => $"{index}:{FormatVector(point)}");
+        var suffix = route.Count > maximumPoints ? $",...+{route.Count - maximumPoints}" : string.Empty;
+        return $"[{string.Join(',', points)}{suffix}]";
+    }
 
     private static string FormatVector(Vector3 value) => string.Create(
         CultureInfo.InvariantCulture, $"({value.X:F1}, {value.Y:F1}, {value.Z:F1})");

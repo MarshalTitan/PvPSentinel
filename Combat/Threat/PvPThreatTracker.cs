@@ -10,7 +10,8 @@ internal sealed record ObservedEnemyTargeter(
     string Name,
     uint JobId,
     string JobAbbreviation,
-    float Distance);
+    float Distance,
+    PvPThreatObservationSource Source);
 
 internal sealed record PvPThreatSnapshot(
     DateTime CapturedAtUtc,
@@ -19,6 +20,7 @@ internal sealed record PvPThreatSnapshot(
     int NearbyEnemyCount,
     int NearbyFriendlyCount,
     PvPThreatLevel Level,
+    PvPThreatObservationSource Source,
     string Explanation)
 {
     public int TargeterCount => Targeters.Count;
@@ -29,7 +31,8 @@ internal sealed record PvPThreatSnapshot(
     public int CombatRelevantTargeterCount => Targeters.Count(targeter => targeter.Distance <= 30f);
 
     public static PvPThreatSnapshot Unavailable(DateTime capturedAtUtc, string explanation) =>
-        new(capturedAtUtc, false, [], 0, 0, PvPThreatLevel.None, explanation);
+        new(capturedAtUtc, false, [], 0, 0, PvPThreatLevel.None,
+            PvPThreatObservationSource.Unavailable, explanation);
 }
 
 internal sealed class PvPThreatTracker(DevelopmentLogger developmentLog)
@@ -41,10 +44,24 @@ internal sealed class PvPThreatTracker(DevelopmentLogger developmentLog)
         var local = game.LocalPlayer;
         if (!game.IsFrontline || local is null)
             return PvPThreatSnapshot.Unavailable(game.CapturedAtUtc, "Threat observations require a live local player in Frontline.");
-        if (!game.IsClassificationReliable)
-            return PvPThreatSnapshot.Unavailable(game.CapturedAtUtc, "Enemy classification is not reliable; threat observations are suppressed.");
 
-        var targeters = game.Enemies
+        var source = game.IsClassificationReliable
+            ? PvPThreatObservationSource.PositivePvpTeam
+            : PvPThreatObservationSource.NativeHostileFlagFallback;
+        var enemies = game.IsClassificationReliable
+            ? game.Enemies
+            : game.ObservedPlayers.Where(player => PvPThreatPolicy.IsFallbackHostile(
+                player.GameObjectId == local.GameObjectId || player.EntityId == local.EntityId,
+                player.HostileFlag,
+                player.PartyMemberFlag,
+                player.AllianceMemberFlag,
+                player.IsRosterMember)).ToArray();
+        var friendlies = game.IsClassificationReliable
+            ? game.Friendlies
+            : game.ObservedPlayers.Where(player =>
+                player.IsRosterMember || player.PartyMemberFlag || player.AllianceMemberFlag).ToArray();
+
+        var targeters = enemies
             .Where(enemy => !enemy.IsDead && enemy.IsTargetable && enemy.TargetObjectId == local.GameObjectId)
             .Select(enemy => new ObservedEnemyTargeter(
                 enemy.GameObjectId,
@@ -52,12 +69,13 @@ internal sealed class PvPThreatTracker(DevelopmentLogger developmentLog)
                 enemy.Name,
                 enemy.JobId,
                 enemy.JobAbbreviation,
-                HorizontalDistance(enemy.Position, local.Position)))
+                HorizontalDistance(enemy.Position, local.Position),
+                source))
             .OrderBy(targeter => targeter.Distance)
             .ToArray();
-        var nearbyEnemies = game.Enemies.Count(enemy =>
+        var nearbyEnemies = enemies.Count(enemy =>
             !enemy.IsDead && enemy.IsTargetable && HorizontalDistance(enemy.Position, local.Position) <= NearbyRadius);
-        var nearbyFriendlies = game.Friendlies.Count(ally =>
+        var nearbyFriendlies = friendlies.Count(ally =>
             !ally.IsDead && HorizontalDistance(ally.Position, local.Position) <= NearbyRadius);
         var level = PvPThreatPolicy.EvaluateLevel(targeters.Length, nearbyEnemies);
         var snapshot = new PvPThreatSnapshot(
@@ -67,7 +85,11 @@ internal sealed class PvPThreatTracker(DevelopmentLogger developmentLog)
             nearbyEnemies,
             nearbyFriendlies,
             level,
-            $"Currently observed enemy hard targets={targeters.Length}; nearby enemies/allies within {NearbyRadius:F0}y={nearbyEnemies}/{nearbyFriendlies}; threat={level}.");
+            source,
+            $"Observation source={source}; currently observed enemy hard targets={targeters.Length}; nearby enemies/allies within {NearbyRadius:F0}y={nearbyEnemies}/{nearbyFriendlies}; threat={level}." +
+            (source == PvPThreatObservationSource.NativeHostileFlagFallback
+                ? " Full PvP-team classification remains unresolved and is still fail-closed for strategy; only Dalamud's native Hostile flag, roster exclusions, targetability, and observed hard target are used here."
+                : string.Empty));
 
         developmentLog.Throttled(
             "pvp-threat",

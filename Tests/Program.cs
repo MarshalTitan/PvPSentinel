@@ -201,6 +201,12 @@ Check("combined targeters and density are high threat", PvPThreatLevel.High,
     PvPThreatPolicy.EvaluateLevel(2, 6));
 Check("six hard targeters are extreme threat", PvPThreatLevel.Extreme,
     PvPThreatPolicy.EvaluateLevel(6, 3));
+Check("native hostile fallback accepts an unrostered hostile", true,
+    PvPThreatPolicy.IsFallbackHostile(false, true, false, false, false));
+Check("native hostile fallback excludes alliance members", false,
+    PvPThreatPolicy.IsFallbackHostile(false, true, false, true, true));
+Check("native hostile fallback excludes local player", false,
+    PvPThreatPolicy.IsFallbackHostile(true, true, false, false, false));
 
 var normalizedSelf = TeamClassifier.Classify(0x10, 0x10, 2, 2);
 Check("normalized classifier resolves SELF before team", BattlefieldRelationship.Self, normalizedSelf.Relationship);
@@ -270,17 +276,26 @@ Check("Secure duplicate coordinates aggregate to one candidate", 1, secureAggreg
 Check("Secure aggregate retains both marker records", 2, secureAggregate[0].EvidenceCount);
 Check("Secure discovery does not infer state from marker IDs", true,
     secureAggregate[0].EvidenceSummary.Contains("70001/71001/72001", StringComparison.Ordinal));
+Check("Secure marker with non-sentinel objective evidence is promotable", SecureMarkerPromotionClass.ObjectiveSignal,
+    SecureObjectiveAggregator.ClassifyPromotionEvidence(secureAggregate[0], false));
 Check("Secure candidate is not stable before minimum age", false,
-    SecureObjectiveAggregator.IsStable(trackingNow, trackingNow.AddMilliseconds(500), 3));
+    SecureObjectiveAggregator.IsStable(trackingNow, trackingNow.AddSeconds(1.9), 8,
+        SecureMarkerPromotionClass.ObjectiveSignal));
 Check("Secure candidate is stable after bounded scans and age", true,
-    SecureObjectiveAggregator.IsStable(trackingNow, trackingNow.AddMilliseconds(750), 3));
+    SecureObjectiveAggregator.IsStable(trackingNow, trackingNow.AddSeconds(2), 8,
+        SecureMarkerPromotionClass.ObjectiveSignal));
+
+var transientSecure = SecureMarker(60360, 0, 1115742468, securePosition, "", 0);
+Check("live-verified moving Secure marker family is raw-only", SecureMarkerPromotionClass.RawObservationOnly,
+    SecureObjectiveAggregator.ClassifyPromotionEvidence(
+        SecureObjectiveAggregator.Aggregate([transientSecure])[0], false));
 
 var secureAdapter = new SecureAdapter();
 secureAdapter.Reset(trackingNow);
-secureAdapter.Update(trackingNow, secureMarkers, [], []);
-secureAdapter.Update(trackingNow.AddMilliseconds(400), secureMarkers, [], []);
+for (var scan = 0; scan < 7; scan++)
+    secureAdapter.Update(trackingNow.AddMilliseconds(scan * 300), secureMarkers, [], []);
 Check("Secure adapter does not expose an unstable navigation destination", 0, secureAdapter.Objectives.Count);
-secureAdapter.Update(trackingNow.AddMilliseconds(800), secureMarkers, [], []);
+secureAdapter.Update(trackingNow.AddMilliseconds(2100), secureMarkers, [], []);
 Check("Secure adapter promotes one stable SEC location", 1, secureAdapter.Objectives.Count);
 Check("first Secure logical location has deterministic session ID", "SEC-01", secureAdapter.Objectives[0].LogicalId);
 Check("Secure objective lifecycle remains unresolved", ObjectiveLifecycle.Unknown, secureAdapter.Objectives[0].State);
@@ -289,17 +304,37 @@ var secureChangedMarker = new[]
 {
     SecureMarker(70003, 71003, 72003, securePosition, "Changed unresolved evidence", 3),
 };
-var secureChanges = secureAdapter.Update(trackingNow.AddSeconds(1), secureChangedMarker, [], []);
+var secureChanges = secureAdapter.Update(trackingNow.AddSeconds(2.4), secureChangedMarker, [], []);
 Check("Secure raw evidence change produces transition event", true,
     secureChanges.Any(change => change.EventName == "secure_observable_transition"));
 var securePhysical = new ObjectiveObservation(
     0xABCDEF, 0x12345678, 8123, "Unresolved Secure Object", "EventObj",
     securePosition + new Vector3(1, 0, 1), true, false, 1000, 1000);
 var securePhysicalChanges = secureAdapter.Update(
-    trackingNow.AddSeconds(1.2), secureChangedMarker, [securePhysical], []);
+    trackingNow.AddSeconds(2.7), secureChangedMarker, [securePhysical], []);
 Check("Secure physical research object is retained", 1, secureAdapter.ResearchObjects.Count);
 Check("Secure physical appearance is evented", true,
     securePhysicalChanges.Any(change => change.EventName == "secure_research_object_appeared"));
+
+var transientAdapter = new SecureAdapter();
+transientAdapter.Reset(trackingNow);
+for (var scan = 0; scan < 40; scan++)
+{
+    var moving = transientSecure with { Position = securePosition + new Vector3(scan * 2f, 0f, 0f) };
+    transientAdapter.Update(trackingNow.AddMilliseconds(scan * 250), [moving], [], []);
+}
+Check("moving Secure marker family never becomes a navigation destination", 0, transientAdapter.Objectives.Count);
+
+var ceilingAdapter = new SecureAdapter();
+ceilingAdapter.Reset(trackingNow);
+var excessiveStableMarkers = Enumerable.Range(0, 40)
+    .Select(index => SecureMarker(70000u + (uint)index, 71000u + (uint)index, 486,
+        new Vector3(index * 4f, 0f, index * 4f), $"stable {index}", 1))
+    .ToArray();
+for (var scan = 0; scan < 8; scan++)
+    ceilingAdapter.Update(trackingNow.AddMilliseconds(scan * 300), excessiveStableMarkers, [], []);
+Check("Secure destination promotion obeys sanity ceiling", SecureObjectiveAggregator.MaximumPromotedLocations,
+    ceilingAdapter.Objectives.Count);
 
 var lifecycleTracker = new MatchLifecycleTracker();
 var uiActive = new FrontlineUiObservation(true, false, TimeSpan.FromMinutes(19), 1400, [], "", "header");
@@ -349,6 +384,24 @@ Check("opening route comparison rejects materially identical recovery", true,
     RouteComparison.MateriallyIdentical(routeA, routeB));
 Check("opening route comparison accepts alternate geometry", false,
     RouteComparison.MateriallyIdentical(routeA, routeC));
+var stairRoute = new[]
+{
+    Vector3.Zero,
+    new Vector3(8, 0, 0),
+    new Vector3(8, 1.2f, 2),
+    new Vector3(8, 3f, 5),
+    new Vector3(14, 3f, 5),
+};
+var stairPlan = RouteExecutionPlan.Build(stairRoute);
+Check("stair entry waypoint is protected", true, stairPlan.Waypoints[2].Protected);
+Check("protected route stages stop before the elevation change is skipped", 1,
+    stairPlan.FindStageEnd(0));
+var stairStage = stairPlan.BuildStage(new Vector3(0.2f, 0, 0), 0, stairPlan.FindStageEnd(0));
+Check("staged route starts at the live player position", new Vector3(0.2f, 0, 0), stairStage[0]);
+var failedCorridor = RouteComparison.FailureCorridor(stairRoute, new Vector3(7.9f, 0, 0));
+Check("same stair corridor is rejected during recovery", true,
+    RouteComparison.RepeatsFailedCorridor(failedCorridor,
+        [new Vector3(7.9f, 0, 0), new Vector3(8, 1.2f, 2), new Vector3(8, 3f, 5), new Vector3(14, 3f, 5)]));
 Check("bounded recovery allows attempt below limit", true, ManualNavigationPolicy.CanRetry(2, 3));
 Check("bounded recovery stops at limit", false, ManualNavigationPolicy.CanRetry(3, 3));
 Check("death owns and cancels navigation", MovementOwner.DeathRecovery,
