@@ -74,7 +74,8 @@ internal sealed class RotationSolverEngagementTracker
 
         // Mount casts can surface as a cast/queued action. They are strategic
         // travel, not evidence that Reborn has begun a combat engagement.
-        var hasCombatEvidence = isInCombat || (!isMounting && !isMounted && (isCasting || isActionQueued));
+        var hasCombatEvidence = isInCombat ||
+                                (!isMounting && !isMounted && nearbyEnemies > 0 && (isCasting || isActionQueued));
         if (hasCombatEvidence)
         {
             state = ExternalEngagementState.Engaged;

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0.4 — Resumable combat yield and stable mounted travel
+
+- Changed manual M2 combat handoff from terminal cancellation to a resumable pause: Sentinel stops its owned vnavmesh path, preserves the selected destination, lets RotationSolverReborn own the fight, then requests a fresh generated route from the post-fight position after combat, nearby enemies, and the configured quiet period clear.
+- Kept death, explicit STOP, disarming, path-failure exhaustion, and safety-gate failures as terminal route cancellations.
+- Added `navigation_resumed_after_combat` evidence and enriched `navigation_yielded_external_combat` with destination preservation, normalized battlefield block, and provider-yield reasons.
+- Fixed premature dismounts caused by crossing below the mount-start threshold. Once mounted, travel now remains mounted until the configured arrival distance or confirmed combat requires a dismount.
+- Stopped merely visible nearby enemies from forcing a mid-route dismount; nearby enemies still prevent a new mount attempt, while actual combat immediately receives movement ownership and requests dismount.
+- Based manual dismount decisions on remaining generated-route length where available, avoiding early dismounts on ramps and switchbacks whose endpoint is horizontally close but still distant along the traversable route.
+- Latched an accepted Mount Roulette request for up to four seconds so the vnavmesh path does not restart during the cast before Dalamud exposes the mount-transition condition.
+- Prevented an unflagged mount cast with no nearby enemies from being misclassified as a Reborn combat engagement.
+- Reduced mount diagnostics to state transitions rather than emitting another event for every nearby-enemy count change.
+- Added pure regression coverage for combat pause/resume arbitration, mount-threshold stability, arrival/combat dismounting, and mount-cast engagement filtering.
+- Autonomous strategy, queue/requeue, and provider-independent Limit Break execution remain disabled; Native MCH remains Shadow / Observe by default.
+
 ## 0.3.0.3 — Frontline team resolution and manual M2 mounting
 
 - Corrected Dalamud Frontline relationship classification from the second Secure field trace: `Character.Battalion` is a zero-based team index in this source, with the complete local roster observed on `0` and the opposing teams on `1` and `2`.

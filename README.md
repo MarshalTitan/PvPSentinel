@@ -21,11 +21,11 @@ Implemented in source:
 - a Seal Rock adapter that aggregates paired map records by stable location and tracks verified B/A rank and neutral/Maelstrom/Adders/Flames state evidence without guessing unresolved S-rank IDs or PvP-team-to-GC mappings
 - a discovery-first Borderland Ruins adapter for territory 1273 / duty 127 that aggregates effectively identical marker coordinates into stable `SEC-xx` locations, retains raw marker/object/text evidence and physical `SEC-OBJ-xxx` observations, and deliberately leaves name/type/state/ownership/tactical meaning `UNRESOLVED`
 - normalized `OUTSIDE`/`PRE_MATCH`/`MATCH_ACTIVE`/terminal `RESULTS`, reliable death/respawn transitions, and retained match summaries before adapter reset
-- normalized `NONE`/`PVP_ENEMY`/`OBJECTIVE_COMBAT`/`STALE_GAME_COMBAT`; only confirmed enemy-player combat cancels manual movement, while objective or stale generic combat cannot permanently block a fresh request
+- normalized `NONE`/`PVP_ENEMY`/`OBJECTIVE_COMBAT`/`STALE_GAME_COMBAT`; confirmed enemy-player combat pauses the owned route while preserving its destination, while objective or stale generic combat cannot permanently block travel
 - one manual M2 vnavmesh owner with arm/disarm, immediate STOP, reachable-point snapping, explicit generated path acquisition, actual waypoint inspection, arrival, cancellation, bounded stuck recovery, failed-opening route comparison, alternate approach anchors, and clean ownership release
 - no direct steering fallback: movement never starts until a vnavmesh route passes validation
 - privacy-sanitized per-match `events.jsonl` plus `summary.json`, with state-diff/rate-limited diagnostics rather than continuous UI dumps
-- optional long-distance Mount Roulette use with combat, casting, nearby-enemy, arrival, and transition gates
+- optional long-distance Mount Roulette use with combat, casting, nearby-enemy mount-start, arrival, and transition gates
 - combat provider modes:
   - `Off`
   - `External Combat / ACR`
@@ -56,11 +56,11 @@ Implemented in source:
 - the existing queue/lifecycle implementation retained but forcibly disabled during manual M2 validation
 - configurable session match limit and a latched emergency stop
 - detailed battlefield and M2 diagnostics for map/adapter, lifecycle/results, PvP team, relationship counts, clusters, objective state/rank/owner/source/confidence, raw Secure research evidence, combat context, death/respawn, sensor health, mesh readiness/build progress, movement ownership, snapped destination, waypoints, route progress, separate stuck/path-failure counts, and retained summary
-- safe manual-M2 mounting for long routes, with actual mount-transition waits, threat/arrival dismounting, preserved generated-route stages, and event diagnostics
+- safe manual-M2 mounting for long routes, with latched mount-transition waits, stable mounted travel until confirmed combat/arrival, route-distance-aware dismounting, preserved generated-route stages, and event diagnostics
 - collapsible Configuration groups plus a Development window organized around an always-visible Testing Controls foldout and separate Frontline/Team, Battlefield/Sensors, Threat, Objectives/Research, M2 Navigation, Combat, and Lifecycle foldouts
 - pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, Secure coordinate aggregation/stability/unresolved-state safety/evidence transitions, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
 
-Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.3. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only from bounded, stationary objective-like evidence. Live-verified moving marker families remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
+Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.4. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only from bounded, stationary objective-like evidence. Live-verified moving marker families remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
 
 ## Safety model
 
@@ -77,15 +77,15 @@ Manual M2 movement requires:
 5. vnavmesh ready and a reachable snapped approach point; and
 6. a generated path whose start, endpoint, coordinates, and total length pass validation.
 
-PvPSentinel stops only the vnavmesh path it owns. It never falls back to running directly at a group or objective coordinate. Death or confirmed enemy-player combat cancels the destination and requires a fresh manual request. Repeated failures are bounded; materially identical replacement routes are rejected before alternate approach anchors are attempted.
+PvPSentinel stops only the vnavmesh path it owns. It never falls back to running directly at a group or objective coordinate. Death cancels the destination and requires a fresh manual request. Confirmed enemy-player combat pauses the route, preserves the destination, and generates a fresh path from the post-fight position after the combat provider releases movement. Repeated failures are bounded; materially identical replacement routes are rejected before alternate approach anchors are attempted.
 
 In `External Combat / ACR` mode, PvPSentinel does not set targets or execute combat actions. It has no IPC contract with MMOMinion or Champion. Local combat, casting, or queued-action state stops PvPSentinel-owned navigation; strategic travel resumes after those signals clear and the configured grace period expires.
 
-In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat targeting, actions, cooldowns, and ordinary PvP defensives. PvPSentinel reads installation/autorotation status and announced next-action events but never calls Reborn's PvP-blocked control endpoints. Once local combat starts, PvPSentinel stops its owned path until the combat flag clears, no classified enemy remains within the clearance radius, and the quiet period expires. The provider releases its navigation yield on death for normal respawn/regrouping. Strategic navigation is fail-closed if Reborn cannot be confirmed active.
+In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat targeting, actions, cooldowns, and ordinary PvP defensives. PvPSentinel reads installation/autorotation status and announced next-action events but never calls Reborn's PvP-blocked control endpoints. Once local combat starts, PvPSentinel stops its owned path but preserves the strategic/manual destination. After the combat flag clears, no classified enemy remains within the clearance radius, and the quiet period expires, Sentinel discards the interrupted route, repaths from the current position, and resumes travel. Death and explicit STOP still cancel the destination. Strategic navigation is fail-closed if Reborn cannot be confirmed active.
 
 In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
 
-Queue/accept/requeue code remains preserved, but v0.3.0.3 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
+Queue/accept/requeue code remains preserved, but v0.3.0.4 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
 
 The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
 
@@ -156,7 +156,7 @@ On Secure, leave manual navigation disarmed for the opening scan. Confirm the ad
 - combat provider: `Off`
 - autonomous strategy/objective navigation/queue: locked off
 
-Select one objective at a time. Verify `Snapped Position`, actual `Waypoint Count`/`Next Waypoint`, `RequestingPath`, `Following`, and `ARRIVED`. Choose routes that cross ramps, walls, elevation changes, and the map center. Confirm a stall stops the path, compares a replacement opening, tries an alternate anchor, and eventually fails/releases ownership rather than steering directly. Test immediate STOP, death cancellation, enemy-player-combat cancellation, and confirm neither destination resumes automatically after respawn/combat.
+Select one objective at a time. Verify `Snapped Position`, actual `Waypoint Count`/`Next Waypoint`, `RequestingPath`, `Following`, and `ARRIVED`. Choose routes that cross ramps, walls, elevation changes, and the map center. Confirm a stall stops the path, compares a replacement opening, tries an alternate anchor, and eventually fails/releases ownership rather than steering directly. Test immediate STOP and death cancellation. For enemy-player combat, confirm `navigation_yielded_external_combat`, no Sentinel path movement during the fight, then `navigation_resumed_after_combat`, a newly generated route from the post-fight position, and eventual `ARRIVED` without selecting the destination again.
 
 ### Stage C — RotationSolverReborn external combat coordination
 

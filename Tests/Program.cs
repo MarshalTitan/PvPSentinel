@@ -77,6 +77,8 @@ Check("active Reborn begins in transit", ExternalEngagementState.Transit,
     rebornEngagement.Update(rebornStart, true, false, false, false, false, false, false, 0, false, 5f).State);
 Check("mount cast does not latch a combat engagement", false,
     rebornEngagement.Update(rebornStart.AddSeconds(1), true, false, false, true, false, true, true, 0, false, 5f).ShouldYield);
+Check("unflagged mount cast without nearby enemies does not latch combat", false,
+    rebornEngagement.Update(rebornStart.AddSeconds(1.5), true, false, false, false, false, true, true, 0, false, 5f).ShouldYield);
 Check("combat latches the Reborn engagement", true,
     rebornEngagement.Update(rebornStart.AddSeconds(2), true, false, false, false, true, false, false, 4, false, 5f).ShouldYield);
 Check("nearby enemies hold engagement after combat flag clears", true,
@@ -217,6 +219,22 @@ Check("blocked mount while on foot does not suppress a valid manual route", fals
     ManualMountPolicy.ShouldWaitBeforeMovement(false, false, false, false, true));
 Check("manual M2 may move once mounted", false,
     ManualMountPolicy.ShouldWaitBeforeMovement(false, false, true, false, false));
+Check("confirmed PvP combat pauses and preserves a manual destination", true,
+    ManualCombatYieldPolicy.ShouldPause(true, false));
+Check("Reborn engagement pauses and preserves a manual destination", true,
+    ManualCombatYieldPolicy.ShouldPause(false, true));
+Check("manual destination does not resume while Reborn still owns combat", false,
+    ManualCombatYieldPolicy.ShouldResume(true, false, true));
+Check("manual destination resumes after battlefield and provider clear", true,
+    ManualCombatYieldPolicy.ShouldResume(true, false, false));
+Check("mount threshold crossing alone does not dismount", false,
+    MountTravelPolicy.ShouldDismount(true, 54f, 28f, false));
+Check("a visible enemy alone does not change mounted travel policy", false,
+    MountTravelPolicy.ShouldDismount(true, 100f, 28f, false));
+Check("route arrival threshold requests dismount", true,
+    MountTravelPolicy.ShouldDismount(true, 27.9f, 28f, false));
+Check("combat ownership requests an immediate dismount", true,
+    MountTravelPolicy.ShouldDismount(true, 100f, 28f, true));
 
 var normalizedSelf = TeamClassifier.Classify(0x10, 0x10, 0, 0, true);
 Check("normalized classifier resolves SELF before team", BattlefieldRelationship.Self, normalizedSelf.Relationship);
@@ -422,7 +440,7 @@ Check("bounded recovery allows attempt below limit", true, ManualNavigationPolic
 Check("bounded recovery stops at limit", false, ManualNavigationPolicy.CanRetry(3, 3));
 Check("death owns and cancels navigation", MovementOwner.DeathRecovery,
     ManualNavigationPolicy.ResolveOwner(true, false, true));
-Check("enemy combat owns and cancels navigation", MovementOwner.ExternalCombat,
+Check("enemy combat owns and pauses navigation", MovementOwner.ExternalCombat,
     ManualNavigationPolicy.ResolveOwner(false, true, true));
 Check("released route has no movement owner", MovementOwner.None,
     ManualNavigationPolicy.ResolveOwner(false, false, false));
