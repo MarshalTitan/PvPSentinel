@@ -103,6 +103,40 @@ internal static class RouteComparison
         center + new Vector3(0f, 0f, -radius),
     ];
 
+    /// <summary>
+    /// Produces bounded local staging points that lead away from a corridor that
+    /// just failed. These are destinations for new vnavmesh paths, never direct
+    /// steering points. Moving to one first lets a later destination path begin
+    /// from meaningfully different geometry instead of merely changing its far
+    /// endpoint and re-entering the same blocked stair/ramp corridor.
+    /// </summary>
+    public static IReadOnlyList<Vector3> DepartureAnchors(
+        Vector3 currentPosition,
+        IReadOnlyList<Vector3> failedCorridor,
+        float nearRadius = 12f,
+        float farRadius = 20f)
+    {
+        var failedDirection = FindHorizontalDirection(currentPosition, failedCorridor);
+        var backward = -failedDirection;
+        var left = new Vector3(-failedDirection.Z, 0f, failedDirection.X);
+        var right = -left;
+        var backwardLeft = Vector3.Normalize(backward + left);
+        var backwardRight = Vector3.Normalize(backward + right);
+
+        // Side steps are preferred because the Secure trace showed a ramp lip
+        // directly ahead. Backward and diagonal anchors remain available when
+        // either side is obstructed.
+        return
+        [
+            currentPosition + (left * nearRadius),
+            currentPosition + (right * nearRadius),
+            currentPosition + (backward * nearRadius),
+            currentPosition + (backwardLeft * farRadius),
+            currentPosition + (backwardRight * farRadius),
+            currentPosition + (backward * farRadius),
+        ];
+    }
+
     private static IReadOnlyList<Vector3> SampleOpening(
         IReadOnlyList<Vector3> route,
         float distance,
@@ -128,6 +162,20 @@ internal static class RouteComparison
     }
 
     private static float SpatialDistance(Vector3 a, Vector3 b) => Vector3.Distance(a, b);
+
+    private static Vector3 FindHorizontalDirection(
+        Vector3 currentPosition,
+        IReadOnlyList<Vector3> failedCorridor)
+    {
+        foreach (var point in failedCorridor.Skip(1))
+        {
+            var direction = new Vector3(point.X - currentPosition.X, 0f, point.Z - currentPosition.Z);
+            if (direction.LengthSquared() >= 0.25f)
+                return Vector3.Normalize(direction);
+        }
+
+        return Vector3.UnitZ;
+    }
 
     private static IReadOnlyList<Vector3> SampleEvery(IReadOnlyList<Vector3> route, float interval)
     {

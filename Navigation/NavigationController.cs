@@ -28,6 +28,9 @@ internal sealed class NavigationController(
     private readonly Queue<ManualNavigationEvent> manualEvents = [];
     private List<Vector3> manualCandidates = [];
     private int manualCandidateIndex;
+    private List<Vector3> manualDepartureCandidates = [];
+    private int manualDepartureCandidateIndex;
+    private ManualRecoveryPhase manualRecoveryPhase;
     private Vector3? manualSnapped;
     private Task<IReadOnlyList<Vector3>>? manualPendingPath;
     private IReadOnlyList<Vector3> manualRoute = [];
@@ -93,6 +96,7 @@ internal sealed class NavigationController(
             manualRequest = null;
             manualCandidates = [];
             manualCandidateIndex = 0;
+            ResetManualRecovery();
             manualSnapped = null;
             manualPendingPath = null;
             manualRoute = [];
@@ -391,6 +395,7 @@ internal sealed class NavigationController(
                 .DistinctBy(point => $"{point.X:F1}|{point.Y:F1}|{point.Z:F1}")
                 .ToList();
             manualCandidateIndex = 0;
+            ResetManualRecovery();
             manualSnapped = null;
             manualPendingPath = null;
             manualRoute = [];
@@ -431,7 +436,8 @@ internal sealed class NavigationController(
             game.IsMounted,
             remainingRouteDistance,
             config.DismountDistance,
-            combatOwnsMovement: false) && manualPlan is not null;
+            combatOwnsMovement: false) && manualPlan is not null &&
+            manualRecoveryPhase != ManualRecoveryPhase.DepartureStage;
         var mountDecision = mount.Update(game, longDistance, shouldDismount, nearbyMountThreats, config);
         ReportManualMountDecision(mountDecision, remainingRouteDistance, nearbyMountThreats, game);
         if (ManualMountPolicy.ShouldWaitBeforeMovement(
@@ -461,6 +467,34 @@ internal sealed class NavigationController(
 
         if (manualSnapped is not null && arrivalDistance <= 3f)
         {
+            if (manualRecoveryPhase == ManualRecoveryPhase.DepartureStage)
+            {
+                if (ownsPath)
+                    vnav.Stop();
+                ownsPath = false;
+                manualRecoveryPhase = ManualRecoveryPhase.DestinationRetry;
+                manualCandidateIndex = 0;
+                manualSnapped = null;
+                manualPendingPath = null;
+                manualRoute = [];
+                manualPlan = null;
+                manualRouteCursor = 0;
+                manualStageEnd = 0;
+                manualReplacementAttempt = true;
+                manualLastProgressPosition = local.Position;
+                manualLastProgressUtc = now;
+                Emit(
+                    "navigation_recovery_stage_arrived",
+                    $"destination={activeManual.DestinationId}; departure_candidate={manualDepartureCandidateIndex + 1}; position={FormatVector(local.Position)}; action=repath_destination_from_new_origin");
+                manualSnapshot = BuildManualSnapshot(
+                    MovementOwner.SentinelTestNav,
+                    ManualRouteState.RequestingPath,
+                    "Reached a local recovery stage; requesting a materially different route to the original destination.",
+                    local.Position);
+                return Decision(false, activeManual.ReferencePosition, NavigationPathState.RequestingPath,
+                    mountDecision.State, manualSnapshot.Explanation);
+            }
+
             var arrivedRequest = activeManual;
             if (ownsPath)
                 vnav.Stop();
@@ -525,6 +559,7 @@ internal sealed class NavigationController(
                 manualRoute = [];
                 manualRouteCursor = 0;
                 manualStageEnd = 0;
+                BeginManualRecovery(local.Position);
             }
             else
             {
@@ -547,6 +582,7 @@ internal sealed class NavigationController(
             manualRoute = [];
             manualRouteCursor = 0;
             manualStageEnd = 0;
+            BeginManualRecovery(local.Position);
         }
 
         if (!ManualNavigationPolicy.CanRetry(consecutiveFailures, config.MaximumPathFailures))
@@ -605,17 +641,24 @@ internal sealed class NavigationController(
 
         if (!ownsPath)
         {
-            if (manualCandidateIndex >= manualCandidates.Count)
+            if (!EnsureManualCandidateAvailable())
             {
-                CancelManual("No reachable, non-repeating approach route was found.", ManualRouteState.Failed, "navigation_failed");
+                CancelManual("No reachable local departure stage or non-repeating approach route was found.", ManualRouteState.Failed, "navigation_failed");
                 return Decision(false, null, NavigationPathState.Failed, MountState.Disabled, manualSnapshot.Explanation);
             }
-            var candidate = manualCandidates[manualCandidateIndex];
+            var candidate = CurrentManualCandidate();
             manualSnapped = vnav.FindNearestReachable(candidate, 12f, 8f);
             if (manualSnapped is null)
             {
                 manualPathFailureCount++;
-                AdvanceManualCandidate($"Approach candidate {manualCandidateIndex + 1} had no reachable mesh point.");
+                AdvanceManualCandidate($"{CurrentCandidateLabel()} had no reachable mesh point.");
+                return UpdateManual(game, battlefield, config);
+            }
+            if (manualRecoveryPhase == ManualRecoveryPhase.DepartureStage &&
+                HorizontalDistance(local.Position, manualSnapped.Value) < 5f)
+            {
+                manualPathFailureCount++;
+                AdvanceManualCandidate($"{CurrentCandidateLabel()} snapped less than 5y from the failed origin.", true);
                 return UpdateManual(game, battlefield, config);
             }
             manualPathRequestedUtc = now;
@@ -655,7 +698,7 @@ internal sealed class NavigationController(
         {
             manualPathFailureCount++;
             Emit("navigation_route_rejected",
-                $"destination={activeManual?.DestinationId}; candidate={manualCandidateIndex + 1}; reason=repeated failed corridor; failed={FormatRoute(failedManualCorridor)}; replacement={FormatRoute(route)}");
+                $"destination={activeManual?.DestinationId}; candidate={CurrentCandidateLabel()}; reason=repeated failed corridor; failed={FormatRoute(failedManualCorridor)}; replacement={FormatRoute(route)}");
             AdvanceManualCandidate("Replacement path repeated the failed corridor geometry.", true);
             return;
         }
@@ -674,11 +717,20 @@ internal sealed class NavigationController(
         manualStageEnd = 0;
         manualRouteAttempt++;
         manualRouteId = $"{activeManual?.DestinationId ?? "ROUTE"}-R{manualRouteAttempt:00}";
-        var recoveryResult = manualReplacementAttempt ? "replacement-materially-different" : "initial";
+        var acceptedRecoveryPhase = manualRecoveryPhase;
+        var recoveryResult = acceptedRecoveryPhase switch
+        {
+            ManualRecoveryPhase.DepartureStage => "local-departure-stage",
+            ManualRecoveryPhase.DestinationRetry => "destination-from-recovery-stage",
+            _ when manualReplacementAttempt => "replacement-materially-different",
+            _ => "initial",
+        };
         manualReplacementAttempt = false;
+        if (acceptedRecoveryPhase == ManualRecoveryPhase.DestinationRetry)
+            ResetManualRecovery();
         lastReportedManualWaypointCount = -1;
         Emit("navigation_path_ready",
-            $"destination={activeManual?.DestinationId}; route={manualRouteId}; attempt={manualRouteAttempt}; candidate={manualCandidateIndex + 1}; recovery={recoveryResult}; origin={FormatVector(origin)}; endpoint={FormatVector(manualSnapped!.Value)}; raw_waypoints={route.Count}; execution_waypoints={manualPlan.Waypoints.Count}; length={manualPlan.Length:F1}; raw_geometry={FormatRoute(route, 128)}; execution_geometry={manualPlan.FormatGeometry()}");
+            $"destination={activeManual?.DestinationId}; route={manualRouteId}; attempt={manualRouteAttempt}; candidate={CurrentCandidateLabel(acceptedRecoveryPhase)}; recovery={recoveryResult}; origin={FormatVector(origin)}; endpoint={FormatVector(manualSnapped!.Value)}; raw_waypoints={route.Count}; execution_waypoints={manualPlan.Waypoints.Count}; length={manualPlan.Length:F1}; raw_geometry={FormatRoute(route, 128)}; execution_geometry={manualPlan.FormatGeometry()}");
     }
 
     private bool StartManualStage(Vector3 currentPosition, DateTime now)
@@ -703,13 +755,72 @@ internal sealed class NavigationController(
     private void AdvanceManualCandidate(string reason, bool preserveFailureComparison = false)
     {
         Emit("navigation_path_failed",
-            $"destination={activeManual?.DestinationId ?? manualSnapshot.DestinationId}; candidate={manualCandidateIndex + 1}; reason={reason}");
-        manualCandidateIndex++;
+            $"destination={activeManual?.DestinationId ?? manualSnapshot.DestinationId}; candidate={CurrentCandidateLabel()}; reason={reason}");
+        if (manualRecoveryPhase == ManualRecoveryPhase.DepartureStage)
+            manualDepartureCandidateIndex++;
+        else
+            manualCandidateIndex++;
         manualSnapped = null;
         lastReportedManualWaypointCount = -1;
         manualPendingPath = null;
         manualReplacementAttempt = preserveFailureComparison;
         developmentLog.Changed("manual-nav-candidate", $"{manualCandidateIndex}|{reason}", reason);
+    }
+
+    private void BeginManualRecovery(Vector3 currentPosition)
+    {
+        manualDepartureCandidates = RouteComparison.DepartureAnchors(currentPosition, failedManualCorridor).ToList();
+        manualDepartureCandidateIndex = 0;
+        manualCandidateIndex = 0;
+        manualRecoveryPhase = ManualRecoveryPhase.DepartureStage;
+        manualSnapped = null;
+        manualPendingPath = null;
+        manualReplacementAttempt = true;
+        Emit(
+            "navigation_recovery_started",
+            $"destination={activeManual?.DestinationId}; origin={FormatVector(currentPosition)}; candidates={FormatRoute(manualDepartureCandidates)}; failed_corridor={FormatRoute(failedManualCorridor)}");
+    }
+
+    private bool EnsureManualCandidateAvailable()
+    {
+        if (manualRecoveryPhase == ManualRecoveryPhase.DepartureStage)
+            return manualDepartureCandidateIndex < manualDepartureCandidates.Count;
+
+        if (manualCandidateIndex < manualCandidates.Count)
+            return true;
+
+        if (manualRecoveryPhase != ManualRecoveryPhase.DestinationRetry ||
+            manualDepartureCandidateIndex + 1 >= manualDepartureCandidates.Count)
+            return false;
+
+        manualDepartureCandidateIndex++;
+        manualCandidateIndex = 0;
+        manualRecoveryPhase = ManualRecoveryPhase.DepartureStage;
+        manualSnapped = null;
+        manualReplacementAttempt = true;
+        Emit(
+            "navigation_recovery_stage_advanced",
+            $"destination={activeManual?.DestinationId}; departure_candidate={manualDepartureCandidateIndex + 1}; reason=all destination approaches repeated or failed");
+        return true;
+    }
+
+    private Vector3 CurrentManualCandidate() => manualRecoveryPhase == ManualRecoveryPhase.DepartureStage
+        ? manualDepartureCandidates[manualDepartureCandidateIndex]
+        : manualCandidates[manualCandidateIndex];
+
+    private string CurrentCandidateLabel(ManualRecoveryPhase? phaseOverride = null)
+    {
+        var phase = phaseOverride ?? manualRecoveryPhase;
+        return phase == ManualRecoveryPhase.DepartureStage
+            ? $"departure-{manualDepartureCandidateIndex + 1}"
+            : $"approach-{manualCandidateIndex + 1}";
+    }
+
+    private void ResetManualRecovery()
+    {
+        manualDepartureCandidates = [];
+        manualDepartureCandidateIndex = 0;
+        manualRecoveryPhase = ManualRecoveryPhase.None;
     }
 
     private void CancelManual(string reason, ManualRouteState state, string eventName)
@@ -722,6 +833,7 @@ internal sealed class NavigationController(
         activeManual = null;
         manualPendingPath = null;
         manualCandidates.Clear();
+        ResetManualRecovery();
         manualRoute = [];
         failedManualCorridor = [];
         manualPlan = null;
@@ -821,6 +933,7 @@ internal sealed class NavigationController(
             manualRouteCursor = 0;
             manualStageEnd = 0;
             manualCandidateIndex = 0;
+            ResetManualRecovery();
             manualReplacementAttempt = false;
             consecutiveFailures = 0;
             lastReportedManualWaypointCount = -1;
@@ -858,6 +971,7 @@ internal sealed class NavigationController(
                 .ToList();
         }
         manualCandidateIndex = 0;
+        ResetManualRecovery();
         manualSnapped = null;
         manualPendingPath = null;
         manualRoute = [];
@@ -1024,4 +1138,11 @@ internal sealed class NavigationController(
 
     private static string FormatVector(Vector3 value) => string.Create(
         CultureInfo.InvariantCulture, $"({value.X:F1}, {value.Y:F1}, {value.Z:F1})");
+
+    private enum ManualRecoveryPhase
+    {
+        None,
+        DepartureStage,
+        DestinationRetry,
+    }
 }

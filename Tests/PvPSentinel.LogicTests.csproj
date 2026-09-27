@@ -40,6 +40,7 @@
     <Compile Include="../FrontlineCore/Maps/SecureObjectiveAggregator.cs" Link="FrontlineCore/Maps/SecureObjectiveAggregator.cs" />
     <Compile Include="../FrontlineCore/Maps/SecureAdapter.cs" Link="FrontlineCore/Maps/SecureAdapter.cs" />
     <Compile Include="../FrontlineCore/Diagnostics/EventDiffLimiter.cs" Link="FrontlineCore/Diagnostics/EventDiffLimiter.cs" />
+    <Compile Include="../FrontlineCore/Diagnostics/FrontlineJson.cs" Link="FrontlineCore/Diagnostics/FrontlineJson.cs" />
     <Compile Include="../FrontlineCore/Diagnostics/PrivacySanitizer.cs" Link="FrontlineCore/Diagnostics/PrivacySanitizer.cs" />
   </ItemGroup>
 </Project>

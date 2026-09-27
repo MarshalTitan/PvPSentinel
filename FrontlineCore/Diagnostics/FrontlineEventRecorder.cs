@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text;
 using Dalamud.Plugin.Services;
 using PvPSentinel.Models;
@@ -8,12 +7,7 @@ namespace PvPSentinel.FrontlineCore.Diagnostics;
 
 internal sealed class FrontlineEventRecorder(string pluginConfigDirectory, IPluginLog log)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
-    };
+    private static readonly JsonSerializerOptions JsonOptions = FrontlineJson.CreateOptions();
 
     private string? sessionDirectory;
     private readonly StringBuilder pending = new();

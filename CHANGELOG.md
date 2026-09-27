@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0.7 — Staged stair recovery and complete research coordinates
+
+- Correlated the v0.3.0.6 Secure trace with both recordings. Preferred-mount travel is live-confirmed: every automatic request summoned Company Chocobo, including the preserved SEC-08 destination after RotationSolverReborn combat ownership cleared. Team classification remained clean at `1 SELF / 23 ALLY / 41 ENEMY / 0 UNKNOWN`.
+- Confirmed the strengthened route comparator safely rejected every path that rejoined the failed Secure center stair corridor. The remaining defect was recovery topology: changing only destination-side approach anchors could not alter vnavmesh's blocked opening corridor.
+- Added bounded local departure-stage recovery. After a stall, Sentinel derives six side/back staging candidates from the failed corridor, snaps each through vnavmesh, rejects stages that remain near the failed origin or repeat its geometry, follows a validated generated path to the stage, then repaths the original destination from that materially different origin.
+- Preserved single movement ownership, explicit route inspection, mounted travel through the recovery stage, bounded failure, and the prohibition on direct-steering or terrain-running fallbacks.
+- Added `navigation_recovery_started`, `navigation_recovery_stage_arrived`, and `navigation_recovery_stage_advanced` evidence so the next live trace can distinguish local escape movement from the final destination route.
+- Fixed retained `summary.json` serialization so objective and research-object positions contain actual `x`, `y`, and `z` values instead of empty objects.
+- Added privacy-safe, rate-limited `threat_changed` events with targeting-me count, nearby balance, threat level, and targeter jobs/distances. This will correlate the shared tracker with the borderless counter in future recordings without logging player names.
+- Capped highly volatile team-probe and cluster events to a three-second cadence while preserving state changes, reducing oversized match logs.
+- The supplied clips did not overlap the match's one confirmed hard-target interval, so the existing counter visibility rules remain unchanged: it is reliable in Frontline and hidden at zero when that setting is enabled.
+- Native MCH remains Shadow / Observe by default. Autonomous strategy, objective capture, queue/requeue, and provider-independent Limit Break execution remain disabled.
+
 ## 0.3.0.6 — Preferred mount and field-refined route recovery
 
 - Correlated the first v0.3.0.5 Secure trace with three recordings. Seven manual requests produced three `ARRIVED` results; the trace positively confirmed two preserved destinations resumed with a fresh path after RotationSolverReborn combat ownership cleared. Death and explicit STOP remained terminal.

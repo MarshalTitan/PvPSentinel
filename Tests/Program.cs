@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json;
 using PvPSentinel.Combat;
 using PvPSentinel.Combat.Native;
 using PvPSentinel.Combat.Native.Jobs.Machinist;
@@ -436,6 +437,20 @@ Check("retained summary counts stuck events", 1, retained.NavigationStuckEvents)
 Check("retained summary preserves objective transition evidence", 1, retained.ObjectiveTransitions.Count);
 Check("retained summary preserves territory", 554u, retained.TerritoryId);
 Check("retained summary preserves duty", 180u, retained.ContentFinderConditionId);
+var retainedJson = JsonSerializer.Serialize(retained with
+{
+    ObjectiveResearch =
+    [
+        new ObjectiveResearchSummary("SEC-01", new Vector3(1.25f, 2.5f, -3.75f),
+            "Unresolved", "Unresolved", "research", "test", summaryStart, summaryStart),
+    ],
+}, FrontlineJson.CreateOptions());
+Check("retained summary serializes objective X coordinate", true,
+    retainedJson.Contains("\"x\":1.25", StringComparison.Ordinal));
+Check("retained summary serializes objective Y coordinate", true,
+    retainedJson.Contains("\"y\":2.5", StringComparison.Ordinal));
+Check("retained summary serializes objective Z coordinate", true,
+    retainedJson.Contains("\"z\":-3.75", StringComparison.Ordinal));
 
 var routeA = new[] { Vector3.Zero, new Vector3(10, 0, 0), new Vector3(20, 0, 0), new Vector3(40, 0, 0) };
 var routeB = new[] { Vector3.Zero, new Vector3(10.5f, 0, 0.2f), new Vector3(20.5f, 0, 0), new Vector3(40, 0, 10) };
@@ -483,6 +498,21 @@ var secureTwelveReplacement = new[]
 };
 Check("SEC-12 detour that rejoins failed stair corridor is rejected", true,
     RouteComparison.RepeatsFailedCorridor(secureTwelveFailure, secureTwelveReplacement));
+var departureAnchors = RouteComparison.DepartureAnchors(
+    secureTwelveFailure[0], secureTwelveFailure, nearRadius: 12f, farRadius: 20f);
+Check("stuck recovery generates bounded departure stages", 6, departureAnchors.Count);
+Check("departure stages move materially away from failed origin", true,
+    departureAnchors.All(point => Vector2.Distance(
+        new Vector2(point.X, point.Z),
+        new Vector2(secureTwelveFailure[0].X, secureTwelveFailure[0].Z)) >= 11.9f));
+var failedDirection = Vector2.Normalize(new Vector2(
+    secureTwelveFailure[1].X - secureTwelveFailure[0].X,
+    secureTwelveFailure[1].Z - secureTwelveFailure[0].Z));
+var firstDeparture = Vector2.Normalize(new Vector2(
+    departureAnchors[0].X - secureTwelveFailure[0].X,
+    departureAnchors[0].Z - secureTwelveFailure[0].Z));
+Check("first recovery stage is perpendicular to failed corridor", true,
+    Math.Abs(Vector2.Dot(failedDirection, firstDeparture)) < 0.01f);
 Check("same horizontal route on another floor is not treated as identical", false,
     RouteComparison.MateriallyIdentical(routeA, routeA.Select(point => point + new Vector3(0, 8, 0)).ToArray()));
 Check("bounded recovery allows attempt below limit", true, ManualNavigationPolicy.CanRetry(2, 3));

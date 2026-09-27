@@ -34,6 +34,9 @@ internal sealed class BattlefieldService
     private DeathRespawnState priorDeathState = DeathRespawnState.Unavailable;
     private FrontlineCombatContext priorCombatContext;
     private IReadOnlyList<FrontlineMapMarkerObservation> lastSuccessfulMarkers = [];
+    private DateTime lastTeamProbeEventUtc = DateTime.MinValue;
+    private DateTime lastThreatEventUtc = DateTime.MinValue;
+    private DateTime lastClusterEventUtc = DateTime.MinValue;
 
     public BattlefieldService(
         IGameGui gameGui,
@@ -186,6 +189,7 @@ internal sealed class BattlefieldService
             $"{adapter.Name} adapter active; independent sensors remain fail-isolated.");
 
         EmitRelationshipChanges(players, game.CapturedAtUtc);
+        EmitThreatChanges(threat, game.CapturedAtUtc);
         EmitStateChanges(Current);
         summaryBuilder?.Observe(Current);
         return Current;
@@ -216,6 +220,9 @@ internal sealed class BattlefieldService
         combatTracker.Reset();
         priorRelationships.Clear();
         lastSuccessfulMarkers = [];
+        lastTeamProbeEventUtc = DateTime.MinValue;
+        lastThreatEventUtc = DateTime.MinValue;
+        lastClusterEventUtc = DateTime.MinValue;
         diffs.Reset();
         foreach (var sensor in sensorHealth.Values)
             sensor.Reset();
@@ -256,6 +263,9 @@ internal sealed class BattlefieldService
         combatTracker.Reset();
         priorRelationships.Clear();
         lastSuccessfulMarkers = [];
+        lastTeamProbeEventUtc = DateTime.MinValue;
+        lastThreatEventUtc = DateTime.MinValue;
+        lastClusterEventUtc = DateTime.MinValue;
     }
 
     private IReadOnlyList<FrontlineMapMarkerObservation> CaptureMarkers(DateTime now)
@@ -345,8 +355,11 @@ internal sealed class BattlefieldService
             string.Join(',', rosterTeamHistogram.Select(pair => $"{pair.Key}:{pair.Value}")),
             game.ObservedPlayers.Count(player => player.HostileFlag).ToString(CultureInfo.InvariantCulture),
         });
-        if (!diffs.ShouldEmit("pvp-team-probe", signature, game.CapturedAtUtc))
+        if (game.CapturedAtUtc - lastTeamProbeEventUtc < TimeSpan.FromSeconds(3) ||
+            !diffs.ShouldEmit("pvp-team-probe", signature, game.CapturedAtUtc))
             return;
+
+        lastTeamProbeEventUtc = game.CapturedAtUtc;
 
         Record("pvp_team_probe", game.CapturedAtUtc, new
         {
@@ -369,6 +382,35 @@ internal sealed class BattlefieldService
             conclusion = game.IsClassificationReliable
                 ? "zero-based Dalamud Battalion team is authoritative in recognized Frontline content"
                 : "UNRESOLVED: Battalion source is unavailable/invalid or observed values failed validation",
+        });
+    }
+
+    private void EmitThreatChanges(PvPThreatSnapshot threat, DateTime now)
+    {
+        if (!threat.IsReliable)
+            return;
+
+        var signature =
+            $"{threat.TargeterCount}|{threat.NearbyEnemyCount}|{threat.NearbyFriendlyCount}|{threat.Level}|" +
+            string.Join(',', threat.Targeters.Select(targeter =>
+                $"{targeter.JobId}:{MathF.Round(targeter.Distance)}"));
+        if (now - lastThreatEventUtc < TimeSpan.FromSeconds(1) ||
+            !diffs.ShouldEmit("threat", signature, now))
+            return;
+
+        lastThreatEventUtc = now;
+        Record("threat_changed", now, new
+        {
+            targeting_me = threat.TargeterCount,
+            nearby_enemies = threat.NearbyEnemyCount,
+            nearby_allies = threat.NearbyFriendlyCount,
+            threat_level = threat.Level.ToString(),
+            source = threat.Source.ToString(),
+            targeters = threat.Targeters.Select(targeter => new
+            {
+                job = targeter.JobAbbreviation,
+                distance = MathF.Round(targeter.Distance, 1),
+            }).ToArray(),
         });
     }
 
@@ -400,8 +442,12 @@ internal sealed class BattlefieldService
         var clusterSignature = string.Join('|', state.AlliedClusters.Select(cluster =>
             $"A{cluster.Id}:{cluster.MemberCount}:{cluster.Centroid.X:F0}:{cluster.Centroid.Z:F0}").Concat(
             state.EnemyClusters.Select(cluster => $"E{cluster.Id}:{cluster.MemberCount}:{cluster.Centroid.X:F0}:{cluster.Centroid.Z:F0}")));
-        if (diffs.ShouldEmit("clusters", clusterSignature, now))
+        if (now - lastClusterEventUtc >= TimeSpan.FromSeconds(3) &&
+            diffs.ShouldEmit("clusters", clusterSignature, now))
+        {
+            lastClusterEventUtc = now;
             Record("cluster_changed", now, new { allied = state.AlliedClusters.Count, enemy = state.EnemyClusters.Count, signature = clusterSignature });
+        }
     }
 
     private void Success(string sensor, DateTime now, string detail)
