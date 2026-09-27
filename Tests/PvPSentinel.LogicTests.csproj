@@ -16,6 +16,7 @@
     <Compile Include="../Models/FrontlineMap.cs" Link="Models/FrontlineMap.cs" />
     <Compile Include="../Models/CombatProvider.cs" Link="Models/CombatProvider.cs" />
     <Compile Include="../Models/PlayerClassification.cs" Link="Models/PlayerClassification.cs" />
+    <Compile Include="../Models/ObjectiveObservation.cs" Link="Models/ObjectiveObservation.cs" />
     <Compile Include="../Navigation/PathValidator.cs" Link="Navigation/PathValidator.cs" />
     <Compile Include="../Navigation/IVNavmeshAdapter.cs" Link="Navigation/IVNavmeshAdapter.cs" />
     <Compile Include="../Navigation/ManualNavigationModels.cs" Link="Navigation/ManualNavigationModels.cs" />
@@ -31,6 +32,9 @@
     <Compile Include="../FrontlineCore/RetainedMatchSummaryBuilder.cs" Link="FrontlineCore/RetainedMatchSummaryBuilder.cs" />
     <Compile Include="../FrontlineCore/Maps/ShatterObjectivePolicy.cs" Link="FrontlineCore/Maps/ShatterObjectivePolicy.cs" />
     <Compile Include="../FrontlineCore/Maps/SealRockObjectiveAggregator.cs" Link="FrontlineCore/Maps/SealRockObjectiveAggregator.cs" />
+    <Compile Include="../FrontlineCore/Maps/IFrontlineMapAdapter.cs" Link="FrontlineCore/Maps/IFrontlineMapAdapter.cs" />
+    <Compile Include="../FrontlineCore/Maps/SecureObjectiveAggregator.cs" Link="FrontlineCore/Maps/SecureObjectiveAggregator.cs" />
+    <Compile Include="../FrontlineCore/Maps/SecureAdapter.cs" Link="FrontlineCore/Maps/SecureAdapter.cs" />
     <Compile Include="../FrontlineCore/Diagnostics/EventDiffLimiter.cs" Link="FrontlineCore/Diagnostics/EventDiffLimiter.cs" />
     <Compile Include="../FrontlineCore/Diagnostics/PrivacySanitizer.cs" Link="FrontlineCore/Diagnostics/PrivacySanitizer.cs" />
   </ItemGroup>

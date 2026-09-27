@@ -8,18 +8,6 @@ internal sealed record FrontlineTeamStatus(
     bool UsesPositivePvPTeam,
     string Explanation);
 
-internal sealed record ObjectiveObservation(
-    ulong GameObjectId,
-    uint EntityId,
-    uint BaseId,
-    string Name,
-    string ObjectKind,
-    System.Numerics.Vector3 Position,
-    bool IsTargetable,
-    bool IsDead,
-    uint CurrentHp,
-    uint MaxHp);
-
 internal sealed record GameStateSnapshot(
     DateTime CapturedAtUtc,
     bool IsLoggedIn,

@@ -47,6 +47,11 @@ internal sealed class DiagnosticWindow : Window
         var game = state.Game;
         var local = game.LocalPlayer;
 
+        if (BeginSection("Testing Controls", true))
+            DrawTestingControls(state);
+
+        if (BeginSection("Frontline / Team Classification"))
+        {
         KeyValue("PvP", YesNo(game.IsPvP));
         KeyValue("Bound by duty", YesNo(game.IsBoundByDuty));
         KeyValue("Mode", game.IsFrontline ? "Frontline" : "Unsupported / none");
@@ -65,15 +70,18 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Declared / resolved members", $"{game.TeamStatus.DeclaredMemberCount} / {game.TeamStatus.ResolvedMemberCount}");
         KeyValue("Classification reliable", YesNo(game.IsClassificationReliable));
         ImGui.TextWrapped(game.ClassificationReliabilityExplanation);
+        }
 
-        DrawBattlefield(state);
+        if (BeginSection("Battlefield / Sensors"))
+        {
+            DrawBattlefield(state);
 
-        Section("Behavior");
+        Subheading("Behavior");
         ColoredText(BehaviorColor(state.Behavior), state.Behavior.ToString().ToUpperInvariant());
         ImGui.TextWrapped(state.DecisionReason);
         KeyValue("Committed for", $"{(game.CapturedAtUtc - state.BehaviorSinceUtc).TotalSeconds:F1}s");
 
-        Section("Main Friendly Cluster");
+        Subheading("Main Friendly Cluster");
         if (state.MainCluster is null)
         {
             ImGui.TextDisabled("No reliable cluster");
@@ -95,11 +103,13 @@ internal sealed class DiagnosticWindow : Window
             ImGui.TreePop();
         }
 
-        Section("Nearby");
+        Subheading("Nearby");
         KeyValue("Friendly / enemy / unknown within 20y", $"{state.Friendly20} / {state.Enemy20} / {state.Unknown20}");
         KeyValue("Friendly / enemy / unknown within 40y", $"{state.Friendly40} / {state.Enemy40} / {state.Unknown40}");
+        }
 
-        Section("Observed Threat");
+        if (BeginSection("Threat"))
+        {
         KeyValue("Threat observation reliable", YesNo(state.Threat.IsReliable));
         KeyValue("Targeting me", state.Threat.TargeterCount.ToString());
         KeyValue("Combat-relevant targeters (within 30y)", state.Threat.CombatRelevantTargeterCount.ToString());
@@ -143,8 +153,11 @@ internal sealed class DiagnosticWindow : Window
             }
             ImGui.TreePop();
         }
+        }
 
-        Section("Strategic Target Recommendation");
+        if (BeginSection("Objectives / Map Research"))
+        {
+        Subheading("Strategic Target Recommendation");
         if (state.Target is null)
         {
             ImGui.TextDisabled("None");
@@ -161,7 +174,7 @@ internal sealed class DiagnosticWindow : Window
             ImGui.TextWrapped(state.Target.Explanation);
         }
 
-        Section("Map Strategy / Objectives");
+        Subheading("Map Strategy / Objectives");
         if (state.Objective is null)
         {
             ImGui.TextDisabled("No recognized objective candidate. Research observations remain available below.");
@@ -185,10 +198,14 @@ internal sealed class DiagnosticWindow : Window
             }
             ImGui.TreePop();
         }
+        DrawObjectiveResearch(state);
+        }
 
-        DrawManualNavigation(state);
+        if (BeginSection("M2 Navigation", true))
+        {
+        DrawManualNavigationDiagnostics(state);
 
-        Section("Navigation (legacy/autonomous disabled)");
+        Subheading("Navigation (legacy/autonomous disabled)");
         KeyValue("vnavmesh available", YesNo(vnav.IsReady));
         KeyValue("Mesh build progress", vnav.BuildProgress < 0f ? "No build in progress / UNRESOLVED" : $"{vnav.BuildProgress:P0}");
         KeyValue("Pathing / pathfinding", $"{YesNo(vnav.IsPathRunning)} / {YesNo(vnav.IsPathfindInProgress)}");
@@ -197,8 +214,10 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Mount state", state.Navigation.MountState.ToString());
         KeyValue("Destination", state.Navigation.Destination is { } destination ? FormatVector(destination) : "None");
         ImGui.TextWrapped(state.Navigation.Explanation);
+        }
 
-        Section("Combat");
+        if (BeginSection("Combat"))
+        {
         KeyValue("Provider", state.Combat.Provider.ToString());
         KeyValue("Controller active", YesNo(state.Combat.ControllerActive));
         KeyValue("Yield owned navigation", YesNo(state.Combat.YieldNavigation));
@@ -241,19 +260,21 @@ internal sealed class DiagnosticWindow : Window
             ImGui.TextDisabled("Reborn action events announce decisions only; they do not confirm that an action executed.");
         }
         KeyValue("Wrath", wrath.Status);
+        }
 
-        Section("Frontline Lifecycle");
+        if (BeginSection("Frontline Lifecycle"))
+        {
         KeyValue("Queue state", state.Queue.State.ToString());
         KeyValue("Detected daily campaign", state.Queue.DailyCampaign.DisplayName());
         KeyValue("Completed / limit", $"{state.Queue.CompletedMatches} / {state.Queue.MatchLimit}");
         KeyValue("Emergency stop latched", YesNo(state.Queue.EmergencyStopLatched));
         ImGui.TextWrapped(state.Queue.Explanation);
+        }
     }
 
     private void DrawBattlefield(TacticalSnapshot state)
     {
         var battlefield = state.Battlefield;
-        Section("Normalized Battlefield");
         KeyValue("Adapter", battlefield.ActiveAdapter);
         KeyValue("Map", $"{battlefield.Map.DisplayName()} ({battlefield.TerritoryId})");
         KeyValue("Lifecycle / timer", $"{battlefield.Match.Lifecycle} / {(battlefield.Match.TimeRemaining is { } timer ? timer.ToString("mm\\:ss") : "UNRESOLVED")}");
@@ -274,64 +295,44 @@ internal sealed class DiagnosticWindow : Window
                 ImGui.BulletText($"{sensor.Sensor}: {sensor.Status}; errors={sensor.ErrorCount}; {sensor.Detail}");
             ImGui.TreePop();
         }
-        if (ImGui.TreeNode($"Logical objectives ({battlefield.Objectives.Count})"))
-        {
-            foreach (var objective in battlefield.Objectives)
-            {
-                var position = objective.ReferencePosition is { } reference ? FormatVector(reference) : "UNRESOLVED";
-                ImGui.BulletText($"{objective.LogicalId} {objective.Kind}: {objective.State}; rank={objective.Rank}; owner={objective.Owner}; GC={objective.ObservedGrandCompany}; ETA={objective.ActivationEtaSeconds?.ToString() ?? "UNRESOLVED"}; strength={objective.StrengthPercent?.ToString() ?? "UNRESOLVED"}; nearby A/E={objective.NearbyAllies}/{objective.NearbyEnemies}; pos={position}; physical={YesNo(objective.PhysicalConfirmation is not null)}; source={objective.SensorSource}; confidence={objective.Confidence}");
-            }
-            ImGui.TreePop();
-        }
         if (battlefield.LastMatchSummary is { } summary && ImGui.TreeNode("Retained last-match summary"))
         {
-            KeyValue("Map / final state", $"{summary.PrimaryTestMap.DisplayName()} / {summary.FinalMatchState}");
+            KeyValue("Map / territory / duty", $"{summary.PrimaryTestMap.DisplayName()} / {summary.TerritoryId} / {summary.ContentFinderConditionId}");
+            KeyValue("Final state", summary.FinalMatchState.ToString());
             KeyValue("Peaks SELF / ALLY / ENEMY / UNKNOWN", $"{summary.PeakSelf} / {summary.PeakAllies} / {summary.PeakEnemies} / {summary.PeakUnknown}");
             KeyValue("Objectives / deaths / respawns", $"{summary.ObjectiveCount} / {summary.Deaths} / {summary.Respawns}");
             KeyValue("Navigation requests / arrivals / failures", $"{summary.NavigationRequests} / {summary.NavigationArrivals} / {summary.NavigationFailures}");
+            KeyValue("Path failures", summary.NavigationPathFailures.ToString());
+            KeyValue("Stops / stuck / rejected routes", $"{summary.NavigationStops} / {summary.NavigationStuckEvents} / {summary.NavigationRouteRejections}");
+            KeyValue("Research locations / objects / transitions", $"{summary.ObjectiveResearch.Count} / {summary.ResearchObjects.Count} / {summary.ObjectiveTransitions.Count}");
             KeyValue("Results / sensor errors", $"{YesNo(summary.ResultsDetected)} / {summary.SensorErrors}");
             ImGui.TreePop();
         }
     }
 
-    private void DrawManualNavigation(TacticalSnapshot state)
+    private void DrawTestingControls(TacticalSnapshot state)
     {
         var manual = navigation.ManualSnapshot;
-        Section("M2 MANUAL NAVIGATION");
-        if (ImGui.Button(manual.Armed ? "Disarm Manual Navigation" : "Arm Manual Navigation"))
+        if (ImGui.Button(manual.Armed ? "Disarm Manual Navigation" : "Arm Manual Navigation", new Vector2(210, 34)))
             navigation.SetManualNavigationArmed(!manual.Armed);
         ImGui.SameLine();
-        if (ImGui.Button("STOP NAVIGATION"))
+        if (ImGui.Button("STOP NAVIGATION", new Vector2(180, 34)))
             navigation.StopManualNavigation();
 
-        KeyValue("Current Map", $"{state.Battlefield.Map.DisplayName()} ({state.Battlefield.TerritoryId})");
-        KeyValue("Navmesh Ready", YesNo(vnav.IsReady));
-        KeyValue("Build Progress", vnav.BuildProgress < 0f ? "No build / UNRESOLVED" : $"{vnav.BuildProgress:P0}");
-        KeyValue("Destination", $"{manual.DestinationId} — {manual.DestinationName}");
-        KeyValue("Movement Owner", manual.Owner.ToString());
-        KeyValue("Combat Context", state.Battlefield.Combat.Context.ToString());
-        KeyValue("Movement Blocked", YesNo(state.Battlefield.Combat.BlocksMovement));
-        KeyValue("Route State", manual.State.ToString());
-        KeyValue("Waypoint Count", manual.WaypointCount.ToString());
-        KeyValue("Current Waypoint", manual.CurrentWaypoint.ToString());
-        KeyValue("Next Waypoint", manual.NextWaypoint is { } next ? FormatVector(next) : "NONE");
-        KeyValue("Distance Remaining", $"{manual.DistanceRemaining:F1}y");
-        KeyValue("Progress Age", $"{manual.ProgressAgeSeconds:F1}s");
-        KeyValue("Stuck Count", manual.StuckCount.ToString());
-        ImGui.TextWrapped(manual.Explanation);
-
-        if (!manual.Armed)
-        {
-            ImGui.TextDisabled("Arm manual navigation before selecting a destination.");
-            return;
-        }
+        KeyValue("Selected destination", $"{manual.DestinationId} — {manual.DestinationName}");
+        KeyValue("Route state", manual.State.ToString());
+        KeyValue("Manual navigation armed", YesNo(manual.Armed));
 
         var objectives = state.Battlefield.Objectives.ToArray();
         if (objectives.Length > 0)
         {
-            ImGui.Text(state.Battlefield.Map == FrontlineMap.FieldsOfGlory
-                ? "Shatter objectives (UNRESOLVED buttons remain disabled):"
-                : "Discovered objectives:");
+            ImGui.Text(state.Battlefield.Map switch
+            {
+                FrontlineMap.BorderlandRuins => "Secure discovery destinations:",
+                FrontlineMap.FieldsOfGlory => "Shatter objectives (UNRESOLVED buttons remain disabled):",
+                _ => "Discovered objective destinations:",
+            });
+            ImGui.BeginDisabled(!manual.Armed);
             for (var index = 0; index < objectives.Length; index++)
             {
                 var objective = objectives[index];
@@ -346,21 +347,80 @@ internal sealed class DiagnosticWindow : Window
                 if ((index + 1) % 6 != 0 && index + 1 < objectives.Length)
                     ImGui.SameLine();
             }
+            ImGui.EndDisabled();
         }
         else
         {
-            ImGui.TextDisabled("No logical objective has a resolved reference position yet.");
+            ImGui.TextDisabled(state.Battlefield.Map == FrontlineMap.BorderlandRuins
+                ? "Waiting for stable Secure marker coordinates to create SEC-xx destinations."
+                : "No logical objective has a resolved reference position yet.");
         }
 
         var nearestCluster = state.Battlefield.AlliedClusters
             .Where(cluster => cluster.MemberCount >= 2)
             .OrderBy(cluster => cluster.DistanceFromLocalPlayer)
             .FirstOrDefault();
-        if (nearestCluster is not null && ImGui.Button("Nearest Allied Cluster"))
+        ImGui.BeginDisabled(!manual.Armed || nearestCluster is null);
+        if (ImGui.Button("Nearest Allied Cluster", new Vector2(210, 0)) && nearestCluster is not null)
             navigation.RequestManualDestination(
                 $"ALLY-CLUSTER-{nearestCluster.Id}",
                 $"Allied cluster #{nearestCluster.Id}",
                 nearestCluster.Centroid);
+        ImGui.EndDisabled();
+        if (!manual.Armed)
+            ImGui.TextDisabled("Arm manual navigation before selecting any destination.");
+    }
+
+    private void DrawObjectiveResearch(TacticalSnapshot state)
+    {
+        var battlefield = state.Battlefield;
+        if (ImGui.TreeNode($"Logical objectives / SEC locations ({battlefield.Objectives.Count})"))
+        {
+            foreach (var objective in battlefield.Objectives)
+            {
+                var position = objective.ReferencePosition is { } reference ? FormatVector(reference) : "UNRESOLVED";
+                ImGui.BulletText($"{objective.LogicalId} {objective.Kind}: {objective.State}; rank={objective.Rank}; owner={objective.Owner}; GC={objective.ObservedGrandCompany}; nearby A/E={objective.NearbyAllies}/{objective.NearbyEnemies}; pos={position}; physical={YesNo(objective.PhysicalConfirmation is not null)}; source={objective.SensorSource}; confidence={objective.Confidence}");
+                ImGui.Indent();
+                ImGui.TextWrapped($"Evidence: {objective.Evidence}");
+                ImGui.Unindent();
+            }
+            ImGui.TreePop();
+        }
+        if (ImGui.TreeNode($"Secure physical research objects ({battlefield.ResearchObjects.Count})"))
+        {
+            foreach (var item in battlefield.ResearchObjects.Take(200))
+            {
+                ImGui.BulletText($"{item.ResearchId}: {item.ObjectKind} '{item.Name}', base={item.BaseId}, entity=0x{item.EntityId:X8}, object=0x{item.GameObjectId:X16}, observed={YesNo(item.CurrentlyObserved)}, targetable={YesNo(item.IsTargetable)}, hp={item.CurrentHp}/{item.MaxHp}, pos={FormatVector(item.Position)}");
+            }
+            ImGui.TreePop();
+        }
+        if (ImGui.TreeNode($"Research notes / unresolved ({battlefield.ResearchNotes.Count})"))
+        {
+            foreach (var note in battlefield.ResearchNotes)
+                ImGui.BulletText(note);
+            ImGui.TreePop();
+        }
+    }
+
+    private void DrawManualNavigationDiagnostics(TacticalSnapshot state)
+    {
+        var manual = navigation.ManualSnapshot;
+        KeyValue("Current Map", $"{state.Battlefield.Map.DisplayName()} ({state.Battlefield.TerritoryId})");
+        KeyValue("Navmesh Ready", YesNo(vnav.IsReady));
+        KeyValue("Build Progress", vnav.BuildProgress < 0f ? "No build / UNRESOLVED" : $"{vnav.BuildProgress:P0}");
+        KeyValue("Destination", $"{manual.DestinationId} — {manual.DestinationName}");
+        KeyValue("Movement Owner", manual.Owner.ToString());
+        KeyValue("Combat Context", state.Battlefield.Combat.Context.ToString());
+        KeyValue("Movement Blocked", YesNo(state.Battlefield.Combat.BlocksMovement));
+        KeyValue("Route State", manual.State.ToString());
+        KeyValue("Waypoint Count", manual.WaypointCount.ToString());
+        KeyValue("Current Waypoint", manual.CurrentWaypoint.ToString());
+        KeyValue("Next Waypoint", manual.NextWaypoint is { } next ? FormatVector(next) : "NONE");
+        KeyValue("Distance Remaining", $"{manual.DistanceRemaining:F1}y");
+        KeyValue("Progress Age", $"{manual.ProgressAgeSeconds:F1}s");
+        KeyValue("Stuck Count", manual.StuckCount.ToString());
+        KeyValue("Path Failures", manual.PathFailureCount.ToString());
+        ImGui.TextWrapped(manual.Explanation);
     }
 
     private static void KeyValue(string key, string value)
@@ -371,6 +431,14 @@ internal sealed class DiagnosticWindow : Window
     }
 
     private static void ColoredText(Vector4 color, string text) => ImGui.TextColored(color, text);
+    private static bool BeginSection(string title, bool defaultOpen = false) =>
+        ImGui.CollapsingHeader(title, defaultOpen ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None);
+    private static void Subheading(string title)
+    {
+        ImGui.Spacing();
+        ImGui.Text(title);
+        ImGui.Separator();
+    }
     private static void Section(string title)
     {
         ImGui.Spacing();

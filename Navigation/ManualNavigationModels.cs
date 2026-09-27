@@ -45,12 +45,12 @@ internal sealed record ManualNavigationSnapshot(
     float DistanceRemaining,
     float ProgressAgeSeconds,
     int StuckCount,
+    int PathFailureCount,
     string Explanation)
 {
     public static ManualNavigationSnapshot Disarmed => new(
         false, MovementOwner.None, ManualRouteState.Disarmed, "NONE", "None", null, null,
-        0, 0, null, 0f, 0f, 0, "Manual navigation is disarmed.");
+        0, 0, null, 0f, 0f, 0, 0, "Manual navigation is disarmed.");
 }
 
 internal sealed record ManualNavigationEvent(string Name, string Detail, DateTime AtUtc);
-

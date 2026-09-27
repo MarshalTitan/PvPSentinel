@@ -33,6 +33,8 @@ internal sealed class NavigationController(
     private IReadOnlyList<Vector3> manualRoute = [];
     private IReadOnlyList<Vector3> failedManualRoute = [];
     private bool manualReplacementAttempt;
+    private int manualStuckCount;
+    private int manualPathFailureCount;
     private DateTime manualPathRequestedUtc = DateTime.MinValue;
     private DateTime manualPathStartedUtc = DateTime.MinValue;
     private DateTime manualLastProgressUtc = DateTime.MinValue;
@@ -334,6 +336,8 @@ internal sealed class NavigationController(
             failedManualRoute = [];
             manualReplacementAttempt = false;
             consecutiveFailures = 0;
+            manualStuckCount = 0;
+            manualPathFailureCount = 0;
             manualLastProgressPosition = local.Position;
             manualLastProgressUtc = now;
         }
@@ -361,7 +365,8 @@ internal sealed class NavigationController(
                 arrivedRequest.DestinationId, arrivedRequest.DestinationName,
                 arrivedRequest.ReferencePosition, manualSnapped, vnav.WaypointCount,
                 Math.Max(0, manualRoute.Count - vnav.WaypointCount), vnav.Waypoints.FirstOrDefault(),
-                distance, 0f, consecutiveFailures, $"ARRIVED within {distance:F1}y of the validated approach point.");
+                distance, 0f, manualStuckCount, manualPathFailureCount,
+                $"ARRIVED within {distance:F1}y of the validated approach point.");
             Emit("navigation_arrived", $"destination={arrivedRequest.DestinationId}; approach={FormatVector(manualSnapped.Value)}");
             return Decision(false, manualSnapped, NavigationPathState.Idle, MountState.OnFoot, manualSnapshot.Explanation);
         }
@@ -384,6 +389,7 @@ internal sealed class NavigationController(
             {
                 failedManualRoute = manualRoute;
                 consecutiveFailures++;
+                manualStuckCount++;
                 Emit("navigation_stuck", $"destination={activeManual.DestinationId}; remaining={distance:F1}; attempt={consecutiveFailures}");
                 vnav.Stop();
                 ownsPath = false;
@@ -401,6 +407,7 @@ internal sealed class NavigationController(
         else if (ownsPath && now - manualPathStartedUtc > TimeSpan.FromSeconds(1.5))
         {
             consecutiveFailures++;
+            manualStuckCount++;
             Emit("navigation_stuck", $"destination={activeManual.DestinationId}; path stopped before arrival; attempt={consecutiveFailures}");
             failedManualRoute = manualRoute;
             ownsPath = false;
@@ -418,6 +425,7 @@ internal sealed class NavigationController(
             if (now - manualPathRequestedUtc > TimeSpan.FromSeconds(Math.Clamp(config.PathRequestTimeoutSeconds, 2f, 30f)))
             {
                 consecutiveFailures++;
+                manualPathFailureCount++;
                 manualPendingPath = null;
                 AdvanceManualCandidate("Path generation timed out.");
             }
@@ -447,6 +455,7 @@ internal sealed class NavigationController(
             manualSnapped = vnav.FindNearestReachable(candidate, 12f, 8f);
             if (manualSnapped is null)
             {
+                manualPathFailureCount++;
                 AdvanceManualCandidate($"Approach candidate {manualCandidateIndex + 1} had no reachable mesh point.");
                 return UpdateManual(game, battlefield, config);
             }
@@ -471,6 +480,7 @@ internal sealed class NavigationController(
         catch (Exception ex)
         {
             consecutiveFailures++;
+            manualPathFailureCount++;
             AdvanceManualCandidate($"Path generation faulted: {ex.GetType().Name}.");
             return;
         }
@@ -478,11 +488,13 @@ internal sealed class NavigationController(
         if (!validation.IsValid)
         {
             consecutiveFailures++;
+            manualPathFailureCount++;
             AdvanceManualCandidate($"Generated path rejected: {validation.Explanation}");
             return;
         }
         if (manualReplacementAttempt && RouteComparison.MateriallyIdentical(failedManualRoute, route))
         {
+            manualPathFailureCount++;
             Emit("navigation_route_rejected", $"destination={activeManual?.DestinationId}; materially identical opening geometry");
             manualReplacementAttempt = false;
             AdvanceManualCandidate("Replacement path repeated the failed opening geometry.");
@@ -491,6 +503,7 @@ internal sealed class NavigationController(
         if (!vnav.StartPath(route, 2.5f))
         {
             consecutiveFailures++;
+            manualPathFailureCount++;
             AdvanceManualCandidate("vnavmesh rejected Path.MoveTo.");
             return;
         }
@@ -506,6 +519,8 @@ internal sealed class NavigationController(
 
     private void AdvanceManualCandidate(string reason)
     {
+        Emit("navigation_path_failed",
+            $"destination={activeManual?.DestinationId ?? manualSnapshot.DestinationId}; candidate={manualCandidateIndex + 1}; reason={reason}");
         manualCandidateIndex++;
         manualSnapped = null;
         lastReportedManualWaypointCount = -1;
@@ -529,7 +544,7 @@ internal sealed class NavigationController(
         manualSnapped = null;
         manualSnapshot = new ManualNavigationSnapshot(
             manualArmed, MovementOwner.None, state, id, "None", null, null, 0, 0, null, 0f, 0f,
-            consecutiveFailures, reason);
+            manualStuckCount, manualPathFailureCount, reason);
         Emit(eventName, $"destination={id}; reason={reason}");
     }
 
@@ -559,7 +574,8 @@ internal sealed class NavigationController(
             next,
             remaining,
             progressAge,
-            consecutiveFailures,
+            manualStuckCount,
+            manualPathFailureCount,
             explanation);
     }
 

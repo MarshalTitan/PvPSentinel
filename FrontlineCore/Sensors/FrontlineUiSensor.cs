@@ -79,7 +79,14 @@ internal sealed partial class FrontlineUiSensor(IGameGui gameGui)
         text.Contains("tomelith", StringComparison.OrdinalIgnoreCase) ||
         text.Contains("ice", StringComparison.OrdinalIgnoreCase) ||
         text.Contains("captur", StringComparison.OrdinalIgnoreCase) ||
-        text.Contains("deactiv", StringComparison.OrdinalIgnoreCase);
+        text.Contains("deactiv", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("occup", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("secur", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("control", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("allagan", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("drone", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("interceptor", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("node", StringComparison.OrdinalIgnoreCase);
 
     [GeneratedRegex(@"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")]
     private static partial Regex TimerRegex();

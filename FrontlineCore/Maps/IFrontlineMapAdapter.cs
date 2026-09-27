@@ -8,6 +8,8 @@ internal interface IFrontlineMapAdapter
     FrontlineMap Map { get; }
     string Name { get; }
     IReadOnlyList<MapObjectiveState> Objectives { get; }
+    IReadOnlyList<FrontlineResearchObject> ResearchObjects { get; }
+    IReadOnlyList<string> ResearchNotes { get; }
     void Reset(DateTime now);
     IReadOnlyList<ObjectiveChange> Update(
         DateTime now,
@@ -16,8 +18,6 @@ internal interface IFrontlineMapAdapter
         IReadOnlyList<TrackedPlayer> players);
     bool RecordArrived(string logicalId, Vector3 approachPoint, DateTime now);
 }
-
-internal sealed record ObjectiveChange(string EventName, string LogicalId, string Detail);
 
 internal abstract class FrontlineMapAdapterBase : IFrontlineMapAdapter
 {
@@ -31,6 +31,8 @@ internal abstract class FrontlineMapAdapterBase : IFrontlineMapAdapter
         .ThenBy(record => record.LogicalId, StringComparer.Ordinal)
         .Select(record => record.Snapshot())
         .ToArray();
+    public virtual IReadOnlyList<FrontlineResearchObject> ResearchObjects => [];
+    public virtual IReadOnlyList<string> ResearchNotes => [];
 
     public abstract void Reset(DateTime now);
     public abstract IReadOnlyList<ObjectiveChange> Update(
@@ -106,6 +108,7 @@ internal abstract class FrontlineMapAdapterBase : IFrontlineMapAdapter
         public ObjectivePhysicalConfirmation? PhysicalConfirmation { get; set; }
         public int NearbyAllies { get; set; }
         public int NearbyEnemies { get; set; }
+        public string Evidence { get; set; } = "UNRESOLVED";
 
         public MapObjectiveState Snapshot() => new(
             LogicalId,
@@ -126,6 +129,7 @@ internal abstract class FrontlineMapAdapterBase : IFrontlineMapAdapter
             LastSeenUtc,
             PhysicalConfirmation,
             NearbyAllies,
-            NearbyEnemies);
+            NearbyEnemies,
+            Evidence);
     }
 }

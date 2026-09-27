@@ -49,6 +49,7 @@ internal sealed class BattlefieldService
         recorder = new FrontlineEventRecorder(configDirectory, log);
         adapters = new Dictionary<FrontlineMap, IFrontlineMapAdapter>
         {
+            [FrontlineMap.BorderlandRuins] = new SecureAdapter(),
             [FrontlineMap.FieldsOfGlory] = new ShatterAdapter(),
             [FrontlineMap.SealRock] = new SealRockAdapter(),
         };
@@ -84,7 +85,7 @@ internal sealed class BattlefieldService
             return Current;
         }
         if (activeAdapter is null)
-            EnterMap(desiredAdapter, game.CapturedAtUtc);
+            EnterMap(desiredAdapter, game);
         var adapter = activeAdapter!;
 
         var allObservations = game.LocalPlayer is null
@@ -106,6 +107,18 @@ internal sealed class BattlefieldService
 
         var markers = CaptureMarkers(game.CapturedAtUtc);
         var ui = CaptureUi(game.CapturedAtUtc);
+        if (!string.IsNullOrWhiteSpace(ui.WideTextAnnouncement) &&
+            diffs.ShouldEmit("wide-text", ui.WideTextAnnouncement, game.CapturedAtUtc))
+        {
+            var announcement = PrivacySanitizer.Sanitize(ui.WideTextAnnouncement);
+            Record("frontline_wide_text", game.CapturedAtUtc, new
+            {
+                text = announcement,
+                source = "_WideText",
+            });
+            developmentLog.Changed("frontline-wide-text", announcement,
+                $"_WideText Frontline evidence: {announcement}");
+        }
         IReadOnlyList<ObjectiveChange> changes;
         try
         {
@@ -119,7 +132,15 @@ internal sealed class BattlefieldService
             changes = [];
         }
         foreach (var change in changes)
-            Record(change.EventName, game.CapturedAtUtc, new { objective = change.LogicalId, detail = PrivacySanitizer.Sanitize(change.Detail) });
+        {
+            summaryBuilder?.RecordObjectiveChange(change, game.CapturedAtUtc);
+            var sanitized = PrivacySanitizer.Sanitize(change.Detail);
+            Record(change.EventName, game.CapturedAtUtc, new { objective = change.LogicalId, detail = sanitized });
+            developmentLog.Changed(
+                $"frontline-{change.EventName}-{change.LogicalId}",
+                sanitized,
+                $"{change.EventName}: {change.LogicalId}; {sanitized}");
+        }
 
         var objectives = adapter.Objectives;
         var localPosition = game.LocalPlayer?.Position ?? System.Numerics.Vector3.Zero;
@@ -151,6 +172,8 @@ internal sealed class BattlefieldService
             alliedClusters,
             enemyClusters,
             objectives,
+            adapter.ResearchObjects,
+            adapter.ResearchNotes,
             match,
             combat,
             death,
@@ -178,8 +201,9 @@ internal sealed class BattlefieldService
         }
     }
 
-    private void EnterMap(IFrontlineMapAdapter adapter, DateTime now)
+    private void EnterMap(IFrontlineMapAdapter adapter, GameStateSnapshot game)
     {
+        var now = game.CapturedAtUtc;
         activeAdapter = adapter;
         adapter.Reset(now);
         playerTracker.Reset();
@@ -191,9 +215,22 @@ internal sealed class BattlefieldService
         diffs.Reset();
         foreach (var sensor in sensorHealth.Values)
             sensor.Reset();
-        summaryBuilder = new RetainedMatchSummaryBuilder(adapter.Map, now);
+        summaryBuilder = new RetainedMatchSummaryBuilder(
+            adapter.Map,
+            game.TerritoryId,
+            game.ContentFinderConditionId,
+            now);
         recorder.Start(adapter.Map, now);
-        Record("map_entered", now, new { map = adapter.Map.ToString(), adapter = adapter.Name });
+        Record("map_entered", now, new
+        {
+            map = adapter.Map.ToString(),
+            adapter = adapter.Name,
+            territory = game.TerritoryId,
+            duty = game.ContentFinderConditionId,
+            territory_name = PrivacySanitizer.Sanitize(game.MapName),
+            duty_name = PrivacySanitizer.Sanitize(game.ContentName),
+            identity = FrontlineMapCatalog.DescribeIdentity(adapter.Map, game.ContentFinderConditionId, game.TerritoryId),
+        });
         log.Information("PvPSentinel FrontlineCore entered {Map} using the {Adapter} adapter.", adapter.Map, adapter.Name);
     }
 

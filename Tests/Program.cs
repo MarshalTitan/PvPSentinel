@@ -28,8 +28,12 @@ foreach (var item in mapCases)
     Check($"content ID {item.Content}", item.Map, FrontlineMapCatalog.Identify(item.Content, 0));
     Check($"territory ID {item.Territory}", item.Map, FrontlineMapCatalog.Identify(0, item.Territory));
     Check($"catalog content ID {item.Map}", item.Content, item.Map.ContentFinderConditionId());
+    Check($"catalog territory ID {item.Map}", item.Territory, item.Map.TerritoryId());
+    Check($"exact runtime identity {item.Map}", true, item.Map.HasExactIdentity(item.Content, item.Territory));
     Check($"display name round trip {item.Map}", item.Map, FrontlineMapCatalog.IdentifyText(item.Map.DisplayName()));
 }
+Check("Secure mismatched territory is not exact identity", false,
+    FrontlineMap.BorderlandRuins.HasExactIdentity(127, 554));
 
 var origin = Vector3.Zero;
 var destination = new Vector3(100f, 0f, 0f);
@@ -255,6 +259,48 @@ Check("Seal Rock ownership overlay is retained", "MAELSTROM", sealPaired[0].Gran
 var sealChanged = SealRockObjectiveAggregator.Aggregate([Marker(60591, new Vector3(100, 5, -30))]);
 Check("Seal Rock ownership change is observable", "ADDERS", sealChanged[0].GrandCompany);
 
+var securePosition = new Vector3(100, 5, -30);
+var secureMarkers = new[]
+{
+    SecureMarker(70001, 71001, 72001, securePosition, "Unresolved marker A", 1),
+    SecureMarker(70002, 71002, 72002, securePosition + new Vector3(0.1f, 0, -0.1f), "Unresolved marker B", 2),
+};
+var secureAggregate = SecureObjectiveAggregator.Aggregate(secureMarkers);
+Check("Secure duplicate coordinates aggregate to one candidate", 1, secureAggregate.Count);
+Check("Secure aggregate retains both marker records", 2, secureAggregate[0].EvidenceCount);
+Check("Secure discovery does not infer state from marker IDs", true,
+    secureAggregate[0].EvidenceSummary.Contains("70001/71001/72001", StringComparison.Ordinal));
+Check("Secure candidate is not stable before minimum age", false,
+    SecureObjectiveAggregator.IsStable(trackingNow, trackingNow.AddMilliseconds(500), 3));
+Check("Secure candidate is stable after bounded scans and age", true,
+    SecureObjectiveAggregator.IsStable(trackingNow, trackingNow.AddMilliseconds(750), 3));
+
+var secureAdapter = new SecureAdapter();
+secureAdapter.Reset(trackingNow);
+secureAdapter.Update(trackingNow, secureMarkers, [], []);
+secureAdapter.Update(trackingNow.AddMilliseconds(400), secureMarkers, [], []);
+Check("Secure adapter does not expose an unstable navigation destination", 0, secureAdapter.Objectives.Count);
+secureAdapter.Update(trackingNow.AddMilliseconds(800), secureMarkers, [], []);
+Check("Secure adapter promotes one stable SEC location", 1, secureAdapter.Objectives.Count);
+Check("first Secure logical location has deterministic session ID", "SEC-01", secureAdapter.Objectives[0].LogicalId);
+Check("Secure objective lifecycle remains unresolved", ObjectiveLifecycle.Unknown, secureAdapter.Objectives[0].State);
+Check("Secure objective ownership remains unresolved", ObjectiveOwner.Unresolved, secureAdapter.Objectives[0].Owner);
+var secureChangedMarker = new[]
+{
+    SecureMarker(70003, 71003, 72003, securePosition, "Changed unresolved evidence", 3),
+};
+var secureChanges = secureAdapter.Update(trackingNow.AddSeconds(1), secureChangedMarker, [], []);
+Check("Secure raw evidence change produces transition event", true,
+    secureChanges.Any(change => change.EventName == "secure_observable_transition"));
+var securePhysical = new ObjectiveObservation(
+    0xABCDEF, 0x12345678, 8123, "Unresolved Secure Object", "EventObj",
+    securePosition + new Vector3(1, 0, 1), true, false, 1000, 1000);
+var securePhysicalChanges = secureAdapter.Update(
+    trackingNow.AddSeconds(1.2), secureChangedMarker, [securePhysical], []);
+Check("Secure physical research object is retained", 1, secureAdapter.ResearchObjects.Count);
+Check("Secure physical appearance is evented", true,
+    securePhysicalChanges.Any(change => change.EventName == "secure_research_object_appeared"));
+
 var lifecycleTracker = new MatchLifecycleTracker();
 var uiActive = new FrontlineUiObservation(true, false, TimeSpan.FromMinutes(19), 1400, [], "", "header");
 var uiResults = new FrontlineUiObservation(true, true, TimeSpan.FromMinutes(1), 1400, [], "", "results");
@@ -275,16 +321,26 @@ Check("stale generic combat does not permanently block navigation", false,
     CombatContextPolicy.BlocksMovement(CombatContextPolicy.Resolve(true, false, false)));
 
 var summaryStart = new DateTime(2026, 9, 27, 18, 0, 0, DateTimeKind.Utc);
-var summaryBuilder = new RetainedMatchSummaryBuilder(FrontlineMap.FieldsOfGlory, summaryStart);
+var summaryBuilder = new RetainedMatchSummaryBuilder(FrontlineMap.FieldsOfGlory, 554, 180, summaryStart);
 summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(1), FrontlineMatchLifecycle.MatchActive, 1, 23, 48, 0, 2, 1));
 summaryBuilder.RecordNavigation("navigation_request");
 summaryBuilder.RecordNavigation("navigation_arrived");
+summaryBuilder.RecordNavigation("navigation_path_failed");
+summaryBuilder.RecordNavigation("navigation_stuck");
+summaryBuilder.RecordObjectiveChange(
+    new ObjectiveChange("secure_observable_transition", "SEC-01", "icon=1 -> icon=2"),
+    summaryStart.AddMinutes(2));
 summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(20), FrontlineMatchLifecycle.Results, 1, 20, 40, 0, 2, 1));
 var retained = summaryBuilder.Build(summaryStart.AddMinutes(21));
 Check("retained summary preserves peak allies", 23, retained.PeakAllies);
 Check("retained summary preserves peak enemies", 48, retained.PeakEnemies);
 Check("retained summary preserves results", true, retained.ResultsDetected);
 Check("retained summary counts navigation arrivals", 1, retained.NavigationArrivals);
+Check("retained summary counts path failures", 1, retained.NavigationPathFailures);
+Check("retained summary counts stuck events", 1, retained.NavigationStuckEvents);
+Check("retained summary preserves objective transition evidence", 1, retained.ObjectiveTransitions.Count);
+Check("retained summary preserves territory", 554u, retained.TerritoryId);
+Check("retained summary preserves duty", 180u, retained.ContentFinderConditionId);
 
 var routeA = new[] { Vector3.Zero, new Vector3(10, 0, 0), new Vector3(20, 0, 0), new Vector3(40, 0, 0) };
 var routeB = new[] { Vector3.Zero, new Vector3(10.5f, 0, 0.2f), new Vector3(20.5f, 0, 0), new Vector3(40, 0, 10) };
@@ -334,7 +390,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("PvPSentinel logic tests passed (provider compatibility, classification, maps, paths, external/Reborn engagement, native combat, and shared threat policies).");
+Console.WriteLine("PvPSentinel logic tests passed (providers, classification, Secure/Shatter/Seal Rock, M2 paths, lifecycle, native combat, and shared threat policies).");
 return 0;
 
 void Check<T>(string name, T expected, T actual) where T : notnull
@@ -351,6 +407,15 @@ TrackedPlayer Track(uint id, BattlefieldRelationship relationship, Vector3 posit
 FrontlineMapMarkerObservation Marker(uint iconId, Vector3 position) => new(
     iconId, 0, 0, position, "Allagan Tomelith", 0, 0, "test");
 
+FrontlineMapMarkerObservation SecureMarker(
+    uint iconId,
+    uint dataId,
+    uint objectiveId,
+    Vector3 position,
+    string tooltip,
+    sbyte eventState) => new(
+        iconId, dataId, objectiveId, position, tooltip, 123456, eventState, "test");
+
 BattlefieldState BattlefieldForSummary(
     DateTime at,
     FrontlineMatchLifecycle lifecycle,
@@ -361,7 +426,7 @@ BattlefieldState BattlefieldForSummary(
     int deaths,
     int respawns) => new(
         at, FrontlineMap.FieldsOfGlory, 554, "The Fields of Glory", "Shatter", null, 1, [],
-        new RelationshipCounts(self, allies, enemies, unknown), [], [], [],
+        new RelationshipCounts(self, allies, enemies, unknown), [], [], [], [], [],
         new FrontlineMatchState(lifecycle, null, 1400, [], lifecycle == FrontlineMatchLifecycle.Results,
             "UNAVAILABLE / OPTIONAL", "test"),
         new CombatContextSnapshot(FrontlineCombatContext.None, false, 0, 0, "test"),

@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Introduces the manual M2 Frontline foundation: positive PvP-team classification, normalized battlefield/player/cluster/lifecycle/combat/death state, live Shatter and Seal Rock objective adapters, retained match summaries, privacy-sanitized event logs, and a single-owner manual vnavmesh controller with reachable-point snapping, explicit generated paths, waypoint inspection, bounded stuck recovery, alternate approach anchors, clean cancellation, and no direct-steering fallback. Autonomous strategy, objective capture, and queue/requeue remain disabled. RotationSolverReborn, generic External ACR, and Native MCH Shadow/Active architecture are preserved; Native Shadow remains the default."
+            --notes "Adds a discovery-first Borderland Ruins (Secure) adapter for territory 1273 / duty 127. Stable coordinate evidence becomes manual-only SEC-xx destinations while marker IDs, physical objects, transitions, announcements, unresolved observations, and navigation outcomes are retained for live research without guessing objective meaning. Configuration and Development windows now use collapsible sections with Testing Controls at the top. Autonomous Secure strategy, capture logic, queue/requeue, and automatic destination choice remain disabled. Shatter, Seal Rock, threat tracking, RotationSolverReborn, generic External ACR, and Native MCH Shadow/Active architecture are preserved; Native Shadow remains the default."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

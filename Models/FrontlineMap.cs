@@ -51,6 +51,28 @@ internal static class FrontlineMapCatalog
         _ => 0,
     };
 
+    public static uint TerritoryId(this FrontlineMap map) => map switch
+    {
+        FrontlineMap.BorderlandRuins => 1273,
+        FrontlineMap.SealRock => 431,
+        FrontlineMap.FieldsOfGlory => 554,
+        FrontlineMap.OnsalHakair => 888,
+        FrontlineMap.WorqorChirteh => 1313,
+        _ => 0,
+    };
+
+    public static bool HasExactIdentity(this FrontlineMap map, uint contentFinderConditionId, uint territoryId) =>
+        map != FrontlineMap.Unknown &&
+        map.ContentFinderConditionId() == contentFinderConditionId &&
+        map.TerritoryId() == territoryId;
+
+    public static string DescribeIdentity(
+        FrontlineMap map,
+        uint contentFinderConditionId,
+        uint territoryId) => map.HasExactIdentity(contentFinderConditionId, territoryId)
+        ? $"VERIFIED runtime Lumina pair: territory {territoryId}, duty {contentFinderConditionId}"
+        : $"MISMATCH / UNRESOLVED: observed territory {territoryId}, duty {contentFinderConditionId}; expected {map.TerritoryId()}/{map.ContentFinderConditionId()}";
+
     public static FrontlineMap IdentifyText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))

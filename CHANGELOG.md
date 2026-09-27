@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0.1 — Borderland Ruins discovery and live-test UI
+
+- Added a dedicated discovery-first Borderland Ruins (Secure) adapter for runtime-verified territory 1273 / duty 127.
+- Added coordinate aggregation and short stability qualification for raw map-marker evidence; stable locations receive session-persistent `SEC-xx` IDs without inferring objective name, type, lifecycle, owner, or tactical meaning.
+- Added event-driven Secure marker appearance, evidence-transition, reappearance, and disappearance logging with raw IconId/DataId/ObjectiveId/EventState/end-time/text evidence.
+- Added `SEC-OBJ-xxx` research tracking for nearby EventObj/BattleNpc evidence, including object/entity/base IDs, sanitized name, kind, position, targetability, HP, movement/state changes, and appearance/disappearance.
+- Expanded `_WideText` lifecycle announcement capture for Secure-related evidence and mirrored discovery events into verbose Dalamud diagnostics.
+- Added manual M2 buttons for stable `SEC-xx` locations while preserving explicit arming, generated-path validation, STOP, stuck recovery, route rejection, ARRIVED validation, and disabled autonomous destination selection.
+- Expanded retained summaries with territory/duty, objective evidence, physical research objects, raw transition history, unresolved notes, and detailed navigation failure counters.
+- Split manual navigation stuck count from path-failure count and added per-candidate `navigation_path_failed` events.
+- Made major Configuration groups collapsible without changing any setting values, defaults, persistence, or ranges.
+- Reorganized the Development window into collapsible Testing Controls, Frontline/Team, Battlefield/Sensors, Threat, Objectives/Research, M2 Navigation, Combat, and Lifecycle sections. Testing Controls and M2 Navigation open by default.
+- Preserved every combat provider, Native Shadow default, threat/target counter, Shatter/Seal Rock adapter, lifecycle sensor, and manual-M2 safety gate.
+
 ## 0.3.0.0 — Manual M2 battlefield and navigation foundation
 
 - Replaced Frontline roster/friendly-flag inference with self-first positive PvP-team classification from the public native character structure.

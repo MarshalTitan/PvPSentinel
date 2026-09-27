@@ -155,7 +155,25 @@ internal sealed record MapObjectiveState(
     DateTime? LastSeenUtc,
     ObjectivePhysicalConfirmation? PhysicalConfirmation,
     int NearbyAllies,
-    int NearbyEnemies);
+    int NearbyEnemies,
+    string Evidence);
+
+internal sealed record FrontlineResearchObject(
+    string ResearchId,
+    string Name,
+    string ObjectKind,
+    ulong GameObjectId,
+    uint EntityId,
+    uint BaseId,
+    Vector3 Position,
+    bool IsTargetable,
+    bool IsDead,
+    uint CurrentHp,
+    uint MaxHp,
+    bool CurrentlyObserved,
+    DateTime FirstSeenUtc,
+    DateTime LastSeenUtc,
+    string Evidence);
 
 internal sealed record FrontlineMatchState(
     FrontlineMatchLifecycle Lifecycle,
@@ -201,6 +219,8 @@ internal sealed record BattlefieldState(
     IReadOnlyList<BattlefieldCluster> AlliedClusters,
     IReadOnlyList<BattlefieldCluster> EnemyClusters,
     IReadOnlyList<MapObjectiveState> Objectives,
+    IReadOnlyList<FrontlineResearchObject> ResearchObjects,
+    IReadOnlyList<string> ResearchNotes,
     FrontlineMatchState Match,
     CombatContextSnapshot Combat,
     DeathRespawnSnapshot DeathRespawn,
@@ -221,6 +241,8 @@ internal sealed record BattlefieldState(
         [],
         [],
         [],
+        [],
+        [],
         new FrontlineMatchState(FrontlineMatchLifecycle.Outside, null, null, [], false,
             "UNAVAILABLE / OPTIONAL", "No active Frontline duty."),
         new CombatContextSnapshot(FrontlineCombatContext.None, false, 0, 0, "No active Frontline duty."),
@@ -230,8 +252,45 @@ internal sealed record BattlefieldState(
         explanation);
 }
 
+internal sealed record ObjectiveResearchSummary(
+    string LogicalId,
+    Vector3? ReferencePosition,
+    string State,
+    string Owner,
+    string Kind,
+    string Evidence,
+    DateTime? FirstSeenUtc,
+    DateTime? LastSeenUtc);
+
+internal sealed record ResearchObjectSummary(
+    string ResearchId,
+    string Name,
+    string ObjectKind,
+    ulong GameObjectId,
+    uint EntityId,
+    uint BaseId,
+    Vector3 Position,
+    bool IsTargetable,
+    bool IsDead,
+    bool CurrentlyObserved,
+    uint CurrentHp,
+    uint MaxHp,
+    DateTime FirstSeenUtc,
+    DateTime LastSeenUtc,
+    string Evidence);
+
+internal sealed record ObjectiveTransitionSummary(
+    DateTime TimestampUtc,
+    string EventName,
+    string LogicalId,
+    string Evidence);
+
+internal sealed record ObjectiveChange(string EventName, string LogicalId, string Detail);
+
 internal sealed record RetainedMatchSummary(
     FrontlineMap PrimaryTestMap,
+    uint TerritoryId,
+    uint ContentFinderConditionId,
     DateTime MapEntryTimeUtc,
     DateTime? MatchStartTimeUtc,
     DateTime? MatchEndTimeUtc,
@@ -250,7 +309,15 @@ internal sealed record RetainedMatchSummary(
     int SensorErrors,
     int NavigationRequests,
     int NavigationArrivals,
-    int NavigationFailures);
+    int NavigationFailures,
+    int NavigationPathFailures,
+    int NavigationStops,
+    int NavigationStuckEvents,
+    int NavigationRouteRejections,
+    IReadOnlyList<ObjectiveResearchSummary> ObjectiveResearch,
+    IReadOnlyList<ResearchObjectSummary> ResearchObjects,
+    IReadOnlyList<ObjectiveTransitionSummary> ObjectiveTransitions,
+    IReadOnlyList<string> UnresolvedObservations);
 
 internal sealed record FrontlineMapMarkerObservation(
     uint IconId,

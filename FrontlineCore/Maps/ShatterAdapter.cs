@@ -1,4 +1,5 @@
 using System.Numerics;
+using PvPSentinel.FrontlineCore.Diagnostics;
 using PvPSentinel.Models;
 
 namespace PvPSentinel.FrontlineCore.Maps;
@@ -54,6 +55,8 @@ internal sealed class ShatterAdapter : FrontlineMapAdapterBase
             record.StrengthPercent = ShatterObjectivePolicy.ParseStrengthPercent(marker.Tooltip);
             record.SensorSource = marker.Source;
             record.Confidence = SensorConfidence.LiveVerifiedMapping;
+            record.Evidence = PrivacySanitizer.Sanitize(
+                $"icon={marker.IconId}; data={marker.DataId}; objective={marker.ObjectiveId}; state={mapped.Value.StateId}; text={marker.Tooltip}");
             record.FirstSeenUtc ??= now;
             record.LastSeenUtc = now;
             if (!wasDiscovered)

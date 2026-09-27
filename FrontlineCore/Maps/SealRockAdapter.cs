@@ -52,6 +52,7 @@ internal sealed class SealRockAdapter : FrontlineMapAdapterBase
             record.ReferencePosition = aggregate.Position;
             record.SensorSource = aggregate.Source;
             record.Confidence = aggregate.Confidence;
+            record.Evidence = $"state={aggregate.StateId}; paired_records={aggregate.EvidenceCount}; source={aggregate.Source}";
             record.FirstSeenUtc ??= now;
             record.LastSeenUtc = now;
 

@@ -19,6 +19,7 @@ Implemented in source:
 - deterministic 20y connected-component allied/enemy clustering with centroid, staleness, combat activity, local distance, nearby objective, and numerical balance
 - a Shatter adapter with all 19 persistent logical objectives, verified large/small lifecycle IDs, activation ETA/strength parsing, and physical-object confirmation
 - a Seal Rock adapter that aggregates paired map records by stable location and tracks verified B/A rank and neutral/Maelstrom/Adders/Flames state evidence without guessing unresolved S-rank IDs or PvP-team-to-GC mappings
+- a discovery-first Borderland Ruins adapter for territory 1273 / duty 127 that aggregates effectively identical marker coordinates into stable `SEC-xx` locations, retains raw marker/object/text evidence and physical `SEC-OBJ-xxx` observations, and deliberately leaves name/type/state/ownership/tactical meaning `UNRESOLVED`
 - normalized `OUTSIDE`/`PRE_MATCH`/`MATCH_ACTIVE`/terminal `RESULTS`, reliable death/respawn transitions, and retained match summaries before adapter reset
 - normalized `NONE`/`PVP_ENEMY`/`OBJECTIVE_COMBAT`/`STALE_GAME_COMBAT`; only confirmed enemy-player combat cancels manual movement, while objective or stale generic combat cannot permanently block a fresh request
 - one manual M2 vnavmesh owner with arm/disarm, immediate STOP, reachable-point snapping, explicit generated path acquisition, actual waypoint inspection, arrival, cancellation, bounded stuck recovery, failed-opening route comparison, alternate approach anchors, and clean ownership release
@@ -54,14 +55,15 @@ Implemented in source:
 - per-map queue allow-list semantics: an unchecked active campaign means “do not queue today”
 - the existing queue/lifecycle implementation retained but forcibly disabled during manual M2 validation
 - configurable session match limit and a latched emergency stop
-- detailed battlefield and M2 diagnostics for map/adapter, lifecycle/results, PvP team, relationship counts, clusters, objective state/rank/owner/source/confidence, combat context, death/respawn, sensor health, mesh readiness/build progress, movement ownership, snapped destination, waypoints, route progress, stuck recovery, and retained summary
-- pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
+- detailed battlefield and M2 diagnostics for map/adapter, lifecycle/results, PvP team, relationship counts, clusters, objective state/rank/owner/source/confidence, raw Secure research evidence, combat context, death/respawn, sensor health, mesh readiness/build progress, movement ownership, snapped destination, waypoints, route progress, separate stuck/path-failure counts, and retained summary
+- collapsible Configuration groups plus a Development window organized around an always-visible Testing Controls foldout and separate Frontline/Team, Battlefield/Sensors, Threat, Objectives/Research, M2 Navigation, Combat, and Lifecycle foldouts
+- pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, Secure coordinate aggregation/stability/unresolved-state safety/evidence transitions, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
 
-Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.0. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15 and Seal Rock populates discovered logical locations dynamically. Other Frontline maps retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
+Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.1. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only after repeated coordinate evidence remains stable. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
 
 ## Safety model
 
-Configuration version 9 preserves the earlier fail-closed combat migration, keeps Native in `Shadow / Observe`, and forcibly turns off autonomous strategy, objective navigation, and queue/requeue for manual M2 validation. Manual movement still requires explicit master enable, navigation enable, arming, and destination selection. Selecting Native does not silently activate combat execution.
+Configuration version 9 preserves the earlier fail-closed combat migration, keeps Native in `Shadow / Observe`, and forcibly turns off autonomous strategy, objective navigation, and queue/requeue for manual M2 validation. Manual movement still requires explicit master enable, navigation enable, arming, and destination selection. Secure discovery does not change Combat Provider configuration. Selecting Native does not silently activate combat execution.
 
 The targeting-me counter is deliberately limited to enemy players currently loaded and classified whose observable hard target is the local player. It cannot detect soft targeting, queued attacks, future intent, or an enemy that has not yet switched its observable target. The HUD shows every such observed hard target; Guard consumes the within-30y subset from that same shared observation so the live-validated defensive tuning is not silently widened.
 
@@ -82,7 +84,7 @@ In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat 
 
 In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
 
-Queue/accept/requeue code remains preserved, but v0.3.0.0 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
+Queue/accept/requeue code remains preserved, but v0.3.0.1 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
 
 The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
 
@@ -92,7 +94,7 @@ The emergency stop immediately stops PvPSentinel-owned movement, attempts to can
 PvPSentinel
 ├── GameState       Dalamud/Lumina state, team classification, local action state
 ├── FrontlineCore   normalized players/clusters/lifecycle/combat/sensors/summaries
-│   └── Maps        Shatter, Seal Rock, passive future-map adapters
+│   └── Maps        Secure discovery, Shatter, Seal Rock, passive adapters
 ├── Intelligence    clustering, main-force hysteresis, target scoring
 ├── Strategy        shared tactics and per-map objective research policies
 ├── Behavior        high-level state and safety decisions
@@ -142,6 +144,8 @@ Do not begin with movement, combat, objectives, or queue automation enabled.
 Inside Frontline, confirm local PvP team is a positive value, SELF remains exactly one, teammates use the same positive team, and opponents use the other positive team values even when their raw friendly flag is true or targetability changes at distance. Do not infer Grand Company names from the numeric values.
 
 On Shatter, confirm all 19 logical rows appear and compare inactive/preactivating/active, ETA, strength, coordinates, and physical confirmations against the map. On Seal Rock, confirm no duplicate logical row oscillates when paired marker records occupy the same coordinate; verify rank and observed GC ownership changes. Unresolved values must remain explicit.
+
+On Secure, leave manual navigation disarmed for the opening scan. Confirm the adapter reports territory 1273 / duty 127, repeated marker records at one coordinate collapse into one stable `SEC-xx` location, and names/types/state/owners remain `UNRESOLVED`. Observe at least one capture/loss and one central or temporary object so marker changes, physical objects, and `_WideText` evidence can be correlated after the match.
 
 ### Stage B — manual M2 vnavmesh navigation
 
