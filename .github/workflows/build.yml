@@ -2,7 +2,7 @@ name: Build and publish beta release
 
 on:
   push:
-    branches: [main, feature/frontline-core-m2]
+    branches: [main]
     tags: ['v*']
   pull_request:
     branches: [main]
