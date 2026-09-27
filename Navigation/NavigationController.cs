@@ -376,7 +376,8 @@ internal sealed class NavigationController(
         var mountDecision = mount.Update(game, longDistance, shouldDismount, nearbyMountThreats, config);
         ReportManualMountDecision(mountDecision, distance, nearbyMountThreats, game);
         if (ManualMountPolicy.ShouldWaitBeforeMovement(
-                mountDecision.State,
+                mountDecision.State == MountState.MountRequested,
+                mountDecision.State == MountState.DismountRequested,
                 game.IsMounted,
                 game.IsMounting,
                 mountDecision.WaitBeforeMovement))

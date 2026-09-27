@@ -208,15 +208,15 @@ Check("native hostile fallback excludes alliance members", false,
 Check("native hostile fallback excludes local player", false,
     PvPThreatPolicy.IsFallbackHostile(true, true, false, false, false));
 Check("manual M2 waits for a mount request", true,
-    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.MountRequested, false, false, true));
+    ManualMountPolicy.ShouldWaitBeforeMovement(true, false, false, false, true));
 Check("manual M2 waits for a dismount request", true,
-    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.DismountRequested, true, false, true));
+    ManualMountPolicy.ShouldWaitBeforeMovement(false, true, true, false, true));
 Check("manual M2 waits during an observed mount transition", true,
-    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.Blocked, false, true, true));
+    ManualMountPolicy.ShouldWaitBeforeMovement(false, false, false, true, true));
 Check("blocked mount while on foot does not suppress a valid manual route", false,
-    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.Blocked, false, false, true));
+    ManualMountPolicy.ShouldWaitBeforeMovement(false, false, false, false, true));
 Check("manual M2 may move once mounted", false,
-    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.Mounted, true, false, false));
+    ManualMountPolicy.ShouldWaitBeforeMovement(false, false, true, false, false));
 
 var normalizedSelf = TeamClassifier.Classify(0x10, 0x10, 0, 0, true);
 Check("normalized classifier resolves SELF before team", BattlefieldRelationship.Self, normalizedSelf.Relationship);

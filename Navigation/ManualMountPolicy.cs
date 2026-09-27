@@ -1,5 +1,3 @@
-using PvPSentinel.Models;
-
 namespace PvPSentinel.Navigation;
 
 internal static class ManualMountPolicy
@@ -8,11 +6,13 @@ internal static class ManualMountPolicy
     // a failed/blocked mount request must not recreate the old problem where a
     // stale game-combat flag could prevent an otherwise valid manual route.
     public static bool ShouldWaitBeforeMovement(
-        MountState state,
+        bool mountRequested,
+        bool dismountRequested,
         bool isMounted,
         bool isMounting,
         bool controllerRequestsWait) =>
         isMounting ||
-        state is MountState.MountRequested or MountState.DismountRequested ||
+        mountRequested ||
+        dismountRequested ||
         (isMounted && controllerRequestsWait);
 }
