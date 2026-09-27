@@ -95,7 +95,10 @@ internal sealed class BattlefieldService
         try
         {
             players = playerTracker.Update(game.CapturedAtUtc,
-                game.LocalPlayer?.EntityId ?? 0, game.TeamStatus.LocalPvPTeam, allObservations);
+                game.LocalPlayer?.EntityId ?? 0,
+                game.TeamStatus.LocalPvPTeam,
+                game.TeamStatus.UsesBattalionPvPTeam,
+                allObservations);
             Success("PvP team/player tracker", game.CapturedAtUtc,
                 $"Tracked {players.Count} entity-keyed player records.");
         }
@@ -364,8 +367,8 @@ internal sealed class BattlefieldService
             observed_targetable = game.ObservedPlayers.Count(player => player.IsTargetable),
             classification_reliable = game.IsClassificationReliable,
             conclusion = game.IsClassificationReliable
-                ? "positive local Battalion available"
-                : "UNRESOLVED: raw local Battalion is not positive; no roster/team inference applied",
+                ? "zero-based Dalamud Battalion team is authoritative in recognized Frontline content"
+                : "UNRESOLVED: Battalion source is unavailable/invalid or observed values failed validation",
         });
     }
 

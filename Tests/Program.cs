@@ -207,18 +207,34 @@ Check("native hostile fallback excludes alliance members", false,
     PvPThreatPolicy.IsFallbackHostile(false, true, false, true, true));
 Check("native hostile fallback excludes local player", false,
     PvPThreatPolicy.IsFallbackHostile(true, true, false, false, false));
+Check("manual M2 waits for a mount request", true,
+    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.MountRequested, false, false, true));
+Check("manual M2 waits for a dismount request", true,
+    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.DismountRequested, true, false, true));
+Check("manual M2 waits during an observed mount transition", true,
+    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.Blocked, false, true, true));
+Check("blocked mount while on foot does not suppress a valid manual route", false,
+    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.Blocked, false, false, true));
+Check("manual M2 may move once mounted", false,
+    ManualMountPolicy.ShouldWaitBeforeMovement(MountState.Mounted, true, false, false));
 
-var normalizedSelf = TeamClassifier.Classify(0x10, 0x10, 2, 2);
+var normalizedSelf = TeamClassifier.Classify(0x10, 0x10, 0, 0, true);
 Check("normalized classifier resolves SELF before team", BattlefieldRelationship.Self, normalizedSelf.Relationship);
 Check("SELF has local-entity confidence", RelationshipConfidence.LocalEntity, normalizedSelf.Confidence);
-Check("same positive PvP team is ally", BattlefieldRelationship.AllyConfirmed,
-    TeamClassifier.Classify(0x11, 0x10, 2, 2).Relationship);
-Check("different positive PvP team is enemy", BattlefieldRelationship.EnemyConfirmed,
-    TeamClassifier.Classify(0x12, 0x10, 3, 2).Relationship);
-Check("invalid observed team stays unknown", BattlefieldRelationship.Unknown,
-    TeamClassifier.Classify(0x12, 0x10, 0, 2).Relationship);
-Check("invalid local team leaves non-self unknown", BattlefieldRelationship.Unknown,
-    TeamClassifier.Classify(0x12, 0x10, 3, 0).Relationship);
+Check("same zero-based Battalion team is ally", BattlefieldRelationship.AllyConfirmed,
+    TeamClassifier.Classify(0x11, 0x10, 0, 0, true).Relationship);
+Check("different zero-based Battalion team is enemy", BattlefieldRelationship.EnemyConfirmed,
+    TeamClassifier.Classify(0x12, 0x10, 2, 0, true).Relationship);
+Check("Battalion value outside 0-2 stays unknown", BattlefieldRelationship.Unknown,
+    TeamClassifier.Classify(0x12, 0x10, 3, 0, true).Relationship);
+Check("unavailable Battalion source leaves non-self unknown", BattlefieldRelationship.Unknown,
+    TeamClassifier.Classify(0x12, 0x10, 1, 0, false).Relationship);
+Check("Battalion 0 is live-valid in Frontline context", true,
+    TeamClassifier.IsValidFrontlineBattalion(0));
+Check("Battalion 3 is not a live-confirmed Dalamud Frontline team", false,
+    TeamClassifier.IsValidFrontlineBattalion(3));
+Check("missing native Battalion sentinel is invalid", false,
+    TeamClassifier.IsValidFrontlineBattalion(byte.MaxValue));
 
 var trackingNow = new DateTime(2026, 9, 27, 12, 0, 0, DateTimeKind.Utc);
 Check("fresh player remains trackable at freshness boundary", true,
@@ -454,7 +470,7 @@ void Check<T>(string name, T expected, T actual) where T : notnull
 
 TrackedPlayer Track(uint id, BattlefieldRelationship relationship, Vector3 position) => new(
     id, id, 31, "MCH", relationship == BattlefieldRelationship.EnemyConfirmed ? (byte)2 : (byte)1,
-    relationship, RelationshipConfidence.PositiveTeam, position, 50000, 50000, false, false, 0,
+    relationship, RelationshipConfidence.BattalionTeam, position, 50000, 50000, false, false, 0,
     trackingNow, trackingNow, 0f);
 
 FrontlineMapMarkerObservation Marker(uint iconId, Vector3 position) => new(

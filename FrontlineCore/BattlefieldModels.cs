@@ -14,7 +14,7 @@ internal enum BattlefieldRelationship
 internal enum RelationshipConfidence
 {
     Unresolved,
-    PositiveTeam,
+    BattalionTeam,
     LocalEntity,
 }
 

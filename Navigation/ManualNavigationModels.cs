@@ -15,6 +15,7 @@ internal enum ManualRouteState
     Disarmed,
     Idle,
     Snapping,
+    WaitingToMount,
     RequestingPath,
     Following,
     Arrived,
