@@ -12,7 +12,7 @@ internal enum PvPThreatLevel
 internal enum PvPThreatObservationSource
 {
     Unavailable,
-    PositivePvpTeam,
+    BattalionTeam,
     NativeHostileFlagFallback,
 }
 

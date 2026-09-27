@@ -8,7 +8,7 @@ RotationSolverReborn, MMOMinion, AnyoneCore, Anyone's Champion, ChampionMachinis
 
 Implemented in source:
 
-- authoritative Frontline relationship classification from the public native positive PvP-team value: local entity ID first, then same-team ally, different positive-team enemy, otherwise unknown; `friendly`, `targetable`, and `attackable` flags are diagnostic only
+- authoritative Frontline relationship classification from Dalamud's public native `Character.Battalion` value: local entity ID first, then same zero-based team (`0-2`) ally, different valid team enemy, otherwise unknown; `friendly`, `targetable`, `attackable`, and `Hostile` flags are diagnostic only
 - a normalized, map-independent `BattlefieldState` covering self, match lifecycle, entity-keyed player history/staleness, relationship confidence, allied/enemy clusters, objectives, combat context, death/respawn, and independently failing sensor health
 - all five current Frontline campaigns identified by language-neutral content and territory IDs:
   - The Borderland Ruins (Secure)
@@ -56,10 +56,11 @@ Implemented in source:
 - the existing queue/lifecycle implementation retained but forcibly disabled during manual M2 validation
 - configurable session match limit and a latched emergency stop
 - detailed battlefield and M2 diagnostics for map/adapter, lifecycle/results, PvP team, relationship counts, clusters, objective state/rank/owner/source/confidence, raw Secure research evidence, combat context, death/respawn, sensor health, mesh readiness/build progress, movement ownership, snapped destination, waypoints, route progress, separate stuck/path-failure counts, and retained summary
+- safe manual-M2 mounting for long routes, with actual mount-transition waits, threat/arrival dismounting, preserved generated-route stages, and event diagnostics
 - collapsible Configuration groups plus a Development window organized around an always-visible Testing Controls foldout and separate Frontline/Team, Battlefield/Sensors, Threat, Objectives/Research, M2 Navigation, Combat, and Lifecycle foldouts
 - pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, Secure coordinate aggregation/stability/unresolved-state safety/evidence transitions, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
 
-Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.2. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only from bounded, stationary objective-like evidence. Live-verified moving marker families remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
+Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.3. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only from bounded, stationary objective-like evidence. Live-verified moving marker families remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
 
 ## Safety model
 
@@ -84,7 +85,7 @@ In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat 
 
 In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
 
-Queue/accept/requeue code remains preserved, but v0.3.0.2 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
+Queue/accept/requeue code remains preserved, but v0.3.0.3 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
 
 The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
 

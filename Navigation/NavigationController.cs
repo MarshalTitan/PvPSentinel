@@ -45,6 +45,7 @@ internal sealed class NavigationController(
     private DateTime manualLastProgressUtc = DateTime.MinValue;
     private Vector3? manualLastProgressPosition;
     private int lastReportedManualWaypointCount = -1;
+    private string manualMountSignature = string.Empty;
     private ManualNavigationSnapshot manualSnapshot = ManualNavigationSnapshot.Disarmed;
 
     public ManualNavigationSnapshot ManualSnapshot => manualSnapshot;
@@ -350,6 +351,7 @@ internal sealed class NavigationController(
             manualPathFailureCount = 0;
             manualLastProgressPosition = local.Position;
             manualLastProgressUtc = now;
+            manualMountSignature = string.Empty;
         }
 
         if (activeManual is null)
@@ -365,6 +367,39 @@ internal sealed class NavigationController(
         var arrivalDistance = manualSnapped is { } arrivalTarget
             ? Vector3.Distance(local.Position, arrivalTarget)
             : float.MaxValue;
+        var nearbyMountThreats = CountNear(game.Enemies, local.Position, config.MountEnemySafetyRadius);
+        var longDistance = distance >= config.MountDistance;
+        var shouldDismount = distance <= config.DismountDistance ||
+                             nearbyMountThreats > 0 ||
+                             game.IsInCombat ||
+                             game.IsCasting;
+        var mountDecision = mount.Update(game, longDistance, shouldDismount, nearbyMountThreats, config);
+        ReportManualMountDecision(mountDecision, distance, nearbyMountThreats, game);
+        if (ManualMountPolicy.ShouldWaitBeforeMovement(
+                mountDecision.State == MountState.MountRequested,
+                mountDecision.State == MountState.DismountRequested,
+                game.IsMounted,
+                game.IsMounting,
+                mountDecision.WaitBeforeMovement))
+        {
+            if (ownsPath)
+                vnav.Stop();
+            ownsPath = false;
+            manualLastProgressPosition = local.Position;
+            manualLastProgressUtc = now;
+            manualSnapshot = BuildManualSnapshot(
+                MovementOwner.SentinelTestNav,
+                ManualRouteState.WaitingToMount,
+                $"Manual route is waiting for the mount transition. {mountDecision.Explanation}",
+                local.Position);
+            return Decision(
+                false,
+                manualSnapped ?? activeManual.ReferencePosition,
+                NavigationPathState.WaitingToMount,
+                mountDecision.State,
+                manualSnapshot.Explanation);
+        }
+
         if (manualSnapped is not null && arrivalDistance <= 3f)
         {
             var arrivedRequest = activeManual;
@@ -383,7 +418,7 @@ internal sealed class NavigationController(
                 arrivalDistance, 0f, manualStuckCount, manualPathFailureCount,
                 $"ARRIVED within {arrivalDistance:F1}y (3D) of the validated approach point.");
             Emit("navigation_arrived", $"destination={arrivedRequest.DestinationId}; approach={FormatVector(manualSnapped.Value)}");
-            return Decision(false, manualSnapped, NavigationPathState.Idle, MountState.OnFoot, manualSnapshot.Explanation);
+            return Decision(false, manualSnapped, NavigationPathState.Idle, mountDecision.State, manualSnapshot.Explanation);
         }
 
         if (ownsPath && manualPlan is not null && manualStageEnd > manualRouteCursor &&
@@ -436,7 +471,7 @@ internal sealed class NavigationController(
             {
                 manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.Following,
                     $"Following the generated vnavmesh route; {distance:F1}y remain.", local.Position);
-                return Decision(true, manualSnapped, NavigationPathState.FollowingPath, MountState.OnFoot, manualSnapshot.Explanation);
+                return Decision(true, manualSnapped, NavigationPathState.FollowingPath, mountDecision.State, manualSnapshot.Explanation);
             }
         }
         else if (ownsPath && now - manualPathStartedUtc > TimeSpan.FromSeconds(1.5))
@@ -478,10 +513,10 @@ internal sealed class NavigationController(
             {
                 manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.RequestingPath,
                     "Waiting for vnavmesh path generation; the player is not being steered directly.", local.Position);
-                return Decision(false, manualSnapped, NavigationPathState.RequestingPath, MountState.OnFoot, manualSnapshot.Explanation);
+                return Decision(false, manualSnapped, NavigationPathState.RequestingPath, mountDecision.State, manualSnapshot.Explanation);
             }
             if (ownsPath)
-                return Decision(true, manualSnapped, NavigationPathState.PathValidated, MountState.OnFoot,
+                return Decision(true, manualSnapped, NavigationPathState.PathValidated, mountDecision.State,
                     "Validated generated route submitted to vnavmesh.");
         }
 
@@ -504,7 +539,7 @@ internal sealed class NavigationController(
             {
                 manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.Following,
                     $"Following protected stage to waypoint {manualStageEnd}; Sentinel retains the generated route cursor.", local.Position);
-                return Decision(true, manualSnapped, NavigationPathState.FollowingPath, MountState.OnFoot,
+                return Decision(true, manualSnapped, NavigationPathState.FollowingPath, mountDecision.State,
                     manualSnapshot.Explanation);
             }
         }
@@ -528,12 +563,12 @@ internal sealed class NavigationController(
             manualPendingPath = vnav.FindPathAsync(local.Position, manualSnapped.Value, 2.5f);
             manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.RequestingPath,
                 $"Snapped approach to {FormatVector(manualSnapped.Value)} and requested a generated route.", local.Position);
-            return Decision(false, manualSnapped, NavigationPathState.RequestingPath, MountState.OnFoot, manualSnapshot.Explanation);
+            return Decision(false, manualSnapped, NavigationPathState.RequestingPath, mountDecision.State, manualSnapshot.Explanation);
         }
 
         manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.Following,
             $"Following the generated vnavmesh route; {distance:F1}y remain.", local.Position);
-        return Decision(true, manualSnapped, NavigationPathState.FollowingPath, MountState.OnFoot, manualSnapshot.Explanation);
+        return Decision(true, manualSnapped, NavigationPathState.FollowingPath, mountDecision.State, manualSnapshot.Explanation);
     }
 
     private void CompleteManualPath(Vector3 origin, DateTime now)
@@ -685,6 +720,22 @@ internal sealed class NavigationController(
     {
         manualEvents.Enqueue(new ManualNavigationEvent(name, detail, DateTime.UtcNow));
         developmentLog.Changed($"manual-{name}", detail, $"{name}: {detail}");
+    }
+
+    private void ReportManualMountDecision(
+        MountDecision decision,
+        float distance,
+        int nearbyEnemies,
+        GameStateSnapshot game)
+    {
+        var signature = $"{decision.State}|{game.IsMounted}|{game.IsMounting}|{nearbyEnemies}|{decision.Explanation}";
+        if (signature == manualMountSignature)
+            return;
+
+        manualMountSignature = signature;
+        Emit(
+            "navigation_mount_state_changed",
+            $"destination={activeManual?.DestinationId}; state={decision.State}; mounted={game.IsMounted}; mounting={game.IsMounting}; distance={distance:F1}; nearby_enemies={nearbyEnemies}; reason={decision.Explanation}");
     }
 
     private void CompletePathRequest(Vector3 origin, Vector3 destination, DateTime now)

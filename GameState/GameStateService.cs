@@ -105,7 +105,8 @@ internal sealed class GameStateService(
                     player.EntityId,
                     local.EntityId,
                     pvpTeam,
-                    localPvpTeam).Relationship;
+                    localPvpTeam,
+                    roster.Status.UsesBattalionPvPTeam).Relationship;
                 var classification = relationship switch
                 {
                     BattlefieldRelationship.Self or BattlefieldRelationship.AllyConfirmed => PlayerClassification.Friendly,
@@ -251,27 +252,34 @@ internal sealed class GameStateService(
             return new TeamRoster(
                 entityIds,
                 objectIds,
-                new FrontlineTeamStatus(false, 0, entityIds.Count, localPvpTeam, isFrontline && localPvpTeam > 0,
-                    $"Alliance roster read failed, but PvP team value {(localPvpTeam > 0 ? "remains available" : "is unavailable")} ({ex.GetType().Name})."));
+                new FrontlineTeamStatus(
+                    false,
+                    0,
+                    entityIds.Count,
+                    localPvpTeam,
+                    isFrontline && TeamClassifier.IsValidFrontlineBattalion(localPvpTeam),
+                    $"Alliance roster read failed, but the Frontline Battalion value {(TeamClassifier.IsValidFrontlineBattalion(localPvpTeam) ? "remains available" : "is invalid")} ({ex.GetType().Name})."));
         }
 
-        var usesPositivePvpTeam = isFrontline && localPvpTeam > 0;
+        var usesBattalionPvpTeam = isFrontline && TeamClassifier.IsValidFrontlineBattalion(localPvpTeam);
         var explanation = !isFrontline
             ? "Not in a recognized Frontline duty; PvP-team classification is disabled."
-            : usesPositivePvpTeam
-                ? $"Local positive PvP team {localPvpTeam} is authoritative; roster flags are diagnostic only."
-                : "Local PvP team is missing or invalid; other players remain Unknown.";
+            : usesBattalionPvpTeam
+                ? $"Local zero-based Dalamud Battalion team {localPvpTeam} is authoritative; roster flags are diagnostic corroboration only."
+                : $"Local Battalion value {localPvpTeam} is outside the live-confirmed Frontline range 0-2; other players remain Unknown.";
 
         return new TeamRoster(
             entityIds,
             objectIds,
-            new FrontlineTeamStatus(isAlliance, declaredCount, entityIds.Count, localPvpTeam, usesPositivePvpTeam, explanation));
+            new FrontlineTeamStatus(isAlliance, declaredCount, entityIds.Count, localPvpTeam, usesBattalionPvpTeam, explanation));
     }
 
     private static unsafe byte ReadPvPTeam(IBattleChara player)
     {
         var native = (NativeCharacter*)player.Address;
-        return native is null ? (byte)0 : native->Battalion;
+        // 0 is a valid live Frontline team in Dalamud's zero-based Battalion
+        // source, so a missing native pointer must use an out-of-range sentinel.
+        return native is null ? byte.MaxValue : native->Battalion;
     }
 
     private static unsafe bool ReadNativeInCombat(IBattleChara player)
@@ -285,16 +293,15 @@ internal sealed class GameStateService(
         PlayerSnapshot local,
         IReadOnlyList<PlayerSnapshot> observedPlayers)
     {
-        if (!status.UsesPositivePvPTeam)
+        if (!status.UsesBattalionPvPTeam)
         {
             var observedTeams = observedPlayers
-                .Where(player => player.PvPTeam > 0)
                 .GroupBy(player => player.PvPTeam)
                 .OrderBy(group => group.Key)
                 .Select(group => $"{group.Key}:{group.Count()}")
                 .ToArray();
             var rosterTeams = observedPlayers
-                .Where(player => player.IsRosterMember && player.PvPTeam > 0)
+                .Where(player => player.IsRosterMember)
                 .GroupBy(player => player.PvPTeam)
                 .OrderBy(group => group.Key)
                 .Select(group => $"{group.Key}:{group.Count()}")
@@ -303,7 +310,7 @@ internal sealed class GameStateService(
             {
                 Explanation = status.Explanation +
                               $" Raw local Character.Battalion={local.PvPTeam}; local StatusFlags=0x{(uint)local.StatusFlags:X8}." +
-                              $" Observed positive Battalion histogram=[{string.Join(',', observedTeams)}]; roster-positive histogram=[{string.Join(',', rosterTeams)}]." +
+                              $" Observed Battalion histogram=[{string.Join(',', observedTeams)}]; roster histogram=[{string.Join(',', rosterTeams)}]." +
                               " No team is inferred from these observations."
             };
         }

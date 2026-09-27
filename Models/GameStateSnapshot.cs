@@ -5,7 +5,7 @@ internal sealed record FrontlineTeamStatus(
     int DeclaredMemberCount,
     int ResolvedMemberCount,
     byte LocalPvPTeam,
-    bool UsesPositivePvPTeam,
+    bool UsesBattalionPvPTeam,
     string Explanation);
 
 internal sealed record GameStateSnapshot(
@@ -49,12 +49,12 @@ internal sealed record GameStateSnapshot(
         ? 0f
         : Math.Clamp(LimitBreakCurrentUnits * 100f / LimitBreakBarUnits, 0f, 100f);
     public bool IsClassificationReliable =>
-        TeamStatus.UsesPositivePvPTeam &&
+        TeamStatus.UsesBattalionPvPTeam &&
         UnknownPlayers.Count == 0 &&
         Friendlies.Count is >= 1 and <= 24 &&
         Friendlies.Select(player => player.EntityId).Distinct().Count() == Friendlies.Count;
 
-    public string ClassificationReliabilityExplanation => !TeamStatus.UsesPositivePvPTeam
+    public string ClassificationReliabilityExplanation => !TeamStatus.UsesBattalionPvPTeam
         ? TeamStatus.Explanation
         : UnknownPlayers.Count > 0
             ? $"{UnknownPlayers.Count} observed player(s) remain Unknown."
@@ -62,5 +62,5 @@ internal sealed record GameStateSnapshot(
                 ? $"Observed friendly count {Friendlies.Count} exceeds the 24-player Frontline team maximum."
                 : Friendlies.Select(player => player.EntityId).Distinct().Count() != Friendlies.Count
                     ? "Duplicate friendly entity IDs were observed."
-                    : $"Positive PvP team {TeamStatus.LocalPvPTeam} is authoritative; other positive teams are enemies.";
+                    : $"Dalamud Battalion team {TeamStatus.LocalPvPTeam} is authoritative for this Frontline; different valid values are enemies.";
 }

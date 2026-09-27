@@ -46,7 +46,7 @@ internal sealed class PvPThreatTracker(DevelopmentLogger developmentLog)
             return PvPThreatSnapshot.Unavailable(game.CapturedAtUtc, "Threat observations require a live local player in Frontline.");
 
         var source = game.IsClassificationReliable
-            ? PvPThreatObservationSource.PositivePvpTeam
+            ? PvPThreatObservationSource.BattalionTeam
             : PvPThreatObservationSource.NativeHostileFlagFallback;
         var enemies = game.IsClassificationReliable
             ? game.Enemies

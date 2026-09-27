@@ -64,10 +64,10 @@ internal sealed class DiagnosticWindow : Window
             ColoredText(new Vector4(1f, 0.45f, 0.3f, 1f), game.ReadError);
 
         Section("Frontline Classification");
-        KeyValue("Local PvP team", game.TeamStatus.LocalPvPTeam > 0 ? game.TeamStatus.LocalPvPTeam.ToString() : "UNRESOLVED");
+        KeyValue("Local PvP team", game.TeamStatus.UsesBattalionPvPTeam ? game.TeamStatus.LocalPvPTeam.ToString() : "UNRESOLVED");
         KeyValue("Raw local Battalion", local is null ? "UNAVAILABLE" : local.PvPTeam.ToString());
         KeyValue("Local StatusFlags", local is null ? "UNAVAILABLE" : $"{local.StatusFlags} (0x{(uint)local.StatusFlags:X8})");
-        KeyValue("Positive PvP-team classification", YesNo(game.TeamStatus.UsesPositivePvPTeam));
+        KeyValue("Battalion PvP-team classification", YesNo(game.TeamStatus.UsesBattalionPvPTeam));
         KeyValue("Alliance roster", YesNo(game.TeamStatus.IsAlliance));
         KeyValue("Declared / resolved members", $"{game.TeamStatus.DeclaredMemberCount} / {game.TeamStatus.ResolvedMemberCount}");
         KeyValue("Classification reliable", YesNo(game.IsClassificationReliable));
@@ -283,7 +283,7 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Lifecycle / timer", $"{battlefield.Match.Lifecycle} / {(battlefield.Match.TimeRemaining is { } timer ? timer.ToString("mm\\:ss") : "UNRESOLVED")}");
         KeyValue("Results terminal", YesNo(battlefield.Match.ResultsDetected));
         KeyValue("Team scores", battlefield.Match.TeamScores);
-        KeyValue("Local PvP team", battlefield.LocalPvPTeam > 0 ? battlefield.LocalPvPTeam.ToString() : "UNRESOLVED");
+        KeyValue("Local PvP team", state.Game.TeamStatus.UsesBattalionPvPTeam ? battlefield.LocalPvPTeam.ToString() : "UNRESOLVED");
         KeyValue("SELF / ALLY / ENEMY / UNKNOWN",
             $"{battlefield.Counts.Self} / {battlefield.Counts.Allies} / {battlefield.Counts.Enemies} / {battlefield.Counts.Unknown}");
         KeyValue("Allied / enemy clusters", $"{battlefield.AlliedClusters.Count} / {battlefield.EnemyClusters.Count}");

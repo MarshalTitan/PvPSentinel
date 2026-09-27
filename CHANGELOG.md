@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0.3 — Frontline team resolution and manual M2 mounting
+
+- Corrected Dalamud Frontline relationship classification from the second Secure field trace: `Character.Battalion` is a zero-based team index in this source, with the complete local roster observed on `0` and the opposing teams on `1` and `2`.
+- Kept classification bounded to recognized Frontline duties and live-confirmed Battalion values `0-2`; SELF remains entity-ID-first, and no Grand Company name mapping is inferred.
+- Restored authoritative SELF/ALLY/ENEMY counts, clusters, combat context, target evaluation, and shared threat tracking when the local Battalion is `0`.
+- Fixed the Targeting-Me counter by feeding it the same resolved enemy set used by combat defense instead of the ineffective Secure `StatusFlags.Hostile` fallback (the live match observed zero hostile flags despite up to 49 targetable players).
+- Integrated the existing safe mount controller into manual M2: long routes request Mount Roulette, wait for real mount/dismount transitions, dismount near the destination or observed enemies, and then resume the preserved generated route.
+- Kept manual M2 traversable on foot when mounting is merely blocked by stale/objective combat, preserving the normalized combat-context safety contract.
+- Added `navigation_mount_state_changed` evidence with destination, state, mounted/mounting flags, remaining distance, nearby enemy count, and decision reason.
+- Added regression coverage for zero-based Battalion classification and manual mount arbitration.
+- Preserved the validated protected-route behavior: the field trace completed 14/19 manually requested routes with zero path-generation failures; its single stair/platform stall repathed through materially different geometry and arrived 3.7 seconds later.
+- Native MCH remains Shadow / Observe by default; autonomous strategy, objective capture, queue/requeue, and provider-independent LB automation remain disabled.
+
 ## 0.3.0.2 — Secure discovery, route execution, and threat safety
 
 - Separated raw Secure marker research from promoted manual navigation destinations. Live-verified moving marker families `60360/60361` remain bounded raw evidence and can never become `SEC-xx` buttons.

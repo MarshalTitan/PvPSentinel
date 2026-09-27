@@ -10,6 +10,7 @@ internal sealed class PlayerTracker
         DateTime now,
         uint localEntityId,
         byte localPvpTeam,
+        bool battalionValuesAuthoritative,
         IEnumerable<PlayerSnapshot> observations)
     {
         foreach (var player in observations)
@@ -17,7 +18,12 @@ internal sealed class PlayerTracker
             if (player.EntityId == 0)
                 continue;
 
-            var classified = TeamClassifier.Classify(player.EntityId, localEntityId, player.PvPTeam, localPvpTeam);
+            var classified = TeamClassifier.Classify(
+                player.EntityId,
+                localEntityId,
+                player.PvPTeam,
+                localPvpTeam,
+                battalionValuesAuthoritative);
             if (!tracks.TryGetValue(player.EntityId, out var track))
             {
                 track = new Track(now);

@@ -20,6 +20,7 @@
     <Compile Include="../Navigation/PathValidator.cs" Link="Navigation/PathValidator.cs" />
     <Compile Include="../Navigation/IVNavmeshAdapter.cs" Link="Navigation/IVNavmeshAdapter.cs" />
     <Compile Include="../Navigation/ManualNavigationModels.cs" Link="Navigation/ManualNavigationModels.cs" />
+    <Compile Include="../Navigation/ManualMountPolicy.cs" Link="Navigation/ManualMountPolicy.cs" />
     <Compile Include="../Navigation/ManualNavigationPolicy.cs" Link="Navigation/ManualNavigationPolicy.cs" />
     <Compile Include="../Navigation/ManualRoutePlanner.cs" Link="Navigation/ManualRoutePlanner.cs" />
     <Compile Include="../Navigation/RouteComparison.cs" Link="Navigation/RouteComparison.cs" />

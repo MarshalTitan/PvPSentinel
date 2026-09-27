@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Corrects the Secure discovery runaway by separating bounded raw marker research from evidence-qualified SEC-xx navigation locations. Manual M2 now preserves generated route geometry and stages movement at turns/elevation changes, with failed-corridor recovery and detailed waypoint diagnostics. The Targeting-Me counter can use Dalamud-native hostile hard-target evidence when PvP-team classification is unresolved, while strategy remains fail-closed. Adds raw Battalion/team probes and reduces event/UI processing overhead. Autonomous strategy, queue/requeue, and Reborn/LB changes remain disabled or out of scope."
+            --notes "Corrects Frontline team sensing from live Secure evidence: Dalamud Character.Battalion is zero-based (local roster 0, opposing teams 1/2), while SELF remains entity-ID-first and GC names remain unresolved. This restores authoritative threat tracking and the Targeting-Me counter without relying on the ineffective Hostile flag fallback. Manual M2 now uses the existing safe mount controller for long routes, waits only for real mount transitions, dismounts near threats/arrival, and preserves the validated staged route for resumption. Autonomous strategy, objective capture, queue/requeue, and provider-independent LB automation remain disabled; Native MCH remains Shadow / Observe by default."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }
