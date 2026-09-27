@@ -13,10 +13,25 @@
     <Compile Include="../Combat/Native/Defense/PvPCommonActions.cs" Link="Combat/Native/Defense/PvPCommonActions.cs" />
     <Compile Include="../Combat/Native/Jobs/Machinist/MachinistActions.cs" Link="Combat/Native/Jobs/Machinist/MachinistActions.cs" />
     <Compile Include="../Combat/Threat/PvPThreatPolicy.cs" Link="Combat/Threat/PvPThreatPolicy.cs" />
-    <Compile Include="../GameState/FrontlinePlayerResolver.cs" Link="GameState/FrontlinePlayerResolver.cs" />
     <Compile Include="../Models/FrontlineMap.cs" Link="Models/FrontlineMap.cs" />
     <Compile Include="../Models/CombatProvider.cs" Link="Models/CombatProvider.cs" />
     <Compile Include="../Models/PlayerClassification.cs" Link="Models/PlayerClassification.cs" />
     <Compile Include="../Navigation/PathValidator.cs" Link="Navigation/PathValidator.cs" />
+    <Compile Include="../Navigation/IVNavmeshAdapter.cs" Link="Navigation/IVNavmeshAdapter.cs" />
+    <Compile Include="../Navigation/ManualNavigationModels.cs" Link="Navigation/ManualNavigationModels.cs" />
+    <Compile Include="../Navigation/ManualNavigationPolicy.cs" Link="Navigation/ManualNavigationPolicy.cs" />
+    <Compile Include="../Navigation/ManualRoutePlanner.cs" Link="Navigation/ManualRoutePlanner.cs" />
+    <Compile Include="../Navigation/RouteComparison.cs" Link="Navigation/RouteComparison.cs" />
+    <Compile Include="../FrontlineCore/BattlefieldModels.cs" Link="FrontlineCore/BattlefieldModels.cs" />
+    <Compile Include="../FrontlineCore/TeamClassifier.cs" Link="FrontlineCore/TeamClassifier.cs" />
+    <Compile Include="../FrontlineCore/PlayerTrackingPolicy.cs" Link="FrontlineCore/PlayerTrackingPolicy.cs" />
+    <Compile Include="../FrontlineCore/BattlefieldClusterer.cs" Link="FrontlineCore/BattlefieldClusterer.cs" />
+    <Compile Include="../FrontlineCore/MatchLifecycleTracker.cs" Link="FrontlineCore/MatchLifecycleTracker.cs" />
+    <Compile Include="../FrontlineCore/CombatContextPolicy.cs" Link="FrontlineCore/CombatContextPolicy.cs" />
+    <Compile Include="../FrontlineCore/RetainedMatchSummaryBuilder.cs" Link="FrontlineCore/RetainedMatchSummaryBuilder.cs" />
+    <Compile Include="../FrontlineCore/Maps/ShatterObjectivePolicy.cs" Link="FrontlineCore/Maps/ShatterObjectivePolicy.cs" />
+    <Compile Include="../FrontlineCore/Maps/SealRockObjectiveAggregator.cs" Link="FrontlineCore/Maps/SealRockObjectiveAggregator.cs" />
+    <Compile Include="../FrontlineCore/Diagnostics/EventDiffLimiter.cs" Link="FrontlineCore/Diagnostics/EventDiffLimiter.cs" />
+    <Compile Include="../FrontlineCore/Diagnostics/PrivacySanitizer.cs" Link="FrontlineCore/Diagnostics/PrivacySanitizer.cs" />
   </ItemGroup>
 </Project>

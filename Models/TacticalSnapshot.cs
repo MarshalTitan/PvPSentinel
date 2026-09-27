@@ -1,5 +1,6 @@
 using System.Numerics;
 using PvPSentinel.Combat.Threat;
+using PvPSentinel.FrontlineCore;
 
 namespace PvPSentinel.Models;
 
@@ -153,4 +154,5 @@ internal sealed record TacticalSnapshot(
     int Friendly40,
     int Enemy40,
     int Unknown40,
-    string DecisionReason);
+    string DecisionReason,
+    BattlefieldState Battlefield);

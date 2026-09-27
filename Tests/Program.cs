@@ -3,7 +3,9 @@ using PvPSentinel.Combat;
 using PvPSentinel.Combat.Native;
 using PvPSentinel.Combat.Native.Jobs.Machinist;
 using PvPSentinel.Combat.Threat;
-using PvPSentinel.GameState;
+using PvPSentinel.FrontlineCore;
+using PvPSentinel.FrontlineCore.Diagnostics;
+using PvPSentinel.FrontlineCore.Maps;
 using PvPSentinel.Models;
 using PvPSentinel.Navigation;
 
@@ -11,21 +13,6 @@ var failures = new List<string>();
 
 Check("existing Native provider configuration value is preserved", 2, (int)CombatProvider.NativePvPSentinel);
 Check("Reborn provider uses a new configuration value", 3, (int)CombatProvider.RotationSolverReborn);
-
-Check("local is friendly", PlayerClassification.Friendly,
-    FrontlinePlayerResolver.Classify(true, true, true, false, false, false, true));
-Check("roster membership wins contradictory hostile flag", PlayerClassification.Friendly,
-    FrontlinePlayerResolver.Classify(false, true, true, true, false, false, true));
-Check("alliance flag wins contradictory hostile flag", PlayerClassification.Friendly,
-    FrontlinePlayerResolver.Classify(false, true, true, false, false, true, true));
-Check("hostile is enemy without roster inference", PlayerClassification.Enemy,
-    FrontlinePlayerResolver.Classify(false, true, false, false, false, false, true));
-Check("reliable Frontline non-member is enemy", PlayerClassification.Enemy,
-    FrontlinePlayerResolver.Classify(false, true, true, false, false, false, false));
-Check("unresolved non-member stays unknown", PlayerClassification.Unknown,
-    FrontlinePlayerResolver.Classify(false, true, false, false, false, false, false));
-Check("non-Frontline non-member stays unknown", PlayerClassification.Unknown,
-    FrontlinePlayerResolver.Classify(false, false, true, false, false, false, false));
 
 var mapCases = new[]
 {
@@ -211,6 +198,134 @@ Check("combined targeters and density are high threat", PvPThreatLevel.High,
 Check("six hard targeters are extreme threat", PvPThreatLevel.Extreme,
     PvPThreatPolicy.EvaluateLevel(6, 3));
 
+var normalizedSelf = TeamClassifier.Classify(0x10, 0x10, 2, 2);
+Check("normalized classifier resolves SELF before team", BattlefieldRelationship.Self, normalizedSelf.Relationship);
+Check("SELF has local-entity confidence", RelationshipConfidence.LocalEntity, normalizedSelf.Confidence);
+Check("same positive PvP team is ally", BattlefieldRelationship.AllyConfirmed,
+    TeamClassifier.Classify(0x11, 0x10, 2, 2).Relationship);
+Check("different positive PvP team is enemy", BattlefieldRelationship.EnemyConfirmed,
+    TeamClassifier.Classify(0x12, 0x10, 3, 2).Relationship);
+Check("invalid observed team stays unknown", BattlefieldRelationship.Unknown,
+    TeamClassifier.Classify(0x12, 0x10, 0, 2).Relationship);
+Check("invalid local team leaves non-self unknown", BattlefieldRelationship.Unknown,
+    TeamClassifier.Classify(0x12, 0x10, 3, 0).Relationship);
+
+var trackingNow = new DateTime(2026, 9, 27, 12, 0, 0, DateTimeKind.Utc);
+Check("fresh player remains trackable at freshness boundary", true,
+    PlayerTrackingPolicy.IsFresh(trackingNow, trackingNow.AddSeconds(1.5)));
+Check("stale player is evicted beyond ten seconds", true,
+    PlayerTrackingPolicy.IsExpired(trackingNow, trackingNow.AddSeconds(10.01)));
+Check("player is not evicted at exact ten-second boundary", false,
+    PlayerTrackingPolicy.IsExpired(trackingNow, trackingNow.AddSeconds(10)));
+
+var clusterPlayers = new[]
+{
+    Track(1, BattlefieldRelationship.AllyConfirmed, new Vector3(0, 0, 0)),
+    Track(2, BattlefieldRelationship.AllyConfirmed, new Vector3(10, 0, 0)),
+    Track(3, BattlefieldRelationship.AllyConfirmed, new Vector3(50, 0, 0)),
+    Track(4, BattlefieldRelationship.EnemyConfirmed, new Vector3(8, 0, 0)),
+};
+var clustered = BattlefieldClusterer.Build(clusterPlayers, BattlefieldRelationship.AllyConfirmed,
+    Vector3.Zero, 20f, []);
+Check("connected-component clustering forms two allied groups", 2, clustered.Count);
+Check("largest deterministic cluster has two members", 2, clustered[0].MemberCount);
+Check("cluster numerical context counts nearby enemy", 1, clustered[0].NearbyEnemies);
+
+Check("Shatter large preactivation ID is normalized", ObjectiveLifecycle.Preactivating,
+    ShatterObjectivePolicy.Resolve(60989)!.Value.State);
+Check("Shatter small active ID is normalized", ObjectiveLifecycle.Active,
+    ShatterObjectivePolicy.Resolve(60904)!.Value.State);
+Check("Shatter logical objective parses from tooltip", "B15",
+    ShatterObjectivePolicy.ParseLogicalId("Icebound Tomelith B15 Activation in: 0:30")!);
+Check("Shatter activation ETA parses", 30,
+    ShatterObjectivePolicy.ParseActivationEtaSeconds("Activation in: 0:30")!.Value);
+Check("Shatter strength parses", 67,
+    ShatterObjectivePolicy.ParseStrengthPercent("Ice Strength: 67%")!.Value);
+
+var pairedSealMarkers = new[]
+{
+    Marker(60589, new Vector3(100, 5, -30)),
+    Marker(60484, new Vector3(100.1f, 5, -30.1f)),
+};
+var sealPaired = SealRockObjectiveAggregator.Aggregate(pairedSealMarkers);
+Check("Seal Rock paired records aggregate to one logical location", 1, sealPaired.Count);
+Check("Seal Rock paired record retains evidence count", 2, sealPaired[0].EvidenceCount);
+Check("Seal Rock rank A is normalized", "A", sealPaired[0].Rank);
+Check("Seal Rock ownership overlay is retained", "MAELSTROM", sealPaired[0].GrandCompany);
+var sealChanged = SealRockObjectiveAggregator.Aggregate([Marker(60591, new Vector3(100, 5, -30))]);
+Check("Seal Rock ownership change is observable", "ADDERS", sealChanged[0].GrandCompany);
+
+var lifecycleTracker = new MatchLifecycleTracker();
+var uiActive = new FrontlineUiObservation(true, false, TimeSpan.FromMinutes(19), 1400, [], "", "header");
+var uiResults = new FrontlineUiObservation(true, true, TimeSpan.FromMinutes(1), 1400, [], "", "results");
+Check("Frontline lifecycle enters active match", FrontlineMatchLifecycle.MatchActive,
+    lifecycleTracker.Update(true, true, uiActive).Lifecycle);
+Check("Frontline lifecycle detects results", FrontlineMatchLifecycle.Results,
+    lifecycleTracker.Update(true, true, uiResults).Lifecycle);
+Check("RESULTS is terminal while header remains visible", FrontlineMatchLifecycle.Results,
+    lifecycleTracker.Update(true, true, uiActive).Lifecycle);
+Check("map exit resets terminal results", FrontlineMatchLifecycle.Outside,
+    lifecycleTracker.Update(false, false, uiActive).Lifecycle);
+
+Check("enemy-player combat blocks navigation", true,
+    CombatContextPolicy.BlocksMovement(CombatContextPolicy.Resolve(true, true, false)));
+Check("objective combat does not block a fresh manual request", false,
+    CombatContextPolicy.BlocksMovement(CombatContextPolicy.Resolve(true, false, true)));
+Check("stale generic combat does not permanently block navigation", false,
+    CombatContextPolicy.BlocksMovement(CombatContextPolicy.Resolve(true, false, false)));
+
+var summaryStart = new DateTime(2026, 9, 27, 18, 0, 0, DateTimeKind.Utc);
+var summaryBuilder = new RetainedMatchSummaryBuilder(FrontlineMap.FieldsOfGlory, summaryStart);
+summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(1), FrontlineMatchLifecycle.MatchActive, 1, 23, 48, 0, 2, 1));
+summaryBuilder.RecordNavigation("navigation_request");
+summaryBuilder.RecordNavigation("navigation_arrived");
+summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(20), FrontlineMatchLifecycle.Results, 1, 20, 40, 0, 2, 1));
+var retained = summaryBuilder.Build(summaryStart.AddMinutes(21));
+Check("retained summary preserves peak allies", 23, retained.PeakAllies);
+Check("retained summary preserves peak enemies", 48, retained.PeakEnemies);
+Check("retained summary preserves results", true, retained.ResultsDetected);
+Check("retained summary counts navigation arrivals", 1, retained.NavigationArrivals);
+
+var routeA = new[] { Vector3.Zero, new Vector3(10, 0, 0), new Vector3(20, 0, 0), new Vector3(40, 0, 0) };
+var routeB = new[] { Vector3.Zero, new Vector3(10.5f, 0, 0.2f), new Vector3(20.5f, 0, 0), new Vector3(40, 0, 10) };
+var routeC = new[] { Vector3.Zero, new Vector3(0, 0, 10), new Vector3(0, 0, 20), new Vector3(40, 0, 0) };
+Check("opening route comparison rejects materially identical recovery", true,
+    RouteComparison.MateriallyIdentical(routeA, routeB));
+Check("opening route comparison accepts alternate geometry", false,
+    RouteComparison.MateriallyIdentical(routeA, routeC));
+Check("bounded recovery allows attempt below limit", true, ManualNavigationPolicy.CanRetry(2, 3));
+Check("bounded recovery stops at limit", false, ManualNavigationPolicy.CanRetry(3, 3));
+Check("death owns and cancels navigation", MovementOwner.DeathRecovery,
+    ManualNavigationPolicy.ResolveOwner(true, false, true));
+Check("enemy combat owns and cancels navigation", MovementOwner.ExternalCombat,
+    ManualNavigationPolicy.ResolveOwner(false, true, true));
+Check("released route has no movement owner", MovementOwner.None,
+    ManualNavigationPolicy.ResolveOwner(false, false, false));
+
+var mockVnav = new MockVNavmeshAdapter
+{
+    Reachable = new Vector3(30, 0, 0),
+    Route = [Vector3.Zero, new Vector3(15, 0, 2), new Vector3(30, 0, 0)],
+};
+var planned = await ManualRoutePlanner.BuildAsync(mockVnav, Vector3.Zero, new Vector3(31, 0, 0), 2.5f);
+Check("mock vnavmesh route plan is valid", true, planned.IsValid);
+Check("manual planner always snaps before pathfinding", 1, mockVnav.NearestCalls);
+Check("manual planner requests generated path once", 1, mockVnav.PathfindCalls);
+var blockedVnav = new MockVNavmeshAdapter { Reachable = null };
+var blockedPlan = await ManualRoutePlanner.BuildAsync(blockedVnav, Vector3.Zero, new Vector3(31, 0, 0), 2.5f);
+Check("no reachable mesh point produces clean failure", false, blockedPlan.IsValid);
+Check("no direct-steering fallback is started", 0, blockedVnav.StartCalls);
+
+var limiter = new EventDiffLimiter(TimeSpan.FromSeconds(10));
+Check("first event diff is emitted", true, limiter.ShouldEmit("cluster", "A", trackingNow));
+Check("unchanged event is rate-limited", false, limiter.ShouldEmit("cluster", "A", trackingNow.AddSeconds(2)));
+Check("changed event bypasses rate limit", true, limiter.ShouldEmit("cluster", "B", trackingNow.AddSeconds(3)));
+Check("unchanged event is periodically refreshed", true, limiter.ShouldEmit("cluster", "B", trackingNow.AddSeconds(14)));
+Check("privacy sanitizer removes player-like names", false,
+    PrivacySanitizer.Sanitize("target Alice Example at objective").Contains("Alice Example", StringComparison.Ordinal));
+Check("privacy sanitizer strips control characters", false,
+    PrivacySanitizer.Sanitize("safe\ntext").Contains('\n'));
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine($"{failures.Count} logic test(s) failed:");
@@ -228,6 +343,30 @@ void Check<T>(string name, T expected, T actual) where T : notnull
         failures.Add($"{name}: expected {expected}, got {actual}");
 }
 
+TrackedPlayer Track(uint id, BattlefieldRelationship relationship, Vector3 position) => new(
+    id, id, 31, "MCH", relationship == BattlefieldRelationship.EnemyConfirmed ? (byte)2 : (byte)1,
+    relationship, RelationshipConfidence.PositiveTeam, position, 50000, 50000, false, false, 0,
+    trackingNow, trackingNow, 0f);
+
+FrontlineMapMarkerObservation Marker(uint iconId, Vector3 position) => new(
+    iconId, 0, 0, position, "Allagan Tomelith", 0, 0, "test");
+
+BattlefieldState BattlefieldForSummary(
+    DateTime at,
+    FrontlineMatchLifecycle lifecycle,
+    int self,
+    int allies,
+    int enemies,
+    int unknown,
+    int deaths,
+    int respawns) => new(
+        at, FrontlineMap.FieldsOfGlory, 554, "The Fields of Glory", "Shatter", null, 1, [],
+        new RelationshipCounts(self, allies, enemies, unknown), [], [], [],
+        new FrontlineMatchState(lifecycle, null, 1400, [], lifecycle == FrontlineMatchLifecycle.Results,
+            "UNAVAILABLE / OPTIONAL", "test"),
+        new CombatContextSnapshot(FrontlineCombatContext.None, false, 0, 0, "test"),
+        new DeathRespawnSnapshot(DeathRespawnState.Alive, deaths, respawns, at), [], null, "test");
+
 void CheckPath(
     string name,
     bool expected,
@@ -238,4 +377,40 @@ void CheckPath(
     var actual = PathValidator.Validate(path, pathOrigin, pathDestination, 2.5f);
     if (actual.IsValid != expected)
         failures.Add($"{name}: expected valid={expected}, got valid={actual.IsValid} ({actual.Explanation})");
+}
+
+sealed class MockVNavmeshAdapter : IVNavmeshAdapter
+{
+    public bool IsReady => true;
+    public float BuildProgress => -1f;
+    public bool IsPathRunning { get; private set; }
+    public bool IsPathfindInProgress => false;
+    public int WaypointCount => Route.Count;
+    public IReadOnlyList<Vector3> Waypoints => Route;
+    public Vector3? Reachable { get; init; }
+    public IReadOnlyList<Vector3> Route { get; init; } = [];
+    public int NearestCalls { get; private set; }
+    public int PathfindCalls { get; private set; }
+    public int StartCalls { get; private set; }
+
+    public Vector3? FindNearestReachable(Vector3 point, float horizontalRadius, float verticalRadius)
+    {
+        NearestCalls++;
+        return Reachable;
+    }
+
+    public Task<IReadOnlyList<Vector3>> FindPathAsync(Vector3 origin, Vector3 destination, float tolerance)
+    {
+        PathfindCalls++;
+        return Task.FromResult(Route);
+    }
+
+    public bool StartPath(IReadOnlyList<Vector3> waypoints, float tolerance)
+    {
+        StartCalls++;
+        IsPathRunning = waypoints.Count >= 2;
+        return IsPathRunning;
+    }
+
+    public void Stop() => IsPathRunning = false;
 }

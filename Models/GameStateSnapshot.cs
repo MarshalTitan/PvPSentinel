@@ -4,7 +4,8 @@ internal sealed record FrontlineTeamStatus(
     bool IsAlliance,
     int DeclaredMemberCount,
     int ResolvedMemberCount,
-    bool CanClassifyNonMembers,
+    byte LocalPvPTeam,
+    bool UsesPositivePvPTeam,
     string Explanation);
 
 internal sealed record ObjectiveObservation(
@@ -53,19 +54,19 @@ internal sealed record GameStateSnapshot(
     public static GameStateSnapshot Unavailable(string error) => new(
         DateTime.UtcNow, false, false, false, false, false, false, false, 0f, false, false, false, 0, 0, 0,
         0, 0, "Unknown", 0, "Unknown", FrontlineMap.Unknown, null, [], [], [], [], [],
-        new FrontlineTeamStatus(false, 0, 0, false, "Team roster is unavailable."), error);
+        new FrontlineTeamStatus(false, 0, 0, 0, false, "Team roster is unavailable."), error);
 
     public bool IsMachinist => LocalPlayer?.JobId == 31;
     public float LimitBreakPercent => LimitBreakBarUnits == 0
         ? 0f
         : Math.Clamp(LimitBreakCurrentUnits * 100f / LimitBreakBarUnits, 0f, 100f);
     public bool IsClassificationReliable =>
-        TeamStatus.CanClassifyNonMembers &&
+        TeamStatus.UsesPositivePvPTeam &&
         UnknownPlayers.Count == 0 &&
         Friendlies.Count is >= 1 and <= 24 &&
         Friendlies.Select(player => player.EntityId).Distinct().Count() == Friendlies.Count;
 
-    public string ClassificationReliabilityExplanation => !TeamStatus.CanClassifyNonMembers
+    public string ClassificationReliabilityExplanation => !TeamStatus.UsesPositivePvPTeam
         ? TeamStatus.Explanation
         : UnknownPlayers.Count > 0
             ? $"{UnknownPlayers.Count} observed player(s) remain Unknown."
@@ -73,5 +74,5 @@ internal sealed record GameStateSnapshot(
                 ? $"Observed friendly count {Friendlies.Count} exceeds the 24-player Frontline team maximum."
                 : Friendlies.Select(player => player.EntityId).Distinct().Count() != Friendlies.Count
                     ? "Duplicate friendly entity IDs were observed."
-                    : "Positive team membership is authoritative; all other observed PCs are classified as enemies.";
+                    : $"Positive PvP team {TeamStatus.LocalPvPTeam} is authoritative; other positive teams are enemies.";
 }

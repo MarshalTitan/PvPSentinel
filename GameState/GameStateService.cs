@@ -4,8 +4,10 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using PvPSentinel.Diagnostics;
+using PvPSentinel.FrontlineCore;
 using PvPSentinel.Models;
 using ActionManager = FFXIVClientStructs.FFXIV.Client.Game.ActionManager;
+using NativeCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 using LimitBreakController = FFXIVClientStructs.FFXIV.Client.Game.UI.LimitBreakController;
 
 namespace PvPSentinel.GameState;
@@ -79,12 +81,13 @@ internal sealed class GameStateService(
                     [],
                     [],
                     [],
-                    new FrontlineTeamStatus(false, 0, 0, false, "Local player is unavailable."),
+                    new FrontlineTeamStatus(false, 0, 0, 0, false, "Local player is unavailable."),
                     "Local player is unavailable.");
             }
 
-            var roster = CaptureTeamRoster(localObject, isFrontline);
-            var local = Convert(localObject, PlayerClassification.Friendly, isRosterMember: true);
+            var localPvpTeam = ReadPvPTeam(localObject);
+            var roster = CaptureTeamRoster(localObject, isFrontline, localPvpTeam);
+            var local = Convert(localObject, PlayerClassification.Friendly, isRosterMember: true, localPvpTeam);
             var friendlies = new List<PlayerSnapshot>();
             var enemies = new List<PlayerSnapshot>();
             var unknownPlayers = new List<PlayerSnapshot>();
@@ -97,20 +100,24 @@ internal sealed class GameStateService(
 
                 var isRosterMember = roster.EntityIds.Contains(player.EntityId) ||
                                      roster.ObjectIds.Contains(player.GameObjectId);
-                var classification = FrontlinePlayerResolver.Classify(
-                    isLocalPlayer: false,
-                    isFrontline,
-                    roster.Status.CanClassifyNonMembers,
-                    isRosterMember,
-                    player.StatusFlags.HasFlag(StatusFlags.PartyMember),
-                    player.StatusFlags.HasFlag(StatusFlags.AllianceMember),
-                    player.StatusFlags.HasFlag(StatusFlags.Hostile));
-                var snapshot = Convert(player, classification, isRosterMember);
+                var pvpTeam = ReadPvPTeam(player);
+                var relationship = TeamClassifier.Classify(
+                    player.EntityId,
+                    local.EntityId,
+                    pvpTeam,
+                    localPvpTeam).Relationship;
+                var classification = relationship switch
+                {
+                    BattlefieldRelationship.Self or BattlefieldRelationship.AllyConfirmed => PlayerClassification.Friendly,
+                    BattlefieldRelationship.EnemyConfirmed => PlayerClassification.Enemy,
+                    _ => PlayerClassification.Unknown,
+                };
+                var snapshot = Convert(player, classification, isRosterMember, pvpTeam);
                 observedPlayers.Add(snapshot);
                 developmentLog.Changed(
                     $"classification-{snapshot.EntityId:X8}",
-                    $"{snapshot.Classification}|{snapshot.IsRosterMember}|{snapshot.PartyMemberFlag}|{snapshot.AllianceMemberFlag}|{snapshot.HostileFlag}",
-                    $"0x{snapshot.EntityId:X8} {snapshot.JobAbbreviation} => {snapshot.Classification}; roster={snapshot.IsRosterMember}, party={snapshot.PartyMemberFlag}, alliance={snapshot.AllianceMemberFlag}, hostile={snapshot.HostileFlag}, targetable={snapshot.IsTargetable}.");
+                    $"{snapshot.Classification}|{snapshot.PvPTeam}|{localPvpTeam}",
+                    $"0x{snapshot.EntityId:X8} {snapshot.JobAbbreviation} => {snapshot.Classification}; PvP team={snapshot.PvPTeam}, local team={localPvpTeam}, targetable={snapshot.IsTargetable}.");
 
                 switch (classification)
                 {
@@ -135,8 +142,8 @@ internal sealed class GameStateService(
 
             developmentLog.Changed(
                 "classification-roster",
-                $"{roster.Status.IsAlliance}|{roster.Status.DeclaredMemberCount}|{roster.Status.ResolvedMemberCount}|{roster.Status.CanClassifyNonMembers}",
-                $"Alliance={roster.Status.IsAlliance}; declared={roster.Status.DeclaredMemberCount}; resolved={roster.Status.ResolvedMemberCount}; non-member rule={roster.Status.CanClassifyNonMembers}. {roster.Status.Explanation}");
+                $"{roster.Status.IsAlliance}|{roster.Status.DeclaredMemberCount}|{roster.Status.ResolvedMemberCount}|{roster.Status.LocalPvPTeam}",
+                $"PvP team={roster.Status.LocalPvPTeam}; alliance={roster.Status.IsAlliance}; declared={roster.Status.DeclaredMemberCount}; resolved={roster.Status.ResolvedMemberCount}. {roster.Status.Explanation}");
             developmentLog.Throttled(
                 "classification-summary",
                 $"Observed {observedPlayers.Count}: {friendlies.Count} friendly (including self), {enemies.Count} enemy, {unknownPlayers.Count} unknown.");
@@ -182,7 +189,8 @@ internal sealed class GameStateService(
     private PlayerSnapshot Convert(
         IBattleChara player,
         PlayerClassification classification,
-        bool isRosterMember)
+        bool isRosterMember,
+        byte pvpTeam)
     {
         var flags = player.StatusFlags;
         var statuses = player.StatusList
@@ -205,18 +213,20 @@ internal sealed class GameStateService(
             player.MaxMp,
             player.ShieldPercentage,
             player.TargetObjectId,
+            pvpTeam,
             classification,
             flags,
             flags.HasFlag(StatusFlags.PartyMember),
             flags.HasFlag(StatusFlags.AllianceMember),
             flags.HasFlag(StatusFlags.Hostile),
             isRosterMember,
+            ReadNativeInCombat(player),
             player.IsDead || player.CurrentHp == 0,
             player.IsTargetable,
             statuses);
     }
 
-    private TeamRoster CaptureTeamRoster(IBattleChara localPlayer, bool isFrontline)
+    private TeamRoster CaptureTeamRoster(IBattleChara localPlayer, bool isFrontline, byte localPvpTeam)
     {
         var entityIds = new HashSet<uint> { localPlayer.EntityId };
         var objectIds = new HashSet<ulong> { localPlayer.GameObjectId };
@@ -240,22 +250,33 @@ internal sealed class GameStateService(
             return new TeamRoster(
                 entityIds,
                 objectIds,
-                new FrontlineTeamStatus(false, 0, entityIds.Count, false,
-                    $"Alliance roster read failed; non-member PCs remain Unknown ({ex.GetType().Name})."));
+                new FrontlineTeamStatus(false, 0, entityIds.Count, localPvpTeam, isFrontline && localPvpTeam > 0,
+                    $"Alliance roster read failed, but PvP team value {(localPvpTeam > 0 ? "remains available" : "is unavailable")} ({ex.GetType().Name})."));
         }
 
-        var plausibleRosterSize = declaredCount is >= 8 and <= 24 && entityIds.Count is >= 2 and <= 24;
-        var canClassifyNonMembers = isFrontline && isAlliance && plausibleRosterSize;
+        var usesPositivePvpTeam = isFrontline && localPvpTeam > 0;
         var explanation = !isFrontline
-            ? "Not in a recognized Frontline duty; non-member classification is disabled."
-            : canClassifyNonMembers
-                ? "Alliance roster is available; positive membership is Friendly and other loaded PCs are Enemy candidates."
-                : $"Frontline alliance roster is not authoritative yet (declared {declaredCount}, resolved {entityIds.Count}); non-member PCs remain Unknown.";
+            ? "Not in a recognized Frontline duty; PvP-team classification is disabled."
+            : usesPositivePvpTeam
+                ? $"Local positive PvP team {localPvpTeam} is authoritative; roster flags are diagnostic only."
+                : "Local PvP team is missing or invalid; other players remain Unknown.";
 
         return new TeamRoster(
             entityIds,
             objectIds,
-            new FrontlineTeamStatus(isAlliance, declaredCount, entityIds.Count, canClassifyNonMembers, explanation));
+            new FrontlineTeamStatus(isAlliance, declaredCount, entityIds.Count, localPvpTeam, usesPositivePvpTeam, explanation));
+    }
+
+    private static unsafe byte ReadPvPTeam(IBattleChara player)
+    {
+        var native = (NativeCharacter*)player.Address;
+        return native is null ? (byte)0 : native->Battalion;
+    }
+
+    private static unsafe bool ReadNativeInCombat(IBattleChara player)
+    {
+        var native = (NativeCharacter*)player.Address;
+        return native is not null && native->InCombat;
     }
 
     private sealed record TeamRoster(

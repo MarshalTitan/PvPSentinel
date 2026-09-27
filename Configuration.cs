@@ -7,9 +7,10 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 8;
+    public int Version { get; set; } = 9;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
+    public bool AutonomousStrategyEnabled { get; set; }
     public CombatProvider CombatProvider { get; set; } = CombatProvider.Off;
     public NativeCombatMode NativeCombatMode { get; set; } = NativeCombatMode.ShadowObserve;
     public bool TargetSelectionEnabled { get; set; } = true;
@@ -114,7 +115,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 8)
+        if (Version >= 9)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -205,7 +206,16 @@ public sealed class Configuration : IPluginConfiguration
             RotationSolverEnemyClearanceRadius = 30f;
         }
 
-        Version = 8;
+        if (Version < 9)
+        {
+            // M2 is deliberately manual. Existing automation selections must not
+            // silently issue strategic destinations or queue for another match.
+            AutonomousStrategyEnabled = false;
+            ObjectiveNavigationEnabled = false;
+            QueueAutomationEnabled = false;
+        }
+
+        Version = 9;
         Save();
     }
 

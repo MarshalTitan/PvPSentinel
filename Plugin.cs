@@ -10,6 +10,7 @@ using PvPSentinel.Combat.Native.Jobs.Machinist;
 using PvPSentinel.Combat.Threat;
 using PvPSentinel.Diagnostics;
 using PvPSentinel.GameState;
+using PvPSentinel.FrontlineCore;
 using PvPSentinel.Integrations;
 using PvPSentinel.Intelligence;
 using PvPSentinel.Models;
@@ -44,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly RotationSolverRebornAdapter rotationSolverReborn;
     private readonly PvPThreatTracker threatTracker;
     private readonly QueueLifecycleController queueLifecycle;
+    private readonly BattlefieldService battlefield;
     private readonly WrathAdapter wrath = new();
     private readonly DiagnosticWindow diagnostics;
     private readonly ConfigurationWindow configurationWindow;
@@ -75,6 +77,13 @@ public sealed class Plugin : IDalamudPlugin
 
         config = pi.GetPluginConfig() as Configuration ?? new Configuration();
         config.Initialize(pi);
+        if (config.AutonomousStrategyEnabled || config.ObjectiveNavigationEnabled || config.QueueAutomationEnabled)
+        {
+            config.AutonomousStrategyEnabled = false;
+            config.ObjectiveNavigationEnabled = false;
+            config.QueueAutomationEnabled = false;
+            config.Save();
+        }
 
         developmentLog = new DevelopmentLogger(log, () => config.VerboseLogging);
         clusterAnalyzer = new FriendlyClusterAnalyzer(developmentLog);
@@ -92,10 +101,11 @@ public sealed class Plugin : IDalamudPlugin
         rotationSolverReborn = new RotationSolverRebornAdapter(pi, dataManager, developmentLog);
         combat = new CombatProviderCoordinator(nativeCombat, rotationSolverReborn, developmentLog);
         threatTracker = new PvPThreatTracker(developmentLog);
+        battlefield = new BattlefieldService(gameGui, dutyState, pi.ConfigDirectory.FullName, developmentLog, log);
         var queueAdapter = new FrontlineQueueAdapter(gameGui, dataManager, developmentLog);
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
-        diagnostics = new DiagnosticWindow(() => current, vnav, wrath, () => combat.LastAction, OnDiagnosticsClosed)
+        diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath, () => combat.LastAction, OnDiagnosticsClosed)
         {
             IsOpen = config.ShowDiagnostics,
         };
@@ -158,15 +168,20 @@ public sealed class Plugin : IDalamudPlugin
         nextUpdateUtc = DateTime.UtcNow.AddMilliseconds(250);
 
         var game = gameState.Capture();
+        var threat = threatTracker.Evaluate(game);
+        var battlefieldState = battlefield.Update(game, threat);
         var clusters = clusterAnalyzer.Analyze(game.Friendlies, config.FriendlyClusterLinkRadius, game.CapturedAtUtc);
         var mainCluster = mainGroupTracker.Select(clusters, game.CapturedAtUtc);
         var target = targetSelector.Select(game, mainCluster, config);
         var objective = objectiveStrategy.Select(game, config);
         var (behavior, behaviorSince, reason) = behaviorEngine.Evaluate(game, mainCluster, target, objective, config);
-        var threat = threatTracker.Evaluate(game);
         var combatDecision = combat.Update(game, behavior, target, config, threat);
-        var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, config);
-        var queueDecision = queueLifecycle.Update(game, config);
+        var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, battlefieldState, config);
+        foreach (var navigationEvent in navigation.DrainManualEvents())
+            battlefield.RecordNavigationEvent(navigationEvent);
+        var queueDecision = new QueueDecision(QueueLifecycleState.Disabled, FrontlineMap.Unknown,
+            0, config.MatchLimit, queueLifecycle.EmergencyStopLatched,
+            "Native queue/requeue is disabled during manual M2 navigation validation.");
         developmentLog.Throttled("behavior-evaluation", $"State {behavior}; committed {(game.CapturedAtUtc - behaviorSince).TotalSeconds:F1}s; {reason}");
         developmentLog.Throttled("combat-decision", $"Active {combatDecision.ControllerActive}; desired {combatDecision.DesiredAction} ({combatDecision.ActionId}); {combatDecision.Explanation}");
         var localPosition = game.LocalPlayer?.Position ?? Vector3.Zero;
@@ -189,7 +204,8 @@ public sealed class Plugin : IDalamudPlugin
             CountNear(game.Friendlies, localPosition, 40f),
             CountNear(game.Enemies, localPosition, 40f),
             CountNear(game.UnknownPlayers, localPosition, 40f),
-            reason);
+            reason,
+            battlefieldState);
 
         if (behavior != lastLoggedBehavior)
         {
@@ -266,6 +282,7 @@ public sealed class Plugin : IDalamudPlugin
             new QueueDecision(QueueLifecycleState.Disabled, FrontlineMap.Unknown, 0, 1, false, "Waiting."),
             PvPThreatSnapshot.Unavailable(game.CapturedAtUtc, "Waiting for first threat observation."),
             0, 0, 0, 0, 0, 0,
-            "Waiting for first update.");
+            "Waiting for first update.",
+            BattlefieldState.Unavailable(game.CapturedAtUtc, "Waiting for first battlefield scan."));
     }
 }

@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using PvPSentinel.Integrations;
+using PvPSentinel.FrontlineCore;
 using PvPSentinel.Models;
 using PvPSentinel.Navigation;
 using System.Numerics;
@@ -11,6 +12,8 @@ internal sealed class DiagnosticWindow : Window
 {
     private readonly Func<TacticalSnapshot> snapshot;
     private readonly IVNavmeshAdapter vnav;
+    private readonly NavigationController navigation;
+    private readonly BattlefieldService battlefieldService;
     private readonly WrathAdapter wrath;
     private readonly Func<string> lastAction;
     private readonly Action closed;
@@ -18,6 +21,8 @@ internal sealed class DiagnosticWindow : Window
     public DiagnosticWindow(
         Func<TacticalSnapshot> snapshot,
         IVNavmeshAdapter vnav,
+        NavigationController navigation,
+        BattlefieldService battlefieldService,
         WrathAdapter wrath,
         Func<string> lastAction,
         Action closed)
@@ -25,6 +30,8 @@ internal sealed class DiagnosticWindow : Window
     {
         this.snapshot = snapshot;
         this.vnav = vnav;
+        this.navigation = navigation;
+        this.battlefieldService = battlefieldService;
         this.wrath = wrath;
         this.lastAction = lastAction;
         this.closed = closed;
@@ -52,11 +59,14 @@ internal sealed class DiagnosticWindow : Window
             ColoredText(new Vector4(1f, 0.45f, 0.3f, 1f), game.ReadError);
 
         Section("Frontline Classification");
+        KeyValue("Local PvP team", game.TeamStatus.LocalPvPTeam > 0 ? game.TeamStatus.LocalPvPTeam.ToString() : "UNRESOLVED");
+        KeyValue("Positive PvP-team classification", YesNo(game.TeamStatus.UsesPositivePvPTeam));
         KeyValue("Alliance roster", YesNo(game.TeamStatus.IsAlliance));
         KeyValue("Declared / resolved members", $"{game.TeamStatus.DeclaredMemberCount} / {game.TeamStatus.ResolvedMemberCount}");
-        KeyValue("Non-member rule available", YesNo(game.TeamStatus.CanClassifyNonMembers));
         KeyValue("Classification reliable", YesNo(game.IsClassificationReliable));
         ImGui.TextWrapped(game.ClassificationReliabilityExplanation);
+
+        DrawBattlefield(state);
 
         Section("Behavior");
         ColoredText(BehaviorColor(state.Behavior), state.Behavior.ToString().ToUpperInvariant());
@@ -176,8 +186,11 @@ internal sealed class DiagnosticWindow : Window
             ImGui.TreePop();
         }
 
-        Section("Navigation");
+        DrawManualNavigation(state);
+
+        Section("Navigation (legacy/autonomous disabled)");
         KeyValue("vnavmesh available", YesNo(vnav.IsReady));
+        KeyValue("Mesh build progress", vnav.BuildProgress < 0f ? "No build in progress / UNRESOLVED" : $"{vnav.BuildProgress:P0}");
         KeyValue("Pathing / pathfinding", $"{YesNo(vnav.IsPathRunning)} / {YesNo(vnav.IsPathfindInProgress)}");
         KeyValue("Owned path state", state.Navigation.PathState.ToString());
         KeyValue("Waypoints / failures", $"{state.Navigation.WaypointCount} / {state.Navigation.ConsecutiveFailures}");
@@ -235,6 +248,119 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Completed / limit", $"{state.Queue.CompletedMatches} / {state.Queue.MatchLimit}");
         KeyValue("Emergency stop latched", YesNo(state.Queue.EmergencyStopLatched));
         ImGui.TextWrapped(state.Queue.Explanation);
+    }
+
+    private void DrawBattlefield(TacticalSnapshot state)
+    {
+        var battlefield = state.Battlefield;
+        Section("Normalized Battlefield");
+        KeyValue("Adapter", battlefield.ActiveAdapter);
+        KeyValue("Map", $"{battlefield.Map.DisplayName()} ({battlefield.TerritoryId})");
+        KeyValue("Lifecycle / timer", $"{battlefield.Match.Lifecycle} / {(battlefield.Match.TimeRemaining is { } timer ? timer.ToString("mm\\:ss") : "UNRESOLVED")}");
+        KeyValue("Results terminal", YesNo(battlefield.Match.ResultsDetected));
+        KeyValue("Team scores", battlefield.Match.TeamScores);
+        KeyValue("Local PvP team", battlefield.LocalPvPTeam > 0 ? battlefield.LocalPvPTeam.ToString() : "UNRESOLVED");
+        KeyValue("SELF / ALLY / ENEMY / UNKNOWN",
+            $"{battlefield.Counts.Self} / {battlefield.Counts.Allies} / {battlefield.Counts.Enemies} / {battlefield.Counts.Unknown}");
+        KeyValue("Allied / enemy clusters", $"{battlefield.AlliedClusters.Count} / {battlefield.EnemyClusters.Count}");
+        KeyValue("Combat context", $"{battlefield.Combat.Context} (blocks movement: {YesNo(battlefield.Combat.BlocksMovement)})");
+        KeyValue("Death / respawn", $"{battlefield.DeathRespawn.State}; {battlefield.DeathRespawn.Deaths} / {battlefield.DeathRespawn.Respawns}");
+        KeyValue("M2 log directory", battlefieldService.CurrentLogDirectory);
+        ImGui.TextWrapped(battlefield.Explanation);
+
+        if (ImGui.TreeNode($"Sensor health ({battlefield.SensorHealth.Count})"))
+        {
+            foreach (var sensor in battlefield.SensorHealth)
+                ImGui.BulletText($"{sensor.Sensor}: {sensor.Status}; errors={sensor.ErrorCount}; {sensor.Detail}");
+            ImGui.TreePop();
+        }
+        if (ImGui.TreeNode($"Logical objectives ({battlefield.Objectives.Count})"))
+        {
+            foreach (var objective in battlefield.Objectives)
+            {
+                var position = objective.ReferencePosition is { } reference ? FormatVector(reference) : "UNRESOLVED";
+                ImGui.BulletText($"{objective.LogicalId} {objective.Kind}: {objective.State}; rank={objective.Rank}; owner={objective.Owner}; GC={objective.ObservedGrandCompany}; ETA={objective.ActivationEtaSeconds?.ToString() ?? "UNRESOLVED"}; strength={objective.StrengthPercent?.ToString() ?? "UNRESOLVED"}; nearby A/E={objective.NearbyAllies}/{objective.NearbyEnemies}; pos={position}; physical={YesNo(objective.PhysicalConfirmation is not null)}; source={objective.SensorSource}; confidence={objective.Confidence}");
+            }
+            ImGui.TreePop();
+        }
+        if (battlefield.LastMatchSummary is { } summary && ImGui.TreeNode("Retained last-match summary"))
+        {
+            KeyValue("Map / final state", $"{summary.PrimaryTestMap.DisplayName()} / {summary.FinalMatchState}");
+            KeyValue("Peaks SELF / ALLY / ENEMY / UNKNOWN", $"{summary.PeakSelf} / {summary.PeakAllies} / {summary.PeakEnemies} / {summary.PeakUnknown}");
+            KeyValue("Objectives / deaths / respawns", $"{summary.ObjectiveCount} / {summary.Deaths} / {summary.Respawns}");
+            KeyValue("Navigation requests / arrivals / failures", $"{summary.NavigationRequests} / {summary.NavigationArrivals} / {summary.NavigationFailures}");
+            KeyValue("Results / sensor errors", $"{YesNo(summary.ResultsDetected)} / {summary.SensorErrors}");
+            ImGui.TreePop();
+        }
+    }
+
+    private void DrawManualNavigation(TacticalSnapshot state)
+    {
+        var manual = navigation.ManualSnapshot;
+        Section("M2 MANUAL NAVIGATION");
+        if (ImGui.Button(manual.Armed ? "Disarm Manual Navigation" : "Arm Manual Navigation"))
+            navigation.SetManualNavigationArmed(!manual.Armed);
+        ImGui.SameLine();
+        if (ImGui.Button("STOP NAVIGATION"))
+            navigation.StopManualNavigation();
+
+        KeyValue("Current Map", $"{state.Battlefield.Map.DisplayName()} ({state.Battlefield.TerritoryId})");
+        KeyValue("Navmesh Ready", YesNo(vnav.IsReady));
+        KeyValue("Build Progress", vnav.BuildProgress < 0f ? "No build / UNRESOLVED" : $"{vnav.BuildProgress:P0}");
+        KeyValue("Destination", $"{manual.DestinationId} — {manual.DestinationName}");
+        KeyValue("Movement Owner", manual.Owner.ToString());
+        KeyValue("Combat Context", state.Battlefield.Combat.Context.ToString());
+        KeyValue("Movement Blocked", YesNo(state.Battlefield.Combat.BlocksMovement));
+        KeyValue("Route State", manual.State.ToString());
+        KeyValue("Waypoint Count", manual.WaypointCount.ToString());
+        KeyValue("Current Waypoint", manual.CurrentWaypoint.ToString());
+        KeyValue("Next Waypoint", manual.NextWaypoint is { } next ? FormatVector(next) : "NONE");
+        KeyValue("Distance Remaining", $"{manual.DistanceRemaining:F1}y");
+        KeyValue("Progress Age", $"{manual.ProgressAgeSeconds:F1}s");
+        KeyValue("Stuck Count", manual.StuckCount.ToString());
+        ImGui.TextWrapped(manual.Explanation);
+
+        if (!manual.Armed)
+        {
+            ImGui.TextDisabled("Arm manual navigation before selecting a destination.");
+            return;
+        }
+
+        var objectives = state.Battlefield.Objectives.ToArray();
+        if (objectives.Length > 0)
+        {
+            ImGui.Text(state.Battlefield.Map == FrontlineMap.FieldsOfGlory
+                ? "Shatter objectives (UNRESOLVED buttons remain disabled):"
+                : "Discovered objectives:");
+            for (var index = 0; index < objectives.Length; index++)
+            {
+                var objective = objectives[index];
+                ImGui.BeginDisabled(objective.ReferencePosition is null);
+                if (ImGui.Button($"{objective.LogicalId}##m2-{objective.LogicalId}"))
+                    navigation.RequestManualDestination(
+                        objective.LogicalId,
+                        objective.DisplayName,
+                        objective.ReferencePosition!.Value,
+                        objective.ValidatedApproachAnchors.Select(anchor => anchor.Position).ToArray());
+                ImGui.EndDisabled();
+                if ((index + 1) % 6 != 0 && index + 1 < objectives.Length)
+                    ImGui.SameLine();
+            }
+        }
+        else
+        {
+            ImGui.TextDisabled("No logical objective has a resolved reference position yet.");
+        }
+
+        var nearestCluster = state.Battlefield.AlliedClusters
+            .Where(cluster => cluster.MemberCount >= 2)
+            .OrderBy(cluster => cluster.DistanceFromLocalPlayer)
+            .FirstOrDefault();
+        if (nearestCluster is not null && ImGui.Button("Nearest Allied Cluster"))
+            navigation.RequestManualDestination(
+                $"ALLY-CLUSTER-{nearestCluster.Id}",
+                $"Allied cluster #{nearestCluster.Id}",
+                nearestCluster.Centroid);
     }
 
     private static void KeyValue(string key, string value)

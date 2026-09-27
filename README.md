@@ -8,18 +8,22 @@ RotationSolverReborn, MMOMinion, AnyoneCore, Anyone's Champion, ChampionMachinis
 
 Implemented in source:
 
-- fail-closed Frontline player classification with `Friendly`, `Enemy`, and `Unknown` outcomes
-- positive party/alliance/roster membership taking precedence over contradictory hostile flags
+- authoritative Frontline relationship classification from the public native positive PvP-team value: local entity ID first, then same-team ally, different positive-team enemy, otherwise unknown; `friendly`, `targetable`, and `attackable` flags are diagnostic only
+- a normalized, map-independent `BattlefieldState` covering self, match lifecycle, entity-keyed player history/staleness, relationship confidence, allied/enemy clusters, objectives, combat context, death/respawn, and independently failing sensor health
 - all five current Frontline campaigns identified by language-neutral content and territory IDs:
   - The Borderland Ruins (Secure)
   - Seal Rock (Seize)
   - The Fields of Glory (Shatter)
   - Onsal Hakair (Danshig Naadam)
   - Worqor Chirteh (Triumph)
-- shared friendly clustering, main-force tracking, threat evaluation, target scoring, and ranged-position strategy
-- map-specific objective research policies and diagnostics for Secure, Seize, Shatter, Danshig Naadam, and Triumph
-- generated-path-only vnavmesh navigation: no movement starts until a returned path passes validation
-- path request timeout, path-start verification, progress/stuck detection, bounded repath backoff, and a consecutive-failure pause
+- deterministic 20y connected-component allied/enemy clustering with centroid, staleness, combat activity, local distance, nearby objective, and numerical balance
+- a Shatter adapter with all 19 persistent logical objectives, verified large/small lifecycle IDs, activation ETA/strength parsing, and physical-object confirmation
+- a Seal Rock adapter that aggregates paired map records by stable location and tracks verified B/A rank and neutral/Maelstrom/Adders/Flames state evidence without guessing unresolved S-rank IDs or PvP-team-to-GC mappings
+- normalized `OUTSIDE`/`PRE_MATCH`/`MATCH_ACTIVE`/terminal `RESULTS`, reliable death/respawn transitions, and retained match summaries before adapter reset
+- normalized `NONE`/`PVP_ENEMY`/`OBJECTIVE_COMBAT`/`STALE_GAME_COMBAT`; only confirmed enemy-player combat cancels manual movement, while objective or stale generic combat cannot permanently block a fresh request
+- one manual M2 vnavmesh owner with arm/disarm, immediate STOP, reachable-point snapping, explicit generated path acquisition, actual waypoint inspection, arrival, cancellation, bounded stuck recovery, failed-opening route comparison, alternate approach anchors, and clean ownership release
+- no direct steering fallback: movement never starts until a vnavmesh route passes validation
+- privacy-sanitized per-match `events.jsonl` plus `summary.json`, with state-diff/rate-limited diagnostics rather than continuous UI dumps
 - optional long-distance Mount Roulette use with combat, casting, nearby-enemy, arrival, and transition gates
 - combat provider modes:
   - `Off`
@@ -48,29 +52,29 @@ Implemented in source:
 - an explicit MCH limit-gauge warning because Reborn's current MCH PvP rotation does not automate Marksman's Spite
 - Daily Challenge: Frontline inspection through the game's Duty Finder, including localized game-data names
 - per-map queue allow-list semantics: an unchecked active campaign means “do not queue today”
-- automatic PvPSentinel-owned queue submission, owned duty acceptance, match observation, completion counting, and requeue
+- the existing queue/lifecycle implementation retained but forcibly disabled during manual M2 validation
 - configurable session match limit and a latched emergency stop
-- detailed diagnostics for classification, map, objectives, group choice, path state, mounting, combat yield, and queue lifecycle
-- pure logic tests for classification priority, all five map identifiers, generated-path rejection rules, generic external yield timing, Reborn engagement/death/respawn transitions, Recuperate boundary/MP rules, Purify effect coverage, defensive preemption, target-score acceptance, target-switch hysteresis, dynamic Guard escalation/capping, conservative contextual Marksman's Spite confidence, Wildfire survival floors, and Shadow cooldown/gauge accounting
+- detailed battlefield and M2 diagnostics for map/adapter, lifecycle/results, PvP team, relationship counts, clusters, objective state/rank/owner/source/confidence, combat context, death/respawn, sensor health, mesh readiness/build progress, movement ownership, snapped destination, waypoints, route progress, stuck recovery, and retained summary
+- pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
 
-Objective navigation and queue automation are deliberately separate opt-ins. Objective observations remain visible while objective navigation is off, allowing live object IDs and states to be validated before they steer movement. Secure and Triumph passive capture objects currently remain research-only unless the client exposes positive active-state evidence.
+Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.0. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15 and Seal Rock populates discovered logical locations dynamically. Other Frontline maps retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
 
 ## Safety model
 
-Configuration version 8 preserves the earlier fail-closed automation migration, keeps new Native installations in `Shadow / Observe`, retains the safer target, Guard, Marksman's Spite and Wildfire defaults, and adds Reborn quiet-period/clearance defaults without selecting or activating the provider. Master enable, navigation, mounting, objective navigation, queue automation, and the combat provider all require explicit selection. Selecting Native does not silently activate combat execution.
+Configuration version 9 preserves the earlier fail-closed combat migration, keeps Native in `Shadow / Observe`, and forcibly turns off autonomous strategy, objective navigation, and queue/requeue for manual M2 validation. Manual movement still requires explicit master enable, navigation enable, arming, and destination selection. Selecting Native does not silently activate combat execution.
 
 The targeting-me counter is deliberately limited to enemy players currently loaded and classified whose observable hard target is the local player. It cannot detect soft targeting, queued attacks, future intent, or an enemy that has not yet switched its observable target. The HUD shows every such observed hard target; Guard consumes the within-30y subset from that same shared observation so the live-validated defensive tuning is not silently widened.
 
-Strategic movement requires:
+Manual M2 movement requires:
 
 1. master and navigation enabled;
 2. a recognized Frontline duty and live local player;
-3. authoritative classification with no observed `Unknown` player;
-4. a reliable friendly cluster or field-validated objective destination;
-5. vnavmesh ready; and
+3. an armed manual controller and a freshly selected discovered objective or allied-cluster destination;
+4. no confirmed enemy-player combat or death state;
+5. vnavmesh ready and a reachable snapped approach point; and
 6. a generated path whose start, endpoint, coordinates, and total length pass validation.
 
-PvPSentinel stops only the vnavmesh path it owns. It never falls back to running directly at a group or objective coordinate. Repeated path failures pause navigation until the destination materially changes or automation is reset.
+PvPSentinel stops only the vnavmesh path it owns. It never falls back to running directly at a group or objective coordinate. Death or confirmed enemy-player combat cancels the destination and requires a fresh manual request. Repeated failures are bounded; materially identical replacement routes are rejected before alternate approach anchors are attempted.
 
 In `External Combat / ACR` mode, PvPSentinel does not set targets or execute combat actions. It has no IPC contract with MMOMinion or Champion. Local combat, casting, or queued-action state stops PvPSentinel-owned navigation; strategic travel resumes after those signals clear and the configured grace period expires.
 
@@ -78,7 +82,7 @@ In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat 
 
 In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
 
-Queue automation accepts only a queue session submitted by the current PvPSentinel process. A pre-existing or unrelated Duty Ready prompt is reported but not accepted. If the daily campaign cannot be identified as exactly one allowed map, no queue action is taken.
+Queue/accept/requeue code remains preserved, but v0.3.0.0 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
 
 The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
 
@@ -87,10 +91,12 @@ The emergency stop immediately stops PvPSentinel-owned movement, attempts to can
 ```text
 PvPSentinel
 ├── GameState       Dalamud/Lumina state, team classification, local action state
+├── FrontlineCore   normalized players/clusters/lifecycle/combat/sensors/summaries
+│   └── Maps        Shatter, Seal Rock, passive future-map adapters
 ├── Intelligence    clustering, main-force hysteresis, target scoring
 ├── Strategy        shared tactics and per-map objective research policies
 ├── Behavior        high-level state and safety decisions
-├── Navigation      mount control, generated path validation, stuck/repath logic
+├── Navigation      single owner, manual M2 controls, vnavmesh path/route recovery
 ├── Combat          Off/generic external/Reborn/native provider coordination
 │   ├── Threat      shared hard-target/density tracking for defense and HUD
 │   ├── Reborn      read-only presence/status/action IPC and engagement latch
@@ -124,7 +130,7 @@ The development DLL is written to `bin\Release\PvPSentinel.dll`; the Dalamud SDK
 
 Do not begin with movement, combat, objectives, or queue automation enabled.
 
-### Stage A — passive classification and map diagnostics
+### Stage A — passive battlefield and objective sensing
 
 - master: off
 - navigation: off
@@ -133,18 +139,19 @@ Do not begin with movement, combat, objectives, or queue automation enabled.
 - queue automation: off
 - combat provider: `Off`
 
-Inside Frontline, expand nearby-player diagnostics at spawn and during a fight. Confirm every visible teammate is `Friendly`, opponents are `Enemy` even when their raw hostile flag is false, and no observed player is `Unknown`. Record declared/resolved alliance counts if classification is not reliable.
+Inside Frontline, confirm local PvP team is a positive value, SELF remains exactly one, teammates use the same positive team, and opponents use the other positive team values even when their raw friendly flag is true or targetability changes at distance. Do not infer Grand Company names from the numeric values.
 
-Also capture the objective-research rows for the active map: name, base ID, object kind, targetability, HP, position, and observed live state. This evidence is required before widening map-specific objective authorization.
+On Shatter, confirm all 19 logical rows appear and compare inactive/preactivating/active, ETA, strength, coordinates, and physical confirmations against the map. On Seal Rock, confirm no duplicate logical row oscillates when paired marker records occupy the same coordinate; verify rank and observed GC ownership changes. Unresolved values must remain explicit.
 
-### Stage B — validated group navigation
+### Stage B — manual M2 vnavmesh navigation
 
 - master: on
 - navigation: on
+- manual navigation: armed in Diagnostics
 - combat provider: `Off`
-- objective navigation: off
+- autonomous strategy/objective navigation/queue: locked off
 
-Verify every move passes through `RequestingPath` and `PathValidated`/`FollowingPath`. Confirm blocked terrain produces repath/backoff or a failure pause, never direct travel toward the coordinate. Test death, respawn regrouping, long-distance mounting, close-range dismounting, and the emergency stop.
+Select one objective at a time. Verify `Snapped Position`, actual `Waypoint Count`/`Next Waypoint`, `RequestingPath`, `Following`, and `ARRIVED`. Choose routes that cross ramps, walls, elevation changes, and the map center. Confirm a stall stops the path, compares a replacement opening, tries an alternate anchor, and eventually fails/releases ownership rather than steering directly. Test immediate STOP, death cancellation, enemy-player-combat cancellation, and confirm neither destination resumes automatically after respawn/combat.
 
 ### Stage C — RotationSolverReborn external combat coordination
 
@@ -157,9 +164,11 @@ Verify every move passes through `RequestingPath` and `PathValidated`/`Following
 
 Verify installed/loaded/version/autorotation diagnostics, mounted transit, first engagement, persistent combat ownership, death/respawn regrouping, and match-end deactivation. Reborn must own every local target and combat action. PvPSentinel must hold navigation throughout combat and while classified enemies remain inside the clearance radius, then mount/regroup only after the quiet period. Marksman's Spite remains manual in this first provider build.
 
-### Stage D — daily campaign and lifecycle
+### Stage D — lifecycle observation only
 
-Keep the match limit at `1`. First verify the detected campaign and allowed-map decision without submitting. Then opt into queue automation and observe selection, join, Duty Ready acceptance, match count, natural duty exit, limit handling, and requeue behavior.
+Observe pre-match, active, results, and map exit. Confirm RESULTS remains terminal even while the header/timer is visible and that the retained summary is written before the adapter resets. Do not test automatic queue/accept/requeue in this milestone.
+
+After each manual test, upload the displayed M2 log directory's `events.jsonl` and `summary.json` together with the corresponding `dalamud.log`. The per-match directory is shown in Diagnostics; leaving the Frontline writes the retained summary.
 
 ### Stage E — native MCH shadow comparison
 
@@ -197,14 +206,13 @@ Active Native MCH remains blocked by release discipline, not by architecture: it
 
 ## Release discipline
 
-This work must not be distributed from an untagged development checkpoint. A release requires:
+This work must not be distributed from an untagged development checkpoint. A manual M2 test release requires:
 
 - clean current-API build and passing logic tests;
-- reviewed Native MCH Shadow / Observe traces with no target/action mutations attributable to PvPSentinel;
-- Stage A classification evidence;
-- staged live path, mount, external-yield, campaign-detection, and queue-lifecycle validation;
-- any required fixes from those tests;
+- Native MCH remaining `Shadow / Observe` by default and all combat-provider boundaries preserved;
+- autonomous strategy, capture, and queue/requeue locked off;
+- clear live-validation labeling and event/summary logs for follow-up;
 - a version bump and matching `v<Version>` tag; and
 - a subsequent `MarshalTitan/Sentinel` catalog update only after the release asset succeeds.
 
-Until those gates pass, do not create a release tag or update the public catalog.
+Manual ARRIVED evidence around major terrain/elevation changes is still required before any autonomous strategy work is authorized.

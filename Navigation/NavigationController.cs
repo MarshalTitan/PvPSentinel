@@ -1,5 +1,7 @@
 using System.Numerics;
+using System.Globalization;
 using PvPSentinel.Diagnostics;
+using PvPSentinel.FrontlineCore;
 using PvPSentinel.Models;
 
 namespace PvPSentinel.Navigation;
@@ -20,6 +22,73 @@ internal sealed class NavigationController(
     private DateTime pathStartedAtUtc = DateTime.MinValue;
     private bool ownsPath;
     private int consecutiveFailures;
+    private bool manualArmed;
+    private ManualNavigationRequest? manualRequest;
+    private ManualNavigationRequest? activeManual;
+    private readonly Queue<ManualNavigationEvent> manualEvents = [];
+    private List<Vector3> manualCandidates = [];
+    private int manualCandidateIndex;
+    private Vector3? manualSnapped;
+    private Task<IReadOnlyList<Vector3>>? manualPendingPath;
+    private IReadOnlyList<Vector3> manualRoute = [];
+    private IReadOnlyList<Vector3> failedManualRoute = [];
+    private bool manualReplacementAttempt;
+    private DateTime manualPathRequestedUtc = DateTime.MinValue;
+    private DateTime manualPathStartedUtc = DateTime.MinValue;
+    private DateTime manualLastProgressUtc = DateTime.MinValue;
+    private Vector3? manualLastProgressPosition;
+    private int lastReportedManualWaypointCount = -1;
+    private ManualNavigationSnapshot manualSnapshot = ManualNavigationSnapshot.Disarmed;
+
+    public ManualNavigationSnapshot ManualSnapshot => manualSnapshot;
+
+    public void SetManualNavigationArmed(bool armed)
+    {
+        manualArmed = armed;
+        if (!armed)
+        {
+            CancelManual("Manual navigation was disarmed.", ManualRouteState.Disarmed, "navigation_cancelled");
+            manualSnapshot = ManualNavigationSnapshot.Disarmed;
+        }
+        else
+        {
+            manualSnapshot = manualSnapshot with
+            {
+                Armed = true,
+                Owner = MovementOwner.None,
+                State = ManualRouteState.Idle,
+                Explanation = "Manual navigation is armed; select a discovered objective or allied cluster.",
+            };
+        }
+    }
+
+    public bool RequestManualDestination(
+        string destinationId,
+        string destinationName,
+        Vector3 referencePosition,
+        IReadOnlyList<Vector3>? validatedApproachAnchors = null)
+    {
+        if (!manualArmed)
+            return false;
+        manualRequest = new ManualNavigationRequest(
+            destinationId,
+            destinationName,
+            referencePosition,
+            validatedApproachAnchors ?? [],
+            DateTime.UtcNow);
+        Emit("navigation_request", $"destination={destinationId}; reference={FormatVector(referencePosition)}");
+        return true;
+    }
+
+    public void StopManualNavigation(string reason = "Immediate STOP requested.") =>
+        CancelManual(reason, manualArmed ? ManualRouteState.Cancelled : ManualRouteState.Disarmed, "navigation_cancelled");
+
+    public IReadOnlyList<ManualNavigationEvent> DrainManualEvents()
+    {
+        var result = manualEvents.ToArray();
+        manualEvents.Clear();
+        return result;
+    }
 
     public NavigationDecision Update(
         GameStateSnapshot game,
@@ -27,8 +96,41 @@ internal sealed class NavigationController(
         FriendlyCluster? mainCluster,
         ObjectiveDecision? objective,
         CombatDecision combat,
+        BattlefieldState battlefield,
         Configuration config)
     {
+        if (game.LocalPlayer?.IsDead == true)
+        {
+            if (activeManual is not null || manualRequest is not null || ownsPath)
+                CancelManual("Death cancelled the route; a fresh manual request is required after respawn.", ManualRouteState.Dead, "navigation_cancelled");
+            manualSnapshot = BuildManualSnapshot(MovementOwner.DeathRecovery, ManualRouteState.Dead,
+                "Player is dead; movement ownership is released and the destination will not resume.", game.LocalPlayer.Position);
+            return Decision(false, null, NavigationPathState.Paused, MountState.Disabled, manualSnapshot.Explanation);
+        }
+
+        if (battlefield.Combat.BlocksMovement)
+        {
+            if (activeManual is not null || manualRequest is not null || ownsPath)
+                CancelManual("Confirmed enemy-player combat yielded and cancelled the manual route; select a fresh destination after combat.",
+                    ManualRouteState.YieldedExternalCombat, "navigation_yielded_external_combat");
+            manualSnapshot = BuildManualSnapshot(MovementOwner.ExternalCombat, ManualRouteState.YieldedExternalCombat,
+                "Confirmed enemy-player combat owns movement; the prior route will not auto-resume.", game.LocalPlayer?.Position);
+            return Decision(false, null, NavigationPathState.YieldingToCombat, MountState.Blocked, manualSnapshot.Explanation);
+        }
+
+        if (manualArmed && (manualRequest is not null || activeManual is not null || manualPendingPath is not null || ownsPath))
+            return UpdateManual(game, battlefield, config);
+
+        if (!config.AutonomousStrategyEnabled)
+        {
+            StopOwnedPath(clearDestination: true);
+            if (manualArmed)
+                manualSnapshot = BuildManualSnapshot(MovementOwner.None, ManualRouteState.Idle,
+                    "Manual M2 is armed and idle; autonomous destination selection is disabled.", game.LocalPlayer?.Position);
+            return Decision(false, null, NavigationPathState.Idle, MountState.Disabled,
+                "Autonomous strategy is disabled for M2. Select a manual destination in diagnostics.");
+        }
+
         var allowedState = behavior is BehaviorState.Regroup or BehaviorState.FollowGroup or
             BehaviorState.RespawnRegroup or BehaviorState.Retreat or BehaviorState.Engage or
             BehaviorState.FinishKill or BehaviorState.Travel;
@@ -138,7 +240,7 @@ internal sealed class NavigationController(
             RegisterFailure(now, "Path.MoveTo was accepted but vnavmesh did not report a running path.");
         }
 
-        if (consecutiveFailures >= Math.Clamp(config.MaximumPathFailures, 1, 10))
+        if (!ManualNavigationPolicy.CanRetry(consecutiveFailures, config.MaximumPathFailures))
         {
             return Decision(false, destination, NavigationPathState.Failed, mountDecision.State,
                 $"Navigation paused after {consecutiveFailures} consecutive path/stuck failures. A materially new destination is required before retrying.");
@@ -192,9 +294,279 @@ internal sealed class NavigationController(
 
     public void StopOwnedMovement()
     {
+        CancelManual("PvPSentinel navigation stopped.", manualArmed ? ManualRouteState.Cancelled : ManualRouteState.Disarmed,
+            "navigation_cancelled");
         StopOwnedPath(clearDestination: true);
         consecutiveFailures = 0;
         retryAfterUtc = DateTime.MinValue;
+    }
+
+    private NavigationDecision UpdateManual(GameStateSnapshot game, BattlefieldState battlefield, Configuration config)
+    {
+        var now = game.CapturedAtUtc;
+        var local = game.LocalPlayer;
+        if (!config.Enabled || !config.NavigationEnabled || !game.IsFrontline || local is null)
+        {
+            CancelManual("Manual navigation is stopped by the master, navigation, Frontline, or player safety gate.",
+                ManualRouteState.Failed, "navigation_failed");
+            return Decision(false, null, NavigationPathState.Paused, MountState.Disabled, manualSnapshot.Explanation);
+        }
+        if (!vnav.IsReady)
+        {
+            CancelManual("vnavmesh is not ready; no direct-movement fallback is permitted.", ManualRouteState.Failed, "navigation_failed");
+            return Decision(false, null, NavigationPathState.Paused, MountState.Disabled, manualSnapshot.Explanation);
+        }
+
+        if (manualRequest is { } request)
+        {
+            StopOwnedPath(clearDestination: true);
+            activeManual = request;
+            manualRequest = null;
+            manualCandidates = request.ApproachAnchors
+                .Concat([request.ReferencePosition])
+                .Concat(RouteComparison.AlternateAnchors(request.ReferencePosition))
+                .DistinctBy(point => $"{point.X:F1}|{point.Y:F1}|{point.Z:F1}")
+                .ToList();
+            manualCandidateIndex = 0;
+            manualSnapped = null;
+            manualPendingPath = null;
+            manualRoute = [];
+            failedManualRoute = [];
+            manualReplacementAttempt = false;
+            consecutiveFailures = 0;
+            manualLastProgressPosition = local.Position;
+            manualLastProgressUtc = now;
+        }
+
+        if (activeManual is null)
+        {
+            manualSnapshot = BuildManualSnapshot(MovementOwner.None, ManualRouteState.Idle,
+                "Manual navigation is armed and waiting for a destination.", local.Position);
+            return Decision(false, null, NavigationPathState.Idle, MountState.Disabled, manualSnapshot.Explanation);
+        }
+
+        var distance = manualSnapped is { } target
+            ? HorizontalDistance(local.Position, target)
+            : HorizontalDistance(local.Position, activeManual.ReferencePosition);
+        if (manualSnapped is not null && distance <= 3f)
+        {
+            var arrivedRequest = activeManual;
+            if (ownsPath)
+                vnav.Stop();
+            ownsPath = false;
+            activeManual = null;
+            manualPendingPath = null;
+            manualSnapshot = new ManualNavigationSnapshot(
+                manualArmed, MovementOwner.None, ManualRouteState.Arrived,
+                arrivedRequest.DestinationId, arrivedRequest.DestinationName,
+                arrivedRequest.ReferencePosition, manualSnapped, vnav.WaypointCount,
+                Math.Max(0, manualRoute.Count - vnav.WaypointCount), vnav.Waypoints.FirstOrDefault(),
+                distance, 0f, consecutiveFailures, $"ARRIVED within {distance:F1}y of the validated approach point.");
+            Emit("navigation_arrived", $"destination={arrivedRequest.DestinationId}; approach={FormatVector(manualSnapped.Value)}");
+            return Decision(false, manualSnapped, NavigationPathState.Idle, MountState.OnFoot, manualSnapshot.Explanation);
+        }
+
+        if (ownsPath && vnav.IsPathRunning)
+        {
+            if (vnav.WaypointCount != lastReportedManualWaypointCount)
+            {
+                lastReportedManualWaypointCount = vnav.WaypointCount;
+                Emit("navigation_waypoint_changed", $"destination={activeManual.DestinationId}; remaining_waypoints={vnav.WaypointCount}");
+            }
+            var moved = manualLastProgressPosition is null ? 0f : HorizontalDistance(manualLastProgressPosition.Value, local.Position);
+            if (moved >= 1.5f)
+            {
+                manualLastProgressPosition = local.Position;
+                manualLastProgressUtc = now;
+                Emit("navigation_progress", $"destination={activeManual.DestinationId}; remaining={distance:F1}");
+            }
+            else if (now - manualLastProgressUtc >= TimeSpan.FromSeconds(Math.Clamp(config.StuckTimeoutSeconds, 2f, 15f)))
+            {
+                failedManualRoute = manualRoute;
+                consecutiveFailures++;
+                Emit("navigation_stuck", $"destination={activeManual.DestinationId}; remaining={distance:F1}; attempt={consecutiveFailures}");
+                vnav.Stop();
+                ownsPath = false;
+                manualReplacementAttempt = true;
+                manualPendingPath = null;
+                manualLastProgressUtc = now;
+            }
+            else
+            {
+                manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.Following,
+                    $"Following the generated vnavmesh route; {distance:F1}y remain.", local.Position);
+                return Decision(true, manualSnapped, NavigationPathState.FollowingPath, MountState.OnFoot, manualSnapshot.Explanation);
+            }
+        }
+        else if (ownsPath && now - manualPathStartedUtc > TimeSpan.FromSeconds(1.5))
+        {
+            consecutiveFailures++;
+            Emit("navigation_stuck", $"destination={activeManual.DestinationId}; path stopped before arrival; attempt={consecutiveFailures}");
+            failedManualRoute = manualRoute;
+            ownsPath = false;
+            manualReplacementAttempt = true;
+        }
+
+        if (!ManualNavigationPolicy.CanRetry(consecutiveFailures, config.MaximumPathFailures))
+        {
+            CancelManual($"Navigation failed after {consecutiveFailures} bounded recovery attempts.", ManualRouteState.Failed, "navigation_failed");
+            return Decision(false, null, NavigationPathState.Failed, MountState.Disabled, manualSnapshot.Explanation);
+        }
+
+        if (manualPendingPath is not null)
+        {
+            if (now - manualPathRequestedUtc > TimeSpan.FromSeconds(Math.Clamp(config.PathRequestTimeoutSeconds, 2f, 30f)))
+            {
+                consecutiveFailures++;
+                manualPendingPath = null;
+                AdvanceManualCandidate("Path generation timed out.");
+            }
+            else if (manualPendingPath.IsCompleted)
+            {
+                CompleteManualPath(local.Position, now);
+            }
+            if (manualPendingPath is not null)
+            {
+                manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.RequestingPath,
+                    "Waiting for vnavmesh path generation; the player is not being steered directly.", local.Position);
+                return Decision(false, manualSnapped, NavigationPathState.RequestingPath, MountState.OnFoot, manualSnapshot.Explanation);
+            }
+            if (ownsPath)
+                return Decision(true, manualSnapped, NavigationPathState.PathValidated, MountState.OnFoot,
+                    "Validated generated route submitted to vnavmesh.");
+        }
+
+        if (!ownsPath)
+        {
+            if (manualCandidateIndex >= manualCandidates.Count)
+            {
+                CancelManual("No reachable, non-repeating approach route was found.", ManualRouteState.Failed, "navigation_failed");
+                return Decision(false, null, NavigationPathState.Failed, MountState.Disabled, manualSnapshot.Explanation);
+            }
+            var candidate = manualCandidates[manualCandidateIndex];
+            manualSnapped = vnav.FindNearestReachable(candidate, 12f, 8f);
+            if (manualSnapped is null)
+            {
+                AdvanceManualCandidate($"Approach candidate {manualCandidateIndex + 1} had no reachable mesh point.");
+                return UpdateManual(game, battlefield, config);
+            }
+            manualPathRequestedUtc = now;
+            manualPendingPath = vnav.FindPathAsync(local.Position, manualSnapped.Value, 2.5f);
+            manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.RequestingPath,
+                $"Snapped approach to {FormatVector(manualSnapped.Value)} and requested a generated route.", local.Position);
+            return Decision(false, manualSnapped, NavigationPathState.RequestingPath, MountState.OnFoot, manualSnapshot.Explanation);
+        }
+
+        manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.Following,
+            $"Following the generated vnavmesh route; {distance:F1}y remain.", local.Position);
+        return Decision(true, manualSnapped, NavigationPathState.FollowingPath, MountState.OnFoot, manualSnapshot.Explanation);
+    }
+
+    private void CompleteManualPath(Vector3 origin, DateTime now)
+    {
+        var task = manualPendingPath!;
+        manualPendingPath = null;
+        IReadOnlyList<Vector3> route;
+        try { route = task.GetAwaiter().GetResult(); }
+        catch (Exception ex)
+        {
+            consecutiveFailures++;
+            AdvanceManualCandidate($"Path generation faulted: {ex.GetType().Name}.");
+            return;
+        }
+        var validation = PathValidator.Validate(route, origin, manualSnapped!.Value, 2.5f);
+        if (!validation.IsValid)
+        {
+            consecutiveFailures++;
+            AdvanceManualCandidate($"Generated path rejected: {validation.Explanation}");
+            return;
+        }
+        if (manualReplacementAttempt && RouteComparison.MateriallyIdentical(failedManualRoute, route))
+        {
+            Emit("navigation_route_rejected", $"destination={activeManual?.DestinationId}; materially identical opening geometry");
+            manualReplacementAttempt = false;
+            AdvanceManualCandidate("Replacement path repeated the failed opening geometry.");
+            return;
+        }
+        if (!vnav.StartPath(route, 2.5f))
+        {
+            consecutiveFailures++;
+            AdvanceManualCandidate("vnavmesh rejected Path.MoveTo.");
+            return;
+        }
+        manualRoute = route;
+        ownsPath = true;
+        manualPathStartedUtc = now;
+        manualLastProgressUtc = now;
+        manualLastProgressPosition = origin;
+        manualReplacementAttempt = false;
+        lastReportedManualWaypointCount = route.Count;
+        Emit("navigation_path_ready", $"destination={activeManual?.DestinationId}; waypoints={route.Count}");
+    }
+
+    private void AdvanceManualCandidate(string reason)
+    {
+        manualCandidateIndex++;
+        manualSnapped = null;
+        lastReportedManualWaypointCount = -1;
+        manualPendingPath = null;
+        manualReplacementAttempt = false;
+        developmentLog.Changed("manual-nav-candidate", $"{manualCandidateIndex}|{reason}", reason);
+    }
+
+    private void CancelManual(string reason, ManualRouteState state, string eventName)
+    {
+        var id = activeManual?.DestinationId ?? manualRequest?.DestinationId ?? manualSnapshot.DestinationId;
+        if (ownsPath)
+            vnav.Stop();
+        ownsPath = false;
+        manualRequest = null;
+        activeManual = null;
+        manualPendingPath = null;
+        manualCandidates.Clear();
+        manualRoute = [];
+        failedManualRoute = [];
+        manualSnapped = null;
+        manualSnapshot = new ManualNavigationSnapshot(
+            manualArmed, MovementOwner.None, state, id, "None", null, null, 0, 0, null, 0f, 0f,
+            consecutiveFailures, reason);
+        Emit(eventName, $"destination={id}; reason={reason}");
+    }
+
+    private ManualNavigationSnapshot BuildManualSnapshot(
+        MovementOwner owner,
+        ManualRouteState state,
+        string explanation,
+        Vector3? playerPosition)
+    {
+        var request = activeManual ?? manualRequest;
+        var waypoints = vnav.Waypoints;
+        var next = waypoints.Count > 0 ? waypoints[0] : (Vector3?)null;
+        var remaining = playerPosition is not null && manualSnapped is not null
+            ? HorizontalDistance(playerPosition.Value, manualSnapped.Value)
+            : 0f;
+        var progressAge = manualLastProgressUtc == DateTime.MinValue
+            ? 0f
+            : Math.Max(0f, (float)(DateTime.UtcNow - manualLastProgressUtc).TotalSeconds);
+        return new ManualNavigationSnapshot(
+            manualArmed, owner, state,
+            request?.DestinationId ?? manualSnapshot.DestinationId,
+            request?.DestinationName ?? manualSnapshot.DestinationName,
+            request?.ReferencePosition ?? manualSnapshot.ReferencePosition,
+            manualSnapped,
+            waypoints.Count,
+            Math.Max(0, manualRoute.Count - waypoints.Count),
+            next,
+            remaining,
+            progressAge,
+            consecutiveFailures,
+            explanation);
+    }
+
+    private void Emit(string name, string detail)
+    {
+        manualEvents.Enqueue(new ManualNavigationEvent(name, detail, DateTime.UtcNow));
+        developmentLog.Changed($"manual-{name}", detail, $"{name}: {detail}");
     }
 
     private void CompletePathRequest(Vector3 origin, Vector3 destination, DateTime now)
@@ -319,5 +691,6 @@ internal sealed class NavigationController(
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));
 
-    private static string FormatVector(Vector3 value) => $"({value.X:F1}, {value.Y:F1}, {value.Z:F1})";
+    private static string FormatVector(Vector3 value) => string.Create(
+        CultureInfo.InvariantCulture, $"({value.X:F1}, {value.Y:F1}, {value.Z:F1})");
 }

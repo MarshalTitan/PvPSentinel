@@ -42,7 +42,7 @@ internal sealed class ConfigurationWindow : Window
 
     public override void Draw()
     {
-        ImGui.TextWrapped("Development controls. Master, navigation, queue lifecycle, mounting, objective navigation, and combat provider are fail-closed. Match movement/combat requires a recognized Frontline; the out-of-duty lifecycle is limited to Daily Challenge: Frontline.");
+        ImGui.TextWrapped("M2 development controls. Strategic destination selection, objective automation, and queue/requeue are disabled. Manual movement requires the master and navigation switches plus an armed route from Diagnostics.");
         ImGui.Separator();
 
         if (ImGui.Button("EMERGENCY STOP", new Vector2(180, 34)))
@@ -70,7 +70,7 @@ internal sealed class ConfigurationWindow : Window
         DrawCheckbox("Enable strategic target scoring", config.TargetSelectionEnabled, value => config.TargetSelectionEnabled = value);
         DrawCheckbox("Prioritize safe finish-KO opportunities", config.FinishKoPriorityEnabled, value => config.FinishKoPriorityEnabled = value);
         DrawCheckbox("Enable long-distance mounting", config.MountingEnabled, value => config.MountingEnabled = value);
-        DrawCheckbox("Enable validated objective navigation", config.ObjectiveNavigationEnabled, value => config.ObjectiveNavigationEnabled = value);
+        ImGui.TextDisabled("Autonomous strategy/objective navigation: disabled for manual M2 validation");
         ImGui.Unindent();
 
         ImGui.Spacing();
@@ -173,8 +173,8 @@ internal sealed class ConfigurationWindow : Window
         }
 
         Section("Frontline lifecycle and allowed maps");
-        DrawCheckbox("Enable automatic queue / accept / requeue", config.QueueAutomationEnabled, value => config.QueueAutomationEnabled = value);
-        ImGui.TextWrapped("The current campaign must be detected from the game's Daily Challenge details. If detection is uncertain or today's map is unchecked, PvPSentinel will not queue.");
+        ImGui.TextDisabled("Automatic queue / accept / requeue: disabled for manual M2 validation");
+        ImGui.TextWrapped("Allowed-map preferences are retained for later lifecycle work, but this build never queues automatically.");
         DrawCheckbox("The Borderland Ruins (Secure)", config.AllowBorderlandRuins, value => config.AllowBorderlandRuins = value);
         DrawCheckbox("Seal Rock (Seize)", config.AllowSealRock, value => config.AllowSealRock = value);
         DrawCheckbox("The Fields of Glory (Shatter)", config.AllowFieldsOfGlory, value => config.AllowFieldsOfGlory = value);
