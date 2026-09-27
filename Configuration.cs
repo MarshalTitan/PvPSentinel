@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 6;
+    public int Version { get; set; } = 7;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public CombatProvider CombatProvider { get; set; } = CombatProvider.Off;
@@ -59,8 +59,8 @@ public sealed class Configuration : IPluginConfiguration
     public float NativeTargetMaximumRange { get; set; } = 50f;
     public float NativeTargetOverextensionRange { get; set; } = 35f;
     public float NativeTargetMinimumScore { get; set; } = 10f;
-    public float NativeTargetSwitchAdvantage { get; set; } = 18f;
-    public float NativeTargetMinimumCommitmentSeconds { get; set; } = 2.5f;
+    public float NativeTargetSwitchAdvantage { get; set; } = 24f;
+    public float NativeTargetMinimumCommitmentSeconds { get; set; } = 3.5f;
     public float NativeTargetRangeWeight { get; set; } = 28f;
     public float NativeTargetHpPercentWeight { get; set; } = 24f;
     public float NativeTargetAbsoluteHpWeight { get; set; } = 12f;
@@ -78,6 +78,9 @@ public sealed class Configuration : IPluginConfiguration
     public int NativeMarksmanHighHpMinimumFocus { get; set; } = 3;
     public uint NativeMarksmanFocusAllowance { get; set; } = 3000;
     public uint NativeMarksmanMaximumEffectiveHp { get; set; } = 56000;
+    public uint NativeMarksmanOverkillMinimumHp { get; set; } = 10000;
+    public uint NativeMarksmanOverkillFocusHpPerPlayer { get; set; } = 2000;
+    public uint NativeMarksmanOverkillMaximumMinimumHp { get; set; } = 20000;
     public uint NativeWildfireMinimumEffectiveHp { get; set; } = 28000;
     public uint NativeWildfireFocusHpPerPlayer { get; set; } = 2500;
     public int NativeWildfireUncreditedFocus { get; set; } = 1;
@@ -109,7 +112,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 6)
+        if (Version >= 7)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -177,7 +180,21 @@ public sealed class Configuration : IPluginConfiguration
             NativeWildfireMaximumMinimumHp = 45000;
         }
 
-        Version = 6;
+        if (Version < 7)
+        {
+            // The v0.2.0.5 validation pass showed that a barely-positive score
+            // could still produce short-lived target churn, and that a full
+            // limit gauge could be recommended into an already-collapsing,
+            // heavily focused target. Prefer steadier commitment and conserve
+            // Marksman's Spite when normal-range pressure should finish the KO.
+            NativeTargetSwitchAdvantage = 24f;
+            NativeTargetMinimumCommitmentSeconds = 3.5f;
+            NativeMarksmanOverkillMinimumHp = 10000;
+            NativeMarksmanOverkillFocusHpPerPlayer = 2000;
+            NativeMarksmanOverkillMaximumMinimumHp = 20000;
+        }
+
+        Version = 7;
         Save();
     }
 
