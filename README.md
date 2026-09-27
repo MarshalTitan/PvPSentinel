@@ -25,7 +25,7 @@ Implemented in source:
 - one manual M2 vnavmesh owner with arm/disarm, immediate STOP, reachable-point snapping, explicit generated path acquisition, actual waypoint inspection, arrival, cancellation, bounded stuck recovery, failed-opening route comparison, alternate approach anchors, and clean ownership release
 - no direct steering fallback: movement never starts until a vnavmesh route passes validation
 - privacy-sanitized per-match `events.jsonl` plus `summary.json`, with state-diff/rate-limited diagnostics rather than continuous UI dumps
-- optional long-distance Mount Roulette use with combat, casting, nearby-enemy mount-start, arrival, and transition gates
+- optional long-distance preferred-mount use, defaulting to Company Chocobo and populated from the character's unlocked Mount-sheet rows, with combat, casting, nearby-enemy mount-start, arrival, and transition gates and no random fallback
 - combat provider modes:
   - `Off`
   - `External Combat / ACR`
@@ -56,15 +56,15 @@ Implemented in source:
 - the existing queue/lifecycle implementation retained but forcibly disabled during manual M2 validation
 - configurable session match limit and a latched emergency stop
 - detailed battlefield and M2 diagnostics for map/adapter, lifecycle/results, PvP team, relationship counts, clusters, objective state/rank/owner/source/confidence, raw Secure research evidence, combat context, death/respawn, sensor health, mesh readiness/build progress, movement ownership, snapped destination, waypoints, route progress, separate stuck/path-failure counts, and retained summary
-- safe manual-M2 mounting for long routes, with latched mount-transition waits, stable mounted travel until confirmed combat/arrival, route-distance-aware dismounting, preserved generated-route stages, and event diagnostics
+- safe manual-M2 preferred mounting for long routes, with live game-data/unlock validation, latched mount-transition waits, stable mounted travel until confirmed combat/arrival, route-distance-aware dismounting, preserved generated-route stages, and explicit failure diagnostics
 - collapsible Configuration groups plus a Development window organized around an always-visible Testing Controls foldout and separate Frontline/Team, Battlefield/Sensors, Threat, Objectives/Research, M2 Navigation, Combat, and Lifecycle foldouts
 - pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, Secure coordinate aggregation/stability/unresolved-state safety/evidence transitions, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
 
-Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.5. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only from bounded, stationary objective-like evidence. Live-verified moving marker families and the pre-match Trader marker remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
+Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.6. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only from bounded, stationary objective-like evidence. Live-verified moving marker families and the pre-match Trader marker remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
 
 ## Safety model
 
-Configuration version 9 preserves the earlier fail-closed combat migration, keeps Native in `Shadow / Observe`, and forcibly turns off autonomous strategy, objective navigation, and queue/requeue for manual M2 validation. Manual movement still requires explicit master enable, navigation enable, arming, and destination selection. Secure discovery does not change Combat Provider configuration. Selecting Native does not silently activate combat execution.
+Configuration version 10 preserves the earlier fail-closed combat migration, keeps Native in `Shadow / Observe`, forcibly turns off autonomous strategy, objective navigation, and queue/requeue for manual M2 validation, and defaults the preferred Mount-sheet selection to Company Chocobo. Manual movement still requires explicit master enable, navigation enable, arming, and destination selection. Secure discovery does not change Combat Provider configuration. Selecting Native does not silently activate combat execution.
 
 The targeting-me counter is deliberately limited to enemy players currently loaded and classified whose observable hard target is the local player. It cannot detect soft targeting, queued attacks, future intent, or an enemy that has not yet switched its observable target. The HUD shows every such observed hard target; Guard consumes the within-30y subset from that same shared observation so the live-validated defensive tuning is not silently widened.
 
@@ -77,7 +77,7 @@ Manual M2 movement requires:
 5. vnavmesh ready and a reachable snapped approach point; and
 6. a generated path whose start, endpoint, coordinates, and total length pass validation.
 
-PvPSentinel stops only the vnavmesh path it owns. It never falls back to running directly at a group or objective coordinate. Death cancels the destination and requires a fresh manual request. Confirmed enemy-player combat pauses the route, preserves the destination, and generates a fresh path from the post-fight position after the combat provider releases movement. Repeated failures are bounded; materially identical replacement routes are rejected before alternate approach anchors are attempted.
+PvPSentinel stops only the vnavmesh path it owns. It never falls back to running directly at a group or objective coordinate. Death cancels the destination and requires a fresh manual request. Confirmed enemy-player combat pauses the route, preserves the destination, and generates a fresh path from the post-fight position after the combat provider releases movement. Repeated failures are bounded; materially identical replacements and short detours that continuously rejoin a failed corridor are rejected before alternate approach anchors are attempted.
 
 In `External Combat / ACR` mode, PvPSentinel does not set targets or execute combat actions. It has no IPC contract with MMOMinion or Champion. Local combat, casting, or queued-action state stops PvPSentinel-owned navigation; strategic travel resumes after those signals clear and the configured grace period expires.
 
@@ -85,7 +85,7 @@ In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat 
 
 In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
 
-Queue/accept/requeue code remains preserved, but v0.3.0.5 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
+Queue/accept/requeue code remains preserved, but v0.3.0.6 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
 
 The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
 
@@ -142,7 +142,7 @@ Do not begin with movement, combat, objectives, or queue automation enabled.
 - queue automation: off
 - combat provider: `Off`
 
-Inside Frontline, confirm local PvP team is a positive value, SELF remains exactly one, teammates use the same positive team, and opponents use the other positive team values even when their raw friendly flag is true or targetability changes at distance. Do not infer Grand Company names from the numeric values.
+Inside Frontline, confirm local PvP team is one of the live-validated zero-based Battalion values `0-2`, SELF remains exactly one, teammates use the same team value, and opponents use the other values even when their raw friendly flag is true or targetability changes at distance. Do not infer Grand Company names from the numeric values.
 
 On Shatter, confirm all 19 logical rows appear and compare inactive/preactivating/active, ETA, strength, coordinates, and physical confirmations against the map. On Seal Rock, confirm no duplicate logical row oscillates when paired marker records occupy the same coordinate; verify rank and observed GC ownership changes. Unresolved values must remain explicit.
 

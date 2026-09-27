@@ -26,11 +26,11 @@ internal enum SecureMarkerPromotionClass
 /// </summary>
 internal static class SecureObjectiveAggregator
 {
-    // The first Secure field session proved that 60360/60361 are moving/transient
-    // marker families. They produced 3,135 of 3,163 false SEC promotions while
+    // Secure field sessions proved that 60359/60360/60361 are moving/transient
+    // marker families. They produced the overwhelming majority of false SEC promotions while
     // briefly occupying the same half-yard cell. They remain observable research
     // evidence, but are never navigation destinations.
-    private static readonly HashSet<uint> LiveVerifiedTransientIcons = [60360, 60361];
+    private static readonly HashSet<uint> LiveVerifiedTransientIcons = [60359, 60360, 60361];
     private const uint ObservedTransientObjectiveSentinel = 1115742468;
     private const uint LiveVerifiedTraderIcon = 60935;
     private const uint LiveVerifiedTraderObjective = 721735;

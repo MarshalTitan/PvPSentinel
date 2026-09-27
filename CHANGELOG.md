@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0.6 — Preferred mount and field-refined route recovery
+
+- Correlated the first v0.3.0.5 Secure trace with three recordings. Seven manual requests produced three `ARRIVED` results; the trace positively confirmed two preserved destinations resumed with a fresh path after RotationSolverReborn combat ownership cleared. Death and explicit STOP remained terminal.
+- Added a persistent **Preferred Mount** selector populated from the character's currently unlocked mounts through Dalamud's supported unlock service and the current `Mount` game-data sheet. The default is Company Chocobo.
+- Replaced on-foot Mount Roulette summoning with the configured mount's `ActionType.Mount`/Mount-row request. An unresolved, locked, or currently unavailable mount fails visibly with its reason and never falls back to a random mount; the mounted-state general action remains only for normal dismounting.
+- Preserved combat, casting, nearby-enemy, transition-grace, retry, arrival, and combat-dismount safety gates.
+- Demoted live-confirmed moving Secure marker family `60359/0/1115742468` to raw research evidence. It can no longer create false `SEC-xx` buttons even when it overlaps physical-object evidence; verified stationary central-objective evidence remains intact.
+- Strengthened failed-corridor comparison using 3D path geometry and continuous aligned-overlap detection. A replacement such as the observed SEC-12 route, which adds a small opening detour and then rejoins the same failed stair corridor, is rejected before it consumes another movement attempt.
+- Added regression coverage for the newly confirmed transient marker family, the exact SEC-12 rejoin shape, and vertically separated routes.
+- Kept Native MCH in Shadow / Observe by default and autonomous strategy, objective capture, queue/requeue, and provider-independent Limit Break execution disabled.
+
 ## 0.3.0.5 — Live-enemy clearance and Secure field-data cleanup
 
 - Correlated the second Secure v0.3.0.4 field trace with six recordings: automatic mounting and the targeting-me counter operated correctly, two generated routes reached `ARRIVED`, and the central-platform route rejected a bad direct path before recovering through a materially different stair route.

@@ -2,6 +2,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using PvPSentinel.Models;
 using PvPSentinel.Integrations;
+using PvPSentinel.Navigation;
 using System.Numerics;
 
 namespace PvPSentinel.UI;
@@ -16,6 +17,7 @@ internal sealed class ConfigurationWindow : Window
     private readonly Action resetMatchCounter;
     private readonly Func<bool> isEmergencyStopped;
     private readonly Func<RotationSolverRebornStatus> rebornStatus;
+    private readonly PreferredMountCatalog mountCatalog;
 
     public ConfigurationWindow(
         Configuration config,
@@ -25,7 +27,8 @@ internal sealed class ConfigurationWindow : Window
         Action clearEmergencyStop,
         Action resetMatchCounter,
         Func<bool> isEmergencyStopped,
-        Func<RotationSolverRebornStatus> rebornStatus)
+        Func<RotationSolverRebornStatus> rebornStatus,
+        PreferredMountCatalog mountCatalog)
         : base("PvP Sentinel - Configuration###PvPSentinelConfiguration")
     {
         this.config = config;
@@ -36,6 +39,7 @@ internal sealed class ConfigurationWindow : Window
         this.resetMatchCounter = resetMatchCounter;
         this.isEmergencyStopped = isEmergencyStopped;
         this.rebornStatus = rebornStatus;
+        this.mountCatalog = mountCatalog;
         Size = new Vector2(620, 820);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
@@ -116,6 +120,7 @@ internal sealed class ConfigurationWindow : Window
             DrawFloat("Mount distance", config.MountDistance, 30f, 120f, value => config.MountDistance = value, "%.1f y");
             DrawFloat("Dismount distance", config.DismountDistance, 10f, 45f, value => config.DismountDistance = value, "%.1f y");
             DrawFloat("Mount enemy safety radius", config.MountEnemySafetyRadius, 15f, 50f, value => config.MountEnemySafetyRadius = value, "%.1f y");
+            DrawPreferredMount();
         }
 
         if (BeginSection("Targets"))
@@ -232,6 +237,40 @@ internal sealed class ConfigurationWindow : Window
             return;
         setter(value);
         config.Save();
+    }
+
+    private void DrawPreferredMount()
+    {
+        var resolution = mountCatalog.Resolve(config.PreferredMountId, config.PreferredMountName);
+        var label = resolution.IsAvailable
+            ? resolution.Name
+            : $"{config.PreferredMountName} (unavailable)";
+        if (ImGui.BeginCombo("Preferred Mount", label))
+        {
+            foreach (var mount in mountCatalog.GetUnlockedMounts())
+            {
+                var selected = resolution.IsAvailable && resolution.RowId == mount.RowId;
+                if (ImGui.Selectable($"{mount.Name}##mount-{mount.RowId}", selected))
+                {
+                    config.PreferredMountId = mount.RowId;
+                    config.PreferredMountName = mount.Name;
+                    config.Save();
+                }
+                if (selected)
+                    ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+
+        if (resolution.IsAvailable)
+            ImGui.TextDisabled($"Resolved from current game data: {resolution.Name} (Mount row {resolution.RowId}).");
+        else
+            ImGui.TextWrapped(resolution.Explanation);
+        if (!string.IsNullOrEmpty(mountCatalog.LastCatalogError))
+            ImGui.TextWrapped(mountCatalog.LastCatalogError);
+        if (ImGui.SmallButton("Refresh unlocked mounts"))
+            mountCatalog.GetUnlockedMounts(true);
+        ImGui.TextDisabled("No Mount Roulette fallback is used if the preferred mount is unavailable.");
     }
 
     private void DrawCombatProvider()

@@ -4,9 +4,13 @@ using PvPSentinel.Models;
 
 namespace PvPSentinel.Navigation;
 
-internal sealed class NativeMountController(DevelopmentLogger developmentLog) : IMountController
+internal sealed class NativeMountController(
+    PreferredMountCatalog mountCatalog,
+    DevelopmentLogger developmentLog) : IMountController
 {
-    private const uint MountRouletteGeneralAction = 9;
+    // General Action 9 is retained only as the normal mounted-state dismount
+    // toggle. It is never called while on foot and can never select a random mount.
+    private const uint DismountGeneralAction = 9;
     private static readonly TimeSpan MountRequestGrace = TimeSpan.FromSeconds(4);
     private DateTime lastAttemptUtc = DateTime.MinValue;
     private DateTime mountRequestPendingUntilUtc = DateTime.MinValue;
@@ -43,7 +47,7 @@ internal sealed class NativeMountController(DevelopmentLogger developmentLog) : 
                 return new MountDecision(MountState.Mounted, false,
                     "Mounted travel remains stable until arrival or confirmed combat requires a dismount.");
 
-            var accepted = TryToggleMount(game.CapturedAtUtc);
+            var accepted = TryDismount(game.CapturedAtUtc);
             developmentLog.Throttled("mount-dismount", accepted
                 ? "Requested dismount before combat/arrival."
                 : "Dismount request is waiting for the general action to become available.", TimeSpan.FromSeconds(2));
@@ -72,26 +76,54 @@ internal sealed class NativeMountController(DevelopmentLogger developmentLog) : 
             return new MountDecision(MountState.Blocked, true,
                 $"Mount request blocked: combat={game.IsInCombat}, casting={game.IsCasting}, enemies in safety radius={nearbyEnemies}.");
 
-        var mounted = TryToggleMount(game.CapturedAtUtc);
+        var preferred = mountCatalog.Resolve(config.PreferredMountId, config.PreferredMountName);
+        if (!preferred.IsAvailable)
+        {
+            developmentLog.Throttled("preferred-mount-unavailable", preferred.Explanation, TimeSpan.FromSeconds(5));
+            return new MountDecision(MountState.Blocked, false,
+                $"{preferred.Explanation} No Mount Roulette fallback was attempted; travel may continue on foot.");
+        }
+
+        var mounted = TrySummonMount(game.CapturedAtUtc, preferred.RowId, out var actionStatus);
         if (mounted)
             mountRequestPendingUntilUtc = game.CapturedAtUtc + MountRequestGrace;
         developmentLog.Throttled("mount-request", mounted
-            ? "Requested Mount Roulette for long-distance Frontline travel."
-            : "Mount request is waiting for the general action to become available.", TimeSpan.FromSeconds(2));
+            ? $"Requested preferred mount '{preferred.Name}' (Mount row {preferred.RowId}) for long-distance Frontline travel."
+            : $"Preferred mount '{preferred.Name}' is not currently summonable (action status {actionStatus}).", TimeSpan.FromSeconds(2));
         return new MountDecision(mounted ? MountState.MountRequested : MountState.Blocked, true,
-            mounted ? "Mount requested; path movement will wait for the mounted state." : "Unable to mount safely yet.");
+            mounted
+                ? $"Preferred mount '{preferred.Name}' requested; path movement will wait for the mounted state."
+                : $"Preferred mount '{preferred.Name}' is not currently summonable (action status {actionStatus}); no random fallback was attempted.");
     }
 
-    private unsafe bool TryToggleMount(DateTime now)
+    private unsafe bool TryDismount(DateTime now)
     {
         if (now - lastAttemptUtc < TimeSpan.FromSeconds(2))
             return false;
 
         var manager = ActionManager.Instance();
-        if (manager is null || manager->GetActionStatus(ActionType.GeneralAction, MountRouletteGeneralAction) != 0)
+        if (manager is null || manager->GetActionStatus(ActionType.GeneralAction, DismountGeneralAction) != 0)
             return false;
 
         lastAttemptUtc = now;
-        return manager->UseAction(ActionType.GeneralAction, MountRouletteGeneralAction);
+        return manager->UseAction(ActionType.GeneralAction, DismountGeneralAction);
+    }
+
+    private unsafe bool TrySummonMount(DateTime now, uint mountRowId, out uint actionStatus)
+    {
+        actionStatus = uint.MaxValue;
+        if (now - lastAttemptUtc < TimeSpan.FromSeconds(2))
+            return false;
+
+        var manager = ActionManager.Instance();
+        if (manager is null)
+            return false;
+
+        actionStatus = manager->GetActionStatus(ActionType.Mount, mountRowId);
+        if (actionStatus != 0)
+            return false;
+
+        lastAttemptUtc = now;
+        return manager->UseAction(ActionType.Mount, mountRowId);
     }
 }

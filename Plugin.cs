@@ -64,6 +64,7 @@ public sealed class Plugin : IDalamudPlugin
         IObjectTable objectTable,
         IPartyList partyList,
         IDataManager dataManager,
+        IUnlockState unlockState,
         ITargetManager targetManager,
         IGameGui gameGui,
         IDutyState dutyState,
@@ -93,7 +94,8 @@ public sealed class Plugin : IDalamudPlugin
 
         gameState = new GameStateService(clientState, condition, objectTable, partyList, dataManager, log, developmentLog);
         vnav = new VNavmeshAdapter(pi, developmentLog);
-        var mount = new NativeMountController(developmentLog);
+        var mountCatalog = new PreferredMountCatalog(dataManager, unlockState);
+        var mount = new NativeMountController(mountCatalog, developmentLog);
         navigation = new NavigationController(vnav, mount, developmentLog);
         var executor = new NativeActionExecutor(objectTable, targetManager, log);
         IPvpJobCombatModule[] jobModules = [new MachinistCombatModule()];
@@ -117,7 +119,8 @@ public sealed class Plugin : IDalamudPlugin
             ClearEmergencyStop,
             queueLifecycle.ResetMatchCounter,
             () => queueLifecycle.EmergencyStopLatched,
-            () => rotationSolverReborn.GetStatus(DateTime.UtcNow));
+            () => rotationSolverReborn.GetStatus(DateTime.UtcNow),
+            mountCatalog);
         var counterGlyphs = FontAtlasBuildToolkitUtilities.ToGlyphRange("0123456789", false, false);
         targetCounterFont = pi.UiBuilder.FontAtlas.NewDelegateFontHandle(step =>
             step.OnPreBuild(toolkit => toolkit.AddDalamudDefaultFont(128f, counterGlyphs)));

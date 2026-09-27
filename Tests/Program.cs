@@ -325,6 +325,10 @@ var transientSecure = SecureMarker(60360, 0, 1115742468, securePosition, "", 0);
 Check("live-verified moving Secure marker family is raw-only", SecureMarkerPromotionClass.RawObservationOnly,
     SecureObjectiveAggregator.ClassifyPromotionEvidence(
         SecureObjectiveAggregator.Aggregate([transientSecure])[0], false));
+var newlyConfirmedTransientSecure = SecureMarker(60359, 0, 1115742468, securePosition, "", 0);
+Check("second-match moving Secure marker family is raw-only", SecureMarkerPromotionClass.RawObservationOnly,
+    SecureObjectiveAggregator.ClassifyPromotionEvidence(
+        SecureObjectiveAggregator.Aggregate([newlyConfirmedTransientSecure])[0], true));
 var traderSecure = SecureMarker(60935, 0, 721735, securePosition, "Trader", 0);
 Check("live-verified Secure Trader marker remains raw-only", SecureMarkerPromotionClass.RawObservationOnly,
     SecureObjectiveAggregator.ClassifyPromotionEvidence(
@@ -458,6 +462,29 @@ var failedCorridor = RouteComparison.FailureCorridor(stairRoute, new Vector3(7.9
 Check("same stair corridor is rejected during recovery", true,
     RouteComparison.RepeatsFailedCorridor(failedCorridor,
         [new Vector3(7.9f, 0, 0), new Vector3(8, 1.2f, 2), new Vector3(8, 3f, 5), new Vector3(14, 3f, 5)]));
+var secureTwelveFailure = new[]
+{
+    new Vector3(76.8f, -21.1f, 48.4f),
+    new Vector3(77.8f, -19.8f, 46.8f),
+    new Vector3(72.2f, -19.8f, 42.0f),
+    new Vector3(62.8f, -19.8f, 34.5f),
+    new Vector3(60.8f, -19.8f, 32.2f),
+};
+var secureTwelveReplacement = new[]
+{
+    new Vector3(76.6f, -21.1f, 48.6f),
+    new Vector3(78.8f, -20.2f, 50.0f),
+    new Vector3(79.5f, -19.8f, 49.8f),
+    new Vector3(79.5f, -19.8f, 48.8f),
+    new Vector3(77.8f, -19.8f, 46.8f),
+    new Vector3(72.2f, -19.8f, 42.0f),
+    new Vector3(62.8f, -19.8f, 34.5f),
+    new Vector3(60.8f, -19.8f, 32.2f),
+};
+Check("SEC-12 detour that rejoins failed stair corridor is rejected", true,
+    RouteComparison.RepeatsFailedCorridor(secureTwelveFailure, secureTwelveReplacement));
+Check("same horizontal route on another floor is not treated as identical", false,
+    RouteComparison.MateriallyIdentical(routeA, routeA.Select(point => point + new Vector3(0, 8, 0)).ToArray()));
 Check("bounded recovery allows attempt below limit", true, ManualNavigationPolicy.CanRetry(2, 3));
 Check("bounded recovery stops at limit", false, ManualNavigationPolicy.CanRetry(3, 3));
 Check("death owns and cancels navigation", MovementOwner.DeathRecovery,

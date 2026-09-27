@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 9;
+    public int Version { get; set; } = 10;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
@@ -16,6 +16,10 @@ public sealed class Configuration : IPluginConfiguration
     public bool TargetSelectionEnabled { get; set; } = true;
     public bool FinishKoPriorityEnabled { get; set; } = true;
     public bool MountingEnabled { get; set; }
+    // Mount sheet row 1 is Company Chocobo. This is resolved and validated
+    // against the live game-data row before use; it is not an action ID.
+    public uint PreferredMountId { get; set; } = 1;
+    public string PreferredMountName { get; set; } = "Company Chocobo";
     public bool ObjectiveNavigationEnabled { get; set; }
     public bool QueueAutomationEnabled { get; set; }
     public bool ShowDiagnostics { get; set; } = true;
@@ -115,7 +119,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 9)
+        if (Version >= 10)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -215,7 +219,16 @@ public sealed class Configuration : IPluginConfiguration
             QueueAutomationEnabled = false;
         }
 
-        Version = 9;
+        if (Version < 10)
+        {
+            // Mount Roulette was the only summon path before v0.3.0.6. Keep the
+            // default semantic (rather than an action ID) so the live Mount sheet
+            // resolves Company Chocobo in the current client data.
+            PreferredMountId = 1;
+            PreferredMountName = "Company Chocobo";
+        }
+
+        Version = 10;
         Save();
     }
 

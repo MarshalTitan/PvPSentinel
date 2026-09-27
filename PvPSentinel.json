@@ -2,7 +2,7 @@
   "Name": "PvP Sentinel",
   "Author": "MarshalTitan",
   "Punchline": "Frontline strategy, safe navigation, lifecycle, and modular combat providers.",
-  "Description": "Manual M2 beta with live-enemy combat clearance, resumable destinations, stable mounted protected routes, bounded Secure discovery, and modular combat providers.",
+  "Description": "Manual M2 beta with preferred-mount travel, resumable combat-yield navigation, field-refined Secure discovery, and bounded route recovery.",
   "RepoUrl": "https://github.com/MarshalTitan/PvPSentinel",
   "IconUrl": "https://raw.githubusercontent.com/MarshalTitan/PvPSentinel/main/assets/icon_clean.png",
   "Tags": ["pvp", "frontline", "machinist", "navigation", "beta"]
