@@ -41,6 +41,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly VNavmeshAdapter vnav;
     private readonly NavigationController navigation;
     private readonly CombatProviderCoordinator combat;
+    private readonly RotationSolverRebornAdapter rotationSolverReborn;
     private readonly PvPThreatTracker threatTracker;
     private readonly QueueLifecycleController queueLifecycle;
     private readonly WrathAdapter wrath = new();
@@ -88,7 +89,8 @@ public sealed class Plugin : IDalamudPlugin
         var executor = new NativeActionExecutor(objectTable, targetManager, log);
         IPvpJobCombatModule[] jobModules = [new MachinistCombatModule()];
         var nativeCombat = new NativeCombatProvider(dataManager, executor, jobModules, developmentLog, log);
-        combat = new CombatProviderCoordinator(nativeCombat, developmentLog);
+        rotationSolverReborn = new RotationSolverRebornAdapter(pi, dataManager, developmentLog);
+        combat = new CombatProviderCoordinator(nativeCombat, rotationSolverReborn, developmentLog);
         threatTracker = new PvPThreatTracker(developmentLog);
         var queueAdapter = new FrontlineQueueAdapter(gameGui, dataManager, developmentLog);
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
@@ -104,7 +106,8 @@ public sealed class Plugin : IDalamudPlugin
             EmergencyStop,
             ClearEmergencyStop,
             queueLifecycle.ResetMatchCounter,
-            () => queueLifecycle.EmergencyStopLatched);
+            () => queueLifecycle.EmergencyStopLatched,
+            () => rotationSolverReborn.GetStatus(DateTime.UtcNow));
         var counterGlyphs = FontAtlasBuildToolkitUtilities.ToGlyphRange("0123456789", false, false);
         targetCounterFont = pi.UiBuilder.FontAtlas.NewDelegateFontHandle(step =>
             step.OnPreBuild(toolkit => toolkit.AddDalamudDefaultFont(128f, counterGlyphs)));
@@ -129,6 +132,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         navigation.StopOwnedMovement();
+        rotationSolverReborn.Dispose();
         queueLifecycle.Dispose();
         framework.Update -= OnFrameworkUpdate;
         pi.UiBuilder.Draw -= DrawUi;
@@ -234,7 +238,7 @@ public sealed class Plugin : IDalamudPlugin
         config.QueueAutomationEnabled = false;
         config.CombatProvider = CombatProvider.Off;
         config.Save();
-        log.Warning("PvPSentinel emergency stop latched. Owned movement/queue were stopped and every action-capable automation switch was disabled.");
+        log.Warning("PvPSentinel emergency stop latched. PvPSentinel-owned movement, actions, and queue automation were disabled. External combat plugins remain independent and must be stopped through their own controls.");
     }
 
     private void ClearEmergencyStop()

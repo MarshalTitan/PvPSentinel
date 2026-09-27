@@ -47,6 +47,13 @@ internal sealed class NavigationController(
                 "vnavmesh is unavailable; strategic movement is paused.");
         }
 
+        if (combat.Provider == CombatProvider.RotationSolverReborn && !combat.ControllerActive)
+        {
+            StopOwnedPath(clearDestination: false);
+            return Decision(false, committedDestination, NavigationPathState.Paused, MountState.Blocked,
+                $"Strategic movement is fail-closed because RotationSolverReborn is not confirmed active. {combat.Explanation}");
+        }
+
         var nearbyMountThreats = CountNear(game.Enemies, game.LocalPlayer.Position, config.MountEnemySafetyRadius);
         if (combat.YieldNavigation)
         {

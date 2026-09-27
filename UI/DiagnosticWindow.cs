@@ -214,6 +214,19 @@ internal sealed class DiagnosticWindow : Window
                 ImGui.TreePop();
             }
         }
+        if (state.Combat.External is { } external)
+        {
+            KeyValue("External provider", external.ProviderName);
+            KeyValue("External engagement state", external.EngagementState);
+            KeyValue("Installed / loaded / version", $"{YesNo(external.Installed)} / {YesNo(external.Loaded)} / {external.Version}");
+            KeyValue("Status IPC / autorotation active", $"{YesNo(external.IpcAvailable)} / {YesNo(external.AutorotationActive)}");
+            KeyValue("Reborn next action", $"{external.NextAction} ({external.NextActionId})");
+            KeyValue("Reborn next GCD", $"{external.NextGcdAction} ({external.NextGcdActionId})");
+            KeyValue("Enemies in clearance radius", external.NearbyEnemies.ToString());
+            KeyValue("Limit Break ready / unmanaged", YesNo(external.LimitBreakReadyUnmanaged));
+            ImGui.TextWrapped(external.Status);
+            ImGui.TextDisabled("Reborn action events announce decisions only; they do not confirm that an action executed.");
+        }
         KeyValue("Wrath", wrath.Status);
 
         Section("Frontline Lifecycle");

@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 7;
+    public int Version { get; set; } = 8;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public CombatProvider CombatProvider { get; set; } = CombatProvider.Off;
@@ -46,6 +46,8 @@ public sealed class Configuration : IPluginConfiguration
     public float TargetSwitchScoreAdvantage { get; set; } = 15f;
     public float MinimumTargetCommitmentSeconds { get; set; } = 2f;
     public float ExternalCombatYieldSeconds { get; set; } = 2.5f;
+    public float RotationSolverQuietSeconds { get; set; } = 5f;
+    public float RotationSolverEnemyClearanceRadius { get; set; } = 30f;
     public float NativeRecuperateHpPercent { get; set; } = 75f;
     public float NativeGuardHpPercent { get; set; } = 35f;
     public float NativeGuardMaximumHpPercent { get; set; } = 65f;
@@ -112,7 +114,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 7)
+        if (Version >= 8)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -194,7 +196,16 @@ public sealed class Configuration : IPluginConfiguration
             NativeMarksmanOverkillMaximumMinimumHp = 20000;
         }
 
-        Version = 7;
+        if (Version < 8)
+        {
+            // RotationSolverReborn remains an explicit provider selection. These
+            // values only govern when Sentinel resumes strategic travel after an
+            // observed engagement; they do not activate Reborn or Native combat.
+            RotationSolverQuietSeconds = 5f;
+            RotationSolverEnemyClearanceRadius = 30f;
+        }
+
+        Version = 8;
         Save();
     }
 

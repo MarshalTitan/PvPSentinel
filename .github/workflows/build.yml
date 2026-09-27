@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Native MCH Shadow safety refinement from the latest correlated Frontline trace: hard-rejects severe-overextension targets even when positive combat bonuses would clear the numeric floor; conserves Marksman's Spite on collapsing normal-range targets under allied focus; and strengthens target commitment/switch hysteresis. The validated Shadow cooldown ledger, Wildfire survival floor, defensive preemption, threat-aware Guard, Purify coverage, borderless Target Counter, External ACR mode, navigation, lifecycle logic, and Shadow default are preserved. The reported LB at 16:58 match time was manual and excluded from Champion behavior analysis."
+            --notes "Adds the optional RotationSolverReborn external PvP combat provider. PvPSentinel detects Reborn installation/version/autorotation through read-only public interfaces, reports announced next actions, keeps Reborn responsible for all local targeting/actions/defensives, and uses a tested engagement latch to pause owned navigation until combat and nearby enemies clear. Navigation fails closed when Reborn is unavailable, death releases the latch for regrouping, mounted travel is not mistaken for combat, and MCH displays a manual Marksman's Spite warning. Generic External ACR and Native MCH Shadow/Active architecture remain available; Native Shadow remains the default."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

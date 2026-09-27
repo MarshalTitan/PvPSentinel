@@ -9,6 +9,9 @@ using PvPSentinel.Navigation;
 
 var failures = new List<string>();
 
+Check("existing Native provider configuration value is preserved", 2, (int)CombatProvider.NativePvPSentinel);
+Check("Reborn provider uses a new configuration value", 3, (int)CombatProvider.RotationSolverReborn);
+
 Check("local is friendly", PlayerClassification.Friendly,
     FrontlinePlayerResolver.Classify(true, true, true, false, false, false, true));
 Check("roster membership wins contradictory hostile flag", PlayerClassification.Friendly,
@@ -74,6 +77,33 @@ Check("queued action starts external yield", true,
 yieldTracker.Reset();
 Check("reset clears external yield", false,
     yieldTracker.Update(yieldStart.AddSeconds(4.1), false, false, false, 2.5f).ShouldYield);
+
+var rebornEngagement = new RotationSolverEngagementTracker();
+var rebornStart = new DateTime(2026, 9, 27, 1, 0, 0, DateTimeKind.Utc);
+Check("inactive Reborn does not claim combat ownership", ExternalEngagementState.Unavailable,
+    rebornEngagement.Update(rebornStart, false, false, false, false, true, false, false, 3, false, 5f).State);
+Check("active Reborn begins in transit", ExternalEngagementState.Transit,
+    rebornEngagement.Update(rebornStart, true, false, false, false, false, false, false, 0, false, 5f).State);
+Check("mount cast does not latch a combat engagement", false,
+    rebornEngagement.Update(rebornStart.AddSeconds(1), true, false, false, true, false, true, true, 0, false, 5f).ShouldYield);
+Check("combat latches the Reborn engagement", true,
+    rebornEngagement.Update(rebornStart.AddSeconds(2), true, false, false, false, true, false, false, 4, false, 5f).ShouldYield);
+Check("nearby enemies hold engagement after combat flag clears", true,
+    rebornEngagement.Update(rebornStart.AddSeconds(3), true, false, false, false, false, false, false, 2, false, 5f).ShouldYield);
+Check("clear battlefield starts quiet period", true,
+    rebornEngagement.Update(rebornStart.AddSeconds(4), true, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
+Check("quiet period continues before configured boundary", true,
+    rebornEngagement.Update(rebornStart.AddSeconds(8.9), true, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
+var rebornCleared = rebornEngagement.Update(
+    rebornStart.AddSeconds(9), true, false, false, false, false, false, false, 0, false, 5f);
+Check("strategic travel resumes after clear quiet period", false, rebornCleared.ShouldYield);
+Check("cleared engagement returns to transit", ExternalEngagementState.Transit, rebornCleared.State);
+Check("death releases navigation yield", false,
+    rebornEngagement.Update(rebornStart.AddSeconds(10), true, true, false, false, true, false, false, 5, false, 5f).ShouldYield);
+Check("death is reported distinctly", ExternalEngagementState.Dead,
+    rebornEngagement.Update(rebornStart.AddSeconds(10.1), true, true, false, false, false, false, false, 0, false, 5f).State);
+Check("respawn enters regroup state without combat yield", ExternalEngagementState.Regrouping,
+    rebornEngagement.Update(rebornStart.AddSeconds(11), true, false, false, false, false, false, false, 0, true, 5f).State);
 
 Check("Recuperate eligible below 75%", true,
     NativeCombatPolicy.RecuperateEligible(74.9f, 75f, 2000));
@@ -189,7 +219,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("PvPSentinel logic tests passed (classification, maps, paths, external yield, native combat, and shared threat policies). ");
+Console.WriteLine("PvPSentinel logic tests passed (provider compatibility, classification, maps, paths, external/Reborn engagement, native combat, and shared threat policies).");
 return 0;
 
 void Check<T>(string name, T expected, T actual) where T : notnull

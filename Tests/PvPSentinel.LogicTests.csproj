@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../Combat/ExternalCombatYieldTracker.cs" Link="Combat/ExternalCombatYieldTracker.cs" />
+    <Compile Include="../Combat/RotationSolverEngagementTracker.cs" Link="Combat/RotationSolverEngagementTracker.cs" />
     <Compile Include="../Combat/Native/NativeCombatPolicy.cs" Link="Combat/Native/NativeCombatPolicy.cs" />
     <Compile Include="../Combat/Native/NativeShadowActionLedger.cs" Link="Combat/Native/NativeShadowActionLedger.cs" />
     <Compile Include="../Combat/Native/Defense/PvPCommonActions.cs" Link="Combat/Native/Defense/PvPCommonActions.cs" />
@@ -14,6 +15,7 @@
     <Compile Include="../Combat/Threat/PvPThreatPolicy.cs" Link="Combat/Threat/PvPThreatPolicy.cs" />
     <Compile Include="../GameState/FrontlinePlayerResolver.cs" Link="GameState/FrontlinePlayerResolver.cs" />
     <Compile Include="../Models/FrontlineMap.cs" Link="Models/FrontlineMap.cs" />
+    <Compile Include="../Models/CombatProvider.cs" Link="Models/CombatProvider.cs" />
     <Compile Include="../Models/PlayerClassification.cs" Link="Models/PlayerClassification.cs" />
     <Compile Include="../Navigation/PathValidator.cs" Link="Navigation/PathValidator.cs" />
   </ItemGroup>

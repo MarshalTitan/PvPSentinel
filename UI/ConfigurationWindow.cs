@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using PvPSentinel.Models;
+using PvPSentinel.Integrations;
 using System.Numerics;
 
 namespace PvPSentinel.UI;
@@ -14,6 +15,7 @@ internal sealed class ConfigurationWindow : Window
     private readonly Action clearEmergencyStop;
     private readonly Action resetMatchCounter;
     private readonly Func<bool> isEmergencyStopped;
+    private readonly Func<RotationSolverRebornStatus> rebornStatus;
 
     public ConfigurationWindow(
         Configuration config,
@@ -22,7 +24,8 @@ internal sealed class ConfigurationWindow : Window
         Action emergencyStop,
         Action clearEmergencyStop,
         Action resetMatchCounter,
-        Func<bool> isEmergencyStopped)
+        Func<bool> isEmergencyStopped,
+        Func<RotationSolverRebornStatus> rebornStatus)
         : base("PvP Sentinel - Configuration###PvPSentinelConfiguration")
     {
         this.config = config;
@@ -32,6 +35,7 @@ internal sealed class ConfigurationWindow : Window
         this.clearEmergencyStop = clearEmergencyStop;
         this.resetMatchCounter = resetMatchCounter;
         this.isEmergencyStopped = isEmergencyStopped;
+        this.rebornStatus = rebornStatus;
         Size = new Vector2(620, 820);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
@@ -52,7 +56,7 @@ internal sealed class ConfigurationWindow : Window
         }
         else
         {
-            ImGui.TextDisabled("Stops owned movement/queue and disables every action-capable switch.");
+            ImGui.TextDisabled("Stops PvPSentinel-owned movement/actions/queue. External plugins remain independent.");
         }
 
         ImGui.Separator();
@@ -111,7 +115,12 @@ internal sealed class ConfigurationWindow : Window
         DrawFloat("Finish target max chase", config.FinishTargetMaxChaseDistance, 10f, 40f, value => config.FinishTargetMaxChaseDistance = value, "%.1f y");
         DrawFloat("Target switch score advantage", config.TargetSwitchScoreAdvantage, 0f, 40f, value => config.TargetSwitchScoreAdvantage = value, "%.0f");
         DrawFloat("Minimum target commitment", config.MinimumTargetCommitmentSeconds, 0f, 8f, value => config.MinimumTargetCommitmentSeconds = value, "%.1f s");
-        DrawFloat("External ACR yield grace", config.ExternalCombatYieldSeconds, 0.5f, 10f, value => config.ExternalCombatYieldSeconds = value, "%.1f s");
+        DrawFloat("Generic External ACR yield grace", config.ExternalCombatYieldSeconds, 0.5f, 10f, value => config.ExternalCombatYieldSeconds = value, "%.1f s");
+        if (config.CombatProvider == CombatProvider.RotationSolverReborn)
+        {
+            DrawFloat("Reborn post-combat quiet period", config.RotationSolverQuietSeconds, 1f, 15f, value => config.RotationSolverQuietSeconds = value, "%.1f s");
+            DrawFloat("Reborn enemy-clearance radius", config.RotationSolverEnemyClearanceRadius, 10f, 60f, value => config.RotationSolverEnemyClearanceRadius = value, "%.1f y");
+        }
 
         Section("Native PvP combat (experimental)");
         ImGui.TextWrapped("Shadow / Observe is the safe default: the native combat subsystem evaluates and logs targets/actions but cannot target, act, or move. Active permits verified native actions; strategic navigation remains a separate controller.");
@@ -214,6 +223,7 @@ internal sealed class ConfigurationWindow : Window
         var label = config.CombatProvider switch
         {
             CombatProvider.ExternalAcr => "External Combat / ACR",
+            CombatProvider.RotationSolverReborn => "RotationSolverReborn (External)",
             CombatProvider.NativePvPSentinel => "Native PvPSentinel (experimental)",
             _ => "Off",
         };
@@ -222,11 +232,28 @@ internal sealed class ConfigurationWindow : Window
         {
             SelectProvider(CombatProvider.Off, "Off");
             SelectProvider(CombatProvider.ExternalAcr, "External Combat / ACR");
+            SelectProvider(CombatProvider.RotationSolverReborn, "RotationSolverReborn (External)");
             SelectProvider(CombatProvider.NativePvPSentinel, "Native PvPSentinel (experimental)");
             ImGui.EndCombo();
         }
 
-        ImGui.TextWrapped("External mode has no MMOMinion or Champion IPC. It only yields PvPSentinel-owned movement from local combat/action state.");
+        if (config.CombatProvider == CombatProvider.RotationSolverReborn)
+        {
+            var status = rebornStatus();
+            var color = status.Loaded && status.IpcAvailable && status.AutorotationActive
+                ? new Vector4(0.35f, 0.9f, 0.55f, 1f)
+                : new Vector4(1f, 0.55f, 0.25f, 1f);
+            ImGui.TextColored(color,
+                $"Reborn: installed {YesNo(status.Installed)}, loaded {YesNo(status.Loaded)}, active {YesNo(status.AutorotationActive)}, version {status.Version}");
+            ImGui.TextWrapped("Reborn owns local targeting, combat actions, and ordinary PvP defensives. PvPSentinel observes Reborn's read-only status and yields strategic travel for an entire engagement. Reborn's PvP-blocked control IPC is never invoked.");
+            ImGui.TextWrapped("Recommended Reborn setup: auto-enable at PvP start ON; auto-disable at match end ON; auto-disable when dead OFF; auto-disable after combat OFF; stop actions while Guarding ON; cancel casts when the target Guards ON; position lock OFF; Purify Heavy/Bind ON.");
+            if (config.NativeCombatMode == NativeCombatMode.Active)
+                ImGui.TextDisabled("Native Active is configured but dormant while the Reborn provider is selected. PvPSentinel never runs both combat owners together.");
+        }
+        else
+        {
+            ImGui.TextWrapped("Generic External mode has no MMOMinion or Champion IPC. It only yields PvPSentinel-owned movement from local combat/action state.");
+        }
     }
 
     private void SelectProvider(CombatProvider provider, string label)
@@ -272,4 +299,6 @@ internal sealed class ConfigurationWindow : Window
         ImGui.Separator();
         ImGui.Text(title);
     }
+
+    private static string YesNo(bool value) => value ? "yes" : "no";
 }

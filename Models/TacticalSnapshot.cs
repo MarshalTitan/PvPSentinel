@@ -68,7 +68,24 @@ internal sealed record CombatDecision(
     uint ActionId,
     string DesiredAction,
     string Explanation,
-    NativeCombatDiagnostics? Native = null);
+    NativeCombatDiagnostics? Native = null,
+    ExternalCombatDiagnostics? External = null);
+
+internal sealed record ExternalCombatDiagnostics(
+    string ProviderName,
+    string EngagementState,
+    bool Installed,
+    bool Loaded,
+    string Version,
+    bool IpcAvailable,
+    bool AutorotationActive,
+    uint NextActionId,
+    string NextAction,
+    uint NextGcdActionId,
+    string NextGcdAction,
+    int NearbyEnemies,
+    bool LimitBreakReadyUnmanaged,
+    string Status);
 
 internal sealed record NativeCombatDiagnostics(
     NativeCombatMode Mode,

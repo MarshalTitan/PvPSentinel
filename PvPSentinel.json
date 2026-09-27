@@ -1,8 +1,8 @@
 {
   "Name": "PvP Sentinel",
   "Author": "MarshalTitan",
-  "Punchline": "Frontline strategy, safe navigation, lifecycle, and native MCH observer.",
-  "Description": "Active beta for Frontline classification, friendly-force strategy, validated vnavmesh paths, mounting, objective research, queue lifecycle management, modular combat providers, and Native MCH Shadow diagnostics.",
+  "Punchline": "Frontline strategy, safe navigation, lifecycle, and modular combat providers.",
+  "Description": "Active beta for Frontline classification, friendly-force strategy, validated vnavmesh paths, mounting, objective research, queue lifecycle management, RotationSolverReborn external combat coordination, and Native MCH Shadow diagnostics.",
   "RepoUrl": "https://github.com/MarshalTitan/PvPSentinel",
   "IconUrl": "https://raw.githubusercontent.com/MarshalTitan/PvPSentinel/main/assets/icon_clean.png",
   "Tags": ["pvp", "frontline", "machinist", "navigation", "beta"]

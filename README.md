@@ -1,8 +1,8 @@
 # PvPSentinel
 
-PvPSentinel is an experimental Dalamud plugin for Frontline strategy, safe navigation, match lifecycle management, and modular native PvP combat. PvPSentinel can remain the strategic brain and navigation owner while an independent external combat system handles job actions, or run its first native Machinist module in a read-only observer mode.
+PvPSentinel is an experimental Dalamud plugin for Frontline strategy, safe navigation, match lifecycle management, and modular PvP combat providers. PvPSentinel can remain the strategic brain and navigation owner while RotationSolverReborn or another independent external combat system handles job actions, or run its first native Machinist module in a read-only observer mode.
 
-MMOMinion, AnyoneCore, Anyone's Champion, ChampionMachinist, TensorCore, and TensorReactions are not dependencies. The native implementation uses public Dalamud/game state and locally verified action data only.
+RotationSolverReborn, MMOMinion, AnyoneCore, Anyone's Champion, ChampionMachinist, TensorCore, and TensorReactions are not required dependencies. The optional Reborn provider uses only installation metadata and read-only public IPC; the native implementation uses public Dalamud/game state and locally verified action data only.
 
 ## Current development milestone
 
@@ -24,6 +24,7 @@ Implemented in source:
 - combat provider modes:
   - `Off`
   - `External Combat / ACR`
+  - `RotationSolverReborn (External)`
   - `Native PvPSentinel (experimental)`
 - native development modes:
   - `Shadow / Observe` (default): evaluates and logs, but the combat subsystem cannot change target, use an action, or move
@@ -40,19 +41,23 @@ Implemented in source:
 - independent MCH policy for Analysis/tool preservation, Wildfire target memory, Full Metal continuation and focus-aware anti-overkill initiation, conservative contextual Marksman's Spite confidence, Dervish, proactive Bishop Autoturret, and normal pressure
 - a Shadow action ledger that applies hypothetical animation locks, cooldown recovery, and limit-gauge spending without ever changing target, issuing an action, or moving the player
 - structured native diagnostics including `WOULD TARGET`, `WOULD TARGET: NONE`, `WOULD USE`, competing/rejected scores, defensive preemption, dynamic Guard factors, Purify and LB rejection reasons, action-layer resolution, HP/MP, allied focus, tools, Wildfire, Overheated, and limit gauge
-- external-combat coordination based only on local combat, casting, and queued-action state, with a configurable resume grace period
+- generic external-combat coordination based only on local combat, casting, and queued-action state, with a configurable resume grace period
+- optional RotationSolverReborn detection and read-only status/action-event diagnostics without invoking Reborn's PvP-blocked state-changing IPC
+- a stable Reborn engagement latch that yields owned navigation until combat ends, nearby enemies clear, and a configurable quiet period expires; death releases the latch for respawn/regroup
+- fail-closed navigation when the Reborn provider is selected but the plugin, status IPC, or autorotation is unavailable
+- an explicit MCH limit-gauge warning because Reborn's current MCH PvP rotation does not automate Marksman's Spite
 - Daily Challenge: Frontline inspection through the game's Duty Finder, including localized game-data names
 - per-map queue allow-list semantics: an unchecked active campaign means “do not queue today”
 - automatic PvPSentinel-owned queue submission, owned duty acceptance, match observation, completion counting, and requeue
 - configurable session match limit and a latched emergency stop
 - detailed diagnostics for classification, map, objectives, group choice, path state, mounting, combat yield, and queue lifecycle
-- pure logic tests for classification priority, all five map identifiers, generated-path rejection rules, external-combat yield timing, Recuperate boundary/MP rules, Purify effect coverage, defensive preemption, target-score acceptance, target-switch hysteresis, dynamic Guard escalation/capping, conservative contextual Marksman's Spite confidence, Wildfire survival floors, and Shadow cooldown/gauge accounting
+- pure logic tests for classification priority, all five map identifiers, generated-path rejection rules, generic external yield timing, Reborn engagement/death/respawn transitions, Recuperate boundary/MP rules, Purify effect coverage, defensive preemption, target-score acceptance, target-switch hysteresis, dynamic Guard escalation/capping, conservative contextual Marksman's Spite confidence, Wildfire survival floors, and Shadow cooldown/gauge accounting
 
 Objective navigation and queue automation are deliberately separate opt-ins. Objective observations remain visible while objective navigation is off, allowing live object IDs and states to be validated before they steer movement. Secure and Triumph passive capture objects currently remain research-only unless the client exposes positive active-state evidence.
 
 ## Safety model
 
-Configuration version 6 preserves the earlier fail-closed automation migration, keeps new Native installations in `Shadow / Observe`, retains the safer target, Guard, and Marksman's Spite defaults, preserves observation-only target-counter preferences, and adds conservative Wildfire survival-floor defaults. Master enable, navigation, mounting, objective navigation, queue automation, and the combat provider all require explicit selection. Selecting Native does not silently activate combat execution.
+Configuration version 8 preserves the earlier fail-closed automation migration, keeps new Native installations in `Shadow / Observe`, retains the safer target, Guard, Marksman's Spite and Wildfire defaults, and adds Reborn quiet-period/clearance defaults without selecting or activating the provider. Master enable, navigation, mounting, objective navigation, queue automation, and the combat provider all require explicit selection. Selecting Native does not silently activate combat execution.
 
 The targeting-me counter is deliberately limited to enemy players currently loaded and classified whose observable hard target is the local player. It cannot detect soft targeting, queued attacks, future intent, or an enemy that has not yet switched its observable target. The HUD shows every such observed hard target; Guard consumes the within-30y subset from that same shared observation so the live-validated defensive tuning is not silently widened.
 
@@ -69,11 +74,13 @@ PvPSentinel stops only the vnavmesh path it owns. It never falls back to running
 
 In `External Combat / ACR` mode, PvPSentinel does not set targets or execute combat actions. It has no IPC contract with MMOMinion or Champion. Local combat, casting, or queued-action state stops PvPSentinel-owned navigation; strategic travel resumes after those signals clear and the configured grace period expires.
 
+In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat targeting, actions, cooldowns, and ordinary PvP defensives. PvPSentinel reads installation/autorotation status and announced next-action events but never calls Reborn's PvP-blocked control endpoints. Once local combat starts, PvPSentinel stops its owned path until the combat flag clears, no classified enemy remains within the clearance radius, and the quiet period expires. The provider releases its navigation yield on death for normal respawn/regrouping. Strategic navigation is fail-closed if Reborn cannot be confirmed active.
+
 In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
 
 Queue automation accepts only a queue session submitted by the current PvPSentinel process. A pre-existing or unrelated Duty Ready prompt is reported but not accepted. If the daily campaign cannot be identified as exactly one allowed map, no queue action is taken.
 
-The emergency stop immediately stops owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every action-capable switch, and sets the combat provider to `Off`. Clearing the latch does not re-enable any switch.
+The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
 
 ## Architecture
 
@@ -84,8 +91,9 @@ PvPSentinel
 ├── Strategy        shared tactics and per-map objective research policies
 ├── Behavior        high-level state and safety decisions
 ├── Navigation      mount control, generated path validation, stuck/repath logic
-├── Combat          Off/external/native provider coordination
+├── Combat          Off/generic external/Reborn/native provider coordination
 │   ├── Threat      shared hard-target/density tracking for defense and HUD
+│   ├── Reborn      read-only presence/status/action IPC and engagement latch
 │   └── Native      target evaluation, common defense, action executor, job modules
 │       └── Jobs
 │           └── Machinist  state, Analysis, burst, execute, utility, pressure
@@ -138,13 +146,16 @@ Also capture the objective-research rows for the active map: name, base ID, obje
 
 Verify every move passes through `RequestingPath` and `PathValidated`/`FollowingPath`. Confirm blocked terrain produces repath/backoff or a failure pause, never direct travel toward the coordinate. Test death, respawn regrouping, long-distance mounting, close-range dismounting, and the emergency stop.
 
-### Stage C — external combat coordination
+### Stage C — RotationSolverReborn external combat coordination
 
 - master: on
 - navigation: on
-- combat provider: `External Combat / ACR`
+- combat provider: `RotationSolverReborn (External)`
+- Reborn auto-enable at PvP start: on
+- Reborn auto-disable when dead/after combat: off
+- Reborn auto-disable at match end: on
 
-Verify PvPSentinel stops its owned path while the local player is in combat, casting, or has a queued action, then generates/resumes strategic travel after the grace period. External targeting and actions should remain entirely independent.
+Verify installed/loaded/version/autorotation diagnostics, mounted transit, first engagement, persistent combat ownership, death/respawn regrouping, and match-end deactivation. Reborn must own every local target and combat action. PvPSentinel must hold navigation throughout combat and while classified enemies remain inside the clearance radius, then mount/regroup only after the quiet period. Marksman's Spite remains manual in this first provider build.
 
 ### Stage D — daily campaign and lifecycle
 
