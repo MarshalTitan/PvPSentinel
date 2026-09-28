@@ -334,6 +334,18 @@ var traderSecure = SecureMarker(60935, 0, 721735, securePosition, "Trader", 0);
 Check("live-verified Secure Trader marker remains raw-only", SecureMarkerPromotionClass.RawObservationOnly,
     SecureObjectiveAggregator.ClassifyPromotionEvidence(
         SecureObjectiveAggregator.Aggregate([traderSecure])[0], false));
+foreach (var nonObjective in new[]
+         {
+             SecureMarker(63922, 0, 721462, securePosition, "", 0),
+             SecureMarker(71121, 0, 721223, securePosition, "Player marker", 0),
+             SecureMarker(71041, 0, 393222, securePosition, "Levemete", 0),
+         })
+{
+    Check("newly field-verified pre-match Secure family remains raw-only",
+        SecureMarkerPromotionClass.RawObservationOnly,
+        SecureObjectiveAggregator.ClassifyPromotionEvidence(
+            SecureObjectiveAggregator.Aggregate([nonObjective])[0], false));
+}
 var objectivePresent = SecureObjectiveAggregator.Aggregate(
     [SecureMarker(60575, 0, 486, securePosition, "South", 0)])[0];
 var objectiveFlicker = SecureObjectiveAggregator.Aggregate(
@@ -376,6 +388,17 @@ var securePhysicalChanges = secureAdapter.Update(
 Check("Secure physical research object is retained", 1, secureAdapter.ResearchObjects.Count);
 Check("Secure physical appearance is evented", true,
     securePhysicalChanges.Any(change => change.EventName == "secure_research_object_appeared"));
+
+var centerAdapter = new SecureAdapter();
+centerAdapter.Reset(trackingNow);
+var centerMarker = new[]
+{
+    SecureMarker(63980, 0, 486, new Vector3(0.015f, 28.977f, -0.015f), "System", 0),
+};
+for (var scan = 0; scan < 8; scan++)
+    centerAdapter.Update(trackingNow.AddMilliseconds(scan * 300), centerMarker, [], []);
+Check("Secure geometric center has a stable cross-match identity", "SEC-CENTER",
+    centerAdapter.Objectives.Single().LogicalId);
 
 var transientAdapter = new SecureAdapter();
 transientAdapter.Reset(trackingNow);

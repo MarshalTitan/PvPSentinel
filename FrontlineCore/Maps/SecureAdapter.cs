@@ -18,6 +18,8 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
     private static readonly TimeSpan RawFamilyReportInterval = TimeSpan.FromSeconds(30);
     private const int MaximumTrackedPromotionCandidates = 128;
     private const int MaximumResearchObjects = 256;
+    private const string StableCenterLogicalId = "SEC-CENTER";
+    private static readonly Vector3 StableCenterPosition = new(0f, 29f, 0f);
     private readonly Dictionary<string, MarkerCandidate> markerCandidates = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RawMarkerFamily> rawMarkerFamilies = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> logicalIdByPosition = new(StringComparer.Ordinal);
@@ -36,6 +38,7 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
     public override IReadOnlyList<string> ResearchNotes =>
     [
         "Secure objective names, types, ownership, active state, and tactical meaning remain UNRESOLVED.",
+        "SEC-CENTER is the field-confirmed geometric center marker. Other SEC-xx identifiers are session-scoped discovery labels; use their displayed coordinates when comparing matches.",
         $"Promotion tiers: objective signal {SecureObjectiveAggregator.ObjectiveSignalStableScans} scans/{SecureObjectiveAggregator.ObjectiveSignalStableAge.TotalSeconds:F0}s; durable unknown {SecureObjectiveAggregator.DurableEvidenceStableScans} scans/{SecureObjectiveAggregator.DurableEvidenceStableAge.TotalSeconds:F0}s; physical corroboration {SecureObjectiveAggregator.PhysicalEvidenceStableScans} scans/{SecureObjectiveAggregator.PhysicalEvidenceStableAge.TotalSeconds:F0}s.",
         $"Observed {markerCandidates.Count} promotion candidate(s) and {rawMarkerFamilies.Count} raw-only family/families; promoted {Records.Count}/{SecureObjectiveAggregator.MaximumPromotedLocations} bounded SEC location(s); retained {researchObjects.Count}/{MaximumResearchObjects} physical research object(s), dropped {droppedResearchObjects} after the bound.",
         RawFamilySummary(),
@@ -173,9 +176,16 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     candidate.ScanCount,
                     candidate.PromotionClass))
             {
-                logicalId = $"SEC-{nextLocationIndex:00}";
+                var isStableCenter = IsStableCenter(candidate.Position);
+                logicalId = isStableCenter
+                    ? StableCenterLogicalId
+                    : NextSessionLogicalId();
                 logicalIdByPosition[candidate.PositionKey] = logicalId;
-                Records[logicalId] = new MutableObjective(logicalId, "UNRESOLVED", "UNRESOLVED", nextLocationIndex)
+                Records[logicalId] = new MutableObjective(
+                    logicalId,
+                    isStableCenter ? "Geometric center (field-confirmed coordinate)" : "UNRESOLVED",
+                    "UNRESOLVED",
+                    isStableCenter ? 0 : nextLocationIndex - 1)
                 {
                     ReferencePosition = candidate.Position,
                     State = ObjectiveLifecycle.Unknown,
@@ -189,7 +199,6 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     LastSeenUtc = now,
                     Evidence = candidate.EvidenceSummary,
                 };
-                nextLocationIndex++;
                 changes.Add(new ObjectiveChange(
                     "secure_location_discovered",
                     logicalId,
@@ -241,6 +250,22 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                      .ToArray())
             markerCandidates.Remove(staleKey);
     }
+
+    private string NextSessionLogicalId()
+    {
+        string logicalId;
+        do
+        {
+            logicalId = $"SEC-{nextLocationIndex:00}";
+            nextLocationIndex++;
+        }
+        while (Records.ContainsKey(logicalId));
+        return logicalId;
+    }
+
+    private static bool IsStableCenter(Vector3 position) =>
+        HorizontalDistance(position, StableCenterPosition) <= 2f &&
+        Math.Abs(position.Y - StableCenterPosition.Y) <= 2f;
 
     private void ObserveRawFamily(
         DateTime now,
