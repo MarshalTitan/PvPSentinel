@@ -465,7 +465,8 @@ internal sealed class NavigationController(
                 manualSnapshot.Explanation);
         }
 
-        if (manualSnapped is not null && arrivalDistance <= 3f)
+        if (manualSnapped is not null && ManualNavigationPolicy.HasReachedGeneratedPoint(
+                local.Position, manualSnapped.Value, 3f, 3f, game.IsMounted))
         {
             if (manualRecoveryPhase == ManualRecoveryPhase.DepartureStage)
             {
@@ -516,7 +517,7 @@ internal sealed class NavigationController(
 
         if (ownsPath && manualPlan is not null && manualStageEnd > manualRouteCursor &&
             StageReached(local.Position, manualPlan.Waypoints[manualStageEnd].Position,
-                manualPlan.Waypoints[manualStageEnd].Protected))
+                manualPlan.Waypoints[manualStageEnd].Protected, game.IsMounted))
         {
             vnav.Stop();
             ownsPath = false;
@@ -1119,12 +1120,16 @@ internal sealed class NavigationController(
         ? manualPlan.Waypoints[index].Position
         : null;
 
-    private static bool StageReached(Vector3 player, Vector3 target, bool protectedWaypoint)
+    private static bool StageReached(
+        Vector3 player,
+        Vector3 target,
+        bool protectedWaypoint,
+        bool isMounted)
     {
         var horizontalTolerance = protectedWaypoint ? 0.9f : 1.5f;
         var verticalTolerance = protectedWaypoint ? 1.25f : 2f;
-        return HorizontalDistance(player, target) <= horizontalTolerance &&
-               Math.Abs(player.Y - target.Y) <= verticalTolerance;
+        return ManualNavigationPolicy.HasReachedGeneratedPoint(
+            player, target, horizontalTolerance, verticalTolerance, isMounted);
     }
 
     private static string FormatOptional(Vector3? value) => value is { } point ? FormatVector(point) : "NONE";

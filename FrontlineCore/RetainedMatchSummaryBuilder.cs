@@ -8,6 +8,8 @@ internal sealed class RetainedMatchSummaryBuilder(
     uint contentFinderConditionId,
     DateTime enteredAtUtc)
 {
+    internal const int MaximumRetainedObjectiveTransitions = 512;
+    internal const int MaximumRetainedTransitionsPerSignal = 12;
     private readonly HashSet<string> objectives = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ObjectiveResearchSummary> objectiveResearch = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ResearchObjectSummary> researchObjects = new(StringComparer.OrdinalIgnoreCase);
@@ -40,7 +42,10 @@ internal sealed class RetainedMatchSummaryBuilder(
 
     public void Observe(BattlefieldState state)
     {
-        LocalPvPTeam = state.LocalPvPTeam > 0 ? state.LocalPvPTeam : LocalPvPTeam;
+        // Battalion is zero-based in the live Dalamud source. Preserve team 0
+        // exactly like teams 1 and 2, while ignoring unavailable sentinels.
+        if (TeamClassifier.IsValidFrontlineBattalion(state.LocalPvPTeam))
+            LocalPvPTeam = state.LocalPvPTeam;
         PeakSelf = Math.Max(PeakSelf, state.Counts.Self);
         PeakAllies = Math.Max(PeakAllies, state.Counts.Allies);
         PeakEnemies = Math.Max(PeakEnemies, state.Counts.Enemies);
@@ -110,12 +115,28 @@ internal sealed class RetainedMatchSummaryBuilder(
 
     public void RecordObjectiveChange(ObjectiveChange change, DateTime now)
     {
+        var sanitized = Diagnostics.PrivacySanitizer.Sanitize(change.Detail);
+        var lastMatching = objectiveTransitions.LastOrDefault(item =>
+            item.EventName == change.EventName &&
+            item.LogicalId == change.LogicalId);
+        if (lastMatching is not null && lastMatching.Evidence == sanitized)
+            return;
+
+        var matchingIndices = objectiveTransitions
+            .Select((item, index) => (item, index))
+            .Where(value => value.item.EventName == change.EventName &&
+                            value.item.LogicalId == change.LogicalId)
+            .Select(value => value.index)
+            .ToArray();
+        if (matchingIndices.Length >= MaximumRetainedTransitionsPerSignal)
+            objectiveTransitions.RemoveAt(matchingIndices[0]);
+
         objectiveTransitions.Add(new ObjectiveTransitionSummary(
             now,
             change.EventName,
             change.LogicalId,
-            Diagnostics.PrivacySanitizer.Sanitize(change.Detail)));
-        if (objectiveTransitions.Count > 2048)
+            sanitized));
+        if (objectiveTransitions.Count > MaximumRetainedObjectiveTransitions)
             objectiveTransitions.RemoveAt(0);
     }
 

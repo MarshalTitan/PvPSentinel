@@ -1,10 +1,10 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.3.0.9</Version>
+    <Version>0.3.1.0</Version>
     <Author>MarshalTitan</Author>
     <Name>PvP Sentinel</Name>
     <Punchline>Frontline strategy, safe navigation, lifecycle, and modular combat providers.</Punchline>
-    <Description>Manual M2 beta with preferred-mount travel, resumable combat-yield navigation, Secure discovery, and staged bounded route recovery.</Description>
+    <Description>All-map Frontline discovery and manual M2 navigation beta with map-aware testing controls and bounded route recovery.</Description>
     <RepoUrl>https://github.com/MarshalTitan/PvPSentinel</RepoUrl>
     <IconUrl>https://raw.githubusercontent.com/MarshalTitan/PvPSentinel/main/assets/icon_clean.png</IconUrl>
     <Tags>pvp;frontline;machinist;navigation;beta</Tags>

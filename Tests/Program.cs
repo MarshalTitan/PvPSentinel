@@ -364,6 +364,10 @@ var objectiveFlicker = SecureObjectiveAggregator.Aggregate(
     [SecureMarker(60575, 0, 0, securePosition, "South", 0)])[0];
 Check("Secure 486/zero objective-field flicker is not a semantic transition",
     objectivePresent.TransitionFingerprint, objectiveFlicker.TransitionFingerprint);
+var objective480 = SecureObjectiveAggregator.Aggregate(
+    [SecureMarker(60575, 0, 480, securePosition, "South", 0)])[0];
+Check("Secure 480/zero objective-field flicker is not a semantic transition",
+    objective480.TransitionFingerprint, objectiveFlicker.TransitionFingerprint);
 var countdownA = SecureObjectiveAggregator.Aggregate(
     [SecureMarker(63979, 0, 486, securePosition, "Spawns in: 2:36", 0)])[0];
 var countdownB = SecureObjectiveAggregator.Aggregate(
@@ -400,6 +404,14 @@ var securePhysicalChanges = secureAdapter.Update(
 Check("Secure physical research object is retained", 1, secureAdapter.ResearchObjects.Count);
 Check("Secure physical appearance is evented", true,
     securePhysicalChanges.Any(change => change.EventName == "secure_research_object_appeared"));
+var playerPet = new ObjectiveObservation(
+    0xABCD00, 0x12340000, 7803, "Demi-Bahamut", "BattleNpc",
+    securePosition, false, false, 57000, 57000);
+Check("non-targetable player pet is not objective-like physical evidence", false,
+    SecureAdapter.IsPotentialObjectivePhysical(playerPet));
+var targetableObjectiveNpc = playerPet with { IsTargetable = true, MaxHp = 300_000 };
+Check("large targetable BattleNpc may corroborate an objective", true,
+    SecureAdapter.IsPotentialObjectivePhysical(targetableObjectiveNpc));
 
 var centerAdapter = new SecureAdapter();
 centerAdapter.Reset(trackingNow);
@@ -431,6 +443,69 @@ for (var scan = 0; scan < 8; scan++)
     ceilingAdapter.Update(trackingNow.AddMilliseconds(scan * 300), excessiveStableMarkers, [], []);
 Check("Secure destination promotion obeys sanity ceiling", SecureObjectiveAggregator.MaximumPromotedLocations,
     ceilingAdapter.Objectives.Count);
+
+var discoveryMarkers = new[]
+{
+    SecureMarker(80001, 81001, 82001, new Vector3(25, 4, -75), "UNRESOLVED objective evidence", 1),
+    SecureMarker(80002, 81002, 82002, new Vector3(25.1f, 4, -75.1f), "UNRESOLVED paired evidence", 1),
+};
+var discoveryAggregate = DiscoveryMarkerAggregator.Aggregate(discoveryMarkers);
+Check("generic discovery aggregates duplicate coordinates", 1, discoveryAggregate.Count);
+Check("generic discovery retains paired evidence", 2, discoveryAggregate[0].EvidenceCount);
+Check("generic discovery identifies objective-like stable evidence", DiscoveryMarkerPromotionClass.ObjectiveSignal,
+    DiscoveryMarkerAggregator.ClassifyPromotionEvidence(discoveryAggregate[0], false));
+var discovery480 = DiscoveryMarkerAggregator.Aggregate(
+    [SecureMarker(80001, 0, 480, securePosition, "Evidence 42%", -1)])[0];
+var discoveryZero = DiscoveryMarkerAggregator.Aggregate(
+    [SecureMarker(80001, 0, 0, securePosition, "Evidence 41%", -1)])[0];
+Check("generic discovery normalizes 480/zero and volatile counters",
+    discovery480.TransitionFingerprint, discoveryZero.TransitionFingerprint);
+var rawDiscoveryMarker = SecureMarker(
+    80003, 0, DiscoveryMarkerAggregator.ObservedTransientObjectiveSentinel,
+    securePosition, "", -1);
+Check("generic identity-only marker remains research-only", DiscoveryMarkerPromotionClass.RawObservationOnly,
+    DiscoveryMarkerAggregator.ClassifyPromotionEvidence(
+        DiscoveryMarkerAggregator.Aggregate([rawDiscoveryMarker])[0], false));
+
+var onsalAdapter = new OnsalHakairAdapter();
+onsalAdapter.Reset(trackingNow);
+for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans; scan++)
+    onsalAdapter.Update(trackingNow.AddMilliseconds(scan * 300), discoveryMarkers, [], []);
+Check("Onsal promotes only stable ONS destination evidence", 1, onsalAdapter.Objectives.Count);
+Check("Onsal destination uses map-specific prefix", "ONS-01", onsalAdapter.Objectives.Single().LogicalId);
+Check("Onsal objective semantics stay unresolved", ObjectiveLifecycle.Unknown,
+    onsalAdapter.Objectives.Single().State);
+Check("Onsal ownership stays unresolved", ObjectiveOwner.Unresolved,
+    onsalAdapter.Objectives.Single().Owner);
+Check("Onsal adapter identity is explicit", FrontlineMap.OnsalHakair, onsalAdapter.Map);
+onsalAdapter.Reset(trackingNow.AddMinutes(1));
+Check("Onsal reset clears promoted session locations", 0, onsalAdapter.Objectives.Count);
+
+var rawOnlyOnsal = new OnsalHakairAdapter();
+rawOnlyOnsal.Reset(trackingNow);
+for (var scan = 0; scan < 60; scan++)
+    rawOnlyOnsal.Update(trackingNow.AddMilliseconds(scan * 250),
+        [rawDiscoveryMarker with { Position = securePosition + new Vector3(scan, 0, 0) }], [], []);
+Check("Onsal raw observations never become buttons", 0, rawOnlyOnsal.Objectives.Count);
+
+var worqorAdapter = new WorqorChirtehAdapter();
+worqorAdapter.Reset(trackingNow);
+for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans; scan++)
+    worqorAdapter.Update(trackingNow.AddMilliseconds(scan * 300), discoveryMarkers, [], []);
+Check("Worqor scaffold promotes stable manual-test locations", "WOR-01",
+    worqorAdapter.Objectives.Single().LogicalId);
+Check("Worqor adapter identity is explicit", FrontlineMap.WorqorChirteh, worqorAdapter.Map);
+
+var mapAdapters = new IFrontlineMapAdapter[]
+{
+    new SecureAdapter(),
+    new SealRockAdapter(),
+    new ShatterAdapter(),
+    new OnsalHakairAdapter(),
+    new WorqorChirtehAdapter(),
+};
+Check("all five current Frontline maps have explicit adapters", 5,
+    mapAdapters.Select(adapter => adapter.Map).Distinct().Count());
 
 var lifecycleTracker = new MatchLifecycleTracker();
 var uiActive = new FrontlineUiObservation(true, false, TimeSpan.FromMinutes(19), 1400, [], "", "header");
@@ -483,10 +558,42 @@ Check("retained summary counts stuck events", 1, retained.NavigationStuckEvents)
 Check("retained summary preserves objective transition evidence", 1, retained.ObjectiveTransitions.Count);
 Check("retained summary preserves territory", 554u, retained.TerritoryId);
 Check("retained summary preserves duty", 180u, retained.ContentFinderConditionId);
+var zeroTeamSummaryBuilder = new RetainedMatchSummaryBuilder(
+    FrontlineMap.OnsalHakair, 888, 701, summaryStart);
+zeroTeamSummaryBuilder.Observe(BattlefieldForSummary(
+    summaryStart, FrontlineMatchLifecycle.PreMatch, 0, 0, 0, 0, 0, 0) with
+{
+    LocalPvPTeam = byte.MaxValue,
+});
+zeroTeamSummaryBuilder.Observe(BattlefieldForSummary(
+    summaryStart.AddSeconds(1), FrontlineMatchLifecycle.PreMatch, 1, 23, 0, 0, 0, 0) with
+{
+    LocalPvPTeam = 0,
+});
+Check("retained summary accepts zero-based Battalion team 0", (byte)0,
+    zeroTeamSummaryBuilder.Build(summaryStart.AddMinutes(1)).LocalPvPTeam);
 Check("retained summary keeps only the latest dynamic research snapshot", false,
     retained.UnresolvedObservations.Contains("Observed 1 candidate"));
 Check("retained summary keeps current research counters", true,
     retained.UnresolvedObservations.Contains("Observed 2 candidates"));
+var transitionBoundBuilder = new RetainedMatchSummaryBuilder(
+    FrontlineMap.OnsalHakair, 888, 701, summaryStart);
+for (var index = 0; index < 50; index++)
+    transitionBoundBuilder.RecordObjectiveChange(
+        new ObjectiveChange("onsal_observable_transition", "ONS-01", $"state={index}"),
+        summaryStart.AddSeconds(index));
+var perSignalBound = transitionBoundBuilder.Build(summaryStart.AddMinutes(1));
+Check("retained summary bounds repeated transitions per signal",
+    RetainedMatchSummaryBuilder.MaximumRetainedTransitionsPerSignal,
+    perSignalBound.ObjectiveTransitions.Count);
+for (var index = 0; index < 700; index++)
+    transitionBoundBuilder.RecordObjectiveChange(
+        new ObjectiveChange("onsal_research_object_appeared", $"ONS-OBJ-{index:000}", $"object={index}"),
+        summaryStart.AddMinutes(2).AddSeconds(index));
+var globallyBound = transitionBoundBuilder.Build(summaryStart.AddMinutes(20));
+Check("retained summary has a global transition ceiling",
+    RetainedMatchSummaryBuilder.MaximumRetainedObjectiveTransitions,
+    globallyBound.ObjectiveTransitions.Count);
 var retainedJson = JsonSerializer.Serialize(retained with
 {
     ObjectiveResearch =
@@ -567,6 +674,18 @@ Check("same horizontal route on another floor is not treated as identical", fals
     RouteComparison.MateriallyIdentical(routeA, routeA.Select(point => point + new Vector3(0, 8, 0)).ToArray()));
 Check("bounded recovery allows attempt below limit", true, ManualNavigationPolicy.CanRetry(2, 3));
 Check("bounded recovery stops at limit", false, ManualNavigationPolicy.CanRetry(3, 3));
+Check("mounted actor-height offset accepts a completed generated stage", true,
+    ManualNavigationPolicy.HasReachedGeneratedPoint(
+        new Vector3(90.4f, -18.9f, 49f), new Vector3(90.6f, -23.5f, 48.3f),
+        0.9f, 1.25f, true));
+Check("same vertical mismatch is rejected while on foot", false,
+    ManualNavigationPolicy.HasReachedGeneratedPoint(
+        new Vector3(90.4f, -18.9f, 49f), new Vector3(90.6f, -23.5f, 48.3f),
+        0.9f, 1.25f, false));
+Check("mounted allowance still rejects a genuinely different floor", false,
+    ManualNavigationPolicy.HasReachedGeneratedPoint(
+        new Vector3(90.4f, -14f, 49f), new Vector3(90.6f, -23.5f, 48.3f),
+        0.9f, 1.25f, true));
 Check("death owns and cancels navigation", MovementOwner.DeathRecovery,
     ManualNavigationPolicy.ResolveOwner(true, false, true));
 Check("enemy combat owns and pauses navigation", MovementOwner.ExternalCombat,

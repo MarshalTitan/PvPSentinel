@@ -316,6 +316,8 @@ internal sealed class DiagnosticWindow : Window
     private void DrawTestingControls(TacticalSnapshot state)
     {
         var manual = navigation.ManualSnapshot;
+        KeyValue("Current Frontline", state.Battlefield.Map.DisplayName());
+        KeyValue("Active adapter", state.Battlefield.ActiveAdapter);
         if (ImGui.Button(manual.Armed ? "Disarm Manual Navigation" : "Arm Manual Navigation", new Vector2(210, 34)))
             navigation.SetManualNavigationArmed(!manual.Armed);
         ImGui.SameLine();
@@ -333,6 +335,9 @@ internal sealed class DiagnosticWindow : Window
             {
                 FrontlineMap.BorderlandRuins => "Secure destinations (SEC-xx is session-scoped; coordinates are authoritative):",
                 FrontlineMap.FieldsOfGlory => "Shatter objectives (UNRESOLVED buttons remain disabled):",
+                FrontlineMap.SealRock => "Seal Rock destinations (SR-xx):",
+                FrontlineMap.OnsalHakair => "Onsal stable discovery destinations (ONS-xx; coordinates are authoritative):",
+                FrontlineMap.WorqorChirteh => "Worqor stable discovery destinations (WOR-xx; coordinates are authoritative):",
                 _ => "Discovered objective destinations:",
             });
             ImGui.BeginDisabled(!manual.Armed);
@@ -340,9 +345,9 @@ internal sealed class DiagnosticWindow : Window
             {
                 var objective = objectives[index];
                 ImGui.BeginDisabled(objective.ReferencePosition is null);
-                var buttonLabel = state.Battlefield.Map == FrontlineMap.BorderlandRuins &&
-                                  objective.ReferencePosition is { } securePosition
-                    ? $"{objective.LogicalId} [{securePosition.X:F0},{securePosition.Z:F0}]"
+                var buttonLabel = UsesSessionScopedDiscoveryLabels(state.Battlefield.Map) &&
+                                  objective.ReferencePosition is { } discoveryPosition
+                    ? $"{objective.LogicalId} [{discoveryPosition.X:F0},{discoveryPosition.Z:F0}]"
                     : objective.LogicalId;
                 if (ImGui.Button($"{buttonLabel}##m2-{objective.LogicalId}"))
                     navigation.RequestManualDestination(
@@ -358,9 +363,13 @@ internal sealed class DiagnosticWindow : Window
         }
         else
         {
-            ImGui.TextDisabled(state.Battlefield.Map == FrontlineMap.BorderlandRuins
-                ? "Waiting for stable Secure marker coordinates to create SEC-xx destinations."
-                : "No logical objective has a resolved reference position yet.");
+            ImGui.TextDisabled(state.Battlefield.Map switch
+            {
+                FrontlineMap.BorderlandRuins => "Waiting for stable Secure marker coordinates to create SEC-xx destinations.",
+                FrontlineMap.OnsalHakair => "Waiting for strongly stable Onsal evidence to promote ONS-xx destinations; raw observations remain research-only.",
+                FrontlineMap.WorqorChirteh => "Waiting for strongly stable Worqor evidence to promote WOR-xx destinations; raw observations remain research-only.",
+                _ => "No logical objective has a resolved reference position yet.",
+            });
         }
 
         var nearestCluster = state.Battlefield.AlliedClusters
@@ -381,7 +390,16 @@ internal sealed class DiagnosticWindow : Window
     private void DrawObjectiveResearch(TacticalSnapshot state)
     {
         var battlefield = state.Battlefield;
-        if (ImGui.TreeNode($"Logical objectives / SEC locations ({battlefield.Objectives.Count})"))
+        var researchName = battlefield.Map switch
+        {
+            FrontlineMap.BorderlandRuins => "Secure Research",
+            FrontlineMap.SealRock => "Seal Rock Research",
+            FrontlineMap.FieldsOfGlory => "Shatter Research",
+            FrontlineMap.OnsalHakair => "Onsal Research",
+            FrontlineMap.WorqorChirteh => "Worqor Research",
+            _ => "Map Research",
+        };
+        if (ImGui.TreeNode($"{researchName}: promoted logical locations ({battlefield.Objectives.Count})"))
         {
             foreach (var objective in battlefield.Objectives)
             {
@@ -393,7 +411,7 @@ internal sealed class DiagnosticWindow : Window
             }
             ImGui.TreePop();
         }
-        if (ImGui.TreeNode($"Secure physical research objects ({battlefield.ResearchObjects.Count})"))
+        if (ImGui.TreeNode($"{researchName}: physical research objects ({battlefield.ResearchObjects.Count})"))
         {
             foreach (var item in battlefield.ResearchObjects.Take(200))
             {
@@ -460,6 +478,8 @@ internal sealed class DiagnosticWindow : Window
         ImGui.Text(title);
     }
     private static string YesNo(bool value) => value ? "Yes" : "No";
+    private static bool UsesSessionScopedDiscoveryLabels(FrontlineMap map) =>
+        map is FrontlineMap.BorderlandRuins or FrontlineMap.OnsalHakair or FrontlineMap.WorqorChirteh;
     private static string FormatVector(Vector3 value) => $"{value.X:F1}, {value.Y:F1}, {value.Z:F1}";
     private static float HorizontalDistance(Vector3 a, Vector3 b) => Vector2.Distance(new(a.X, a.Z), new(b.X, b.Z));
 

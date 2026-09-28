@@ -55,6 +55,8 @@ internal sealed class BattlefieldService
             [FrontlineMap.BorderlandRuins] = new SecureAdapter(),
             [FrontlineMap.FieldsOfGlory] = new ShatterAdapter(),
             [FrontlineMap.SealRock] = new SealRockAdapter(),
+            [FrontlineMap.OnsalHakair] = new OnsalHakairAdapter(),
+            [FrontlineMap.WorqorChirteh] = new WorqorChirtehAdapter(),
         };
         sensorHealth["PvP team/player tracker"] = new MutableSensorHealth("PvP team/player tracker");
         sensorHealth["AgentMap.EventMarkers"] = new MutableSensorHealth("AgentMap.EventMarkers");
@@ -123,6 +125,9 @@ internal sealed class BattlefieldService
                 text = announcement,
                 source = "_WideText",
             });
+            summaryBuilder?.RecordObjectiveChange(
+                new ObjectiveChange("frontline_wide_text", "ANNOUNCEMENT", announcement),
+                game.CapturedAtUtc);
             developmentLog.Changed("frontline-wide-text", announcement,
                 $"_WideText Frontline evidence: {announcement}");
         }
