@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0.9 — Secure landing cleanup and bounded summaries
+
+- Correlated the complete v0.3.0.8 Secure match with both recordings. The stable `SEC-CENTER` identity and coordinate-bearing session labels worked, all three previously identified pre-match families remained raw-only, and classification stayed clean at `1 SELF / 23 ALLY / 41 ENEMY / 0 UNKNOWN`.
+- Confirmed `60597/0/162` at `(-257.4, -7.1, 149.3)` is the Storm Landing/base marker rather than a tactical objective. Together with the previously observed `60598` landing family, these markers now remain raw research evidence and cannot create manual navigation buttons.
+- Preserved the safe result of the failed landing test: Sentinel never direct-steered through the structure, bounded all recovery attempts, reported failure, and released movement ownership.
+- Confirmed `SEC-CENTER` reached the central platform from spawn. vnavmesh initially returned the same sparse false shortcut on both attempts; staged recovery moved to a generated departure route and then followed the full 29-waypoint multi-level ramp route. No unverified hard-coded ramp coordinates were added.
+- Changed retained research notes from an every-frame history of changing counters to the final bounded sensor snapshot. Objective transitions remain separately retained, while `summary.json` no longer grows by more than a megabyte from diagnostic-count strings alone.
+- Preferred Company Chocobo mounting, combat yield/death cancellation, lifecycle/results detection, threat tracking, and the borderless Targeting-Me counter remain intact. Native MCH remains Shadow / Observe by default; autonomous strategy, queue/requeue, and provider-independent Limit Break execution remain disabled.
+
 ## 0.3.0.8 — Stable Secure center identity
 
 - Corrected the discovery-label assumption exposed by the latest complete Secure match: `SEC-xx` values were assigned by per-session promotion order and therefore did not identify the same physical location across matches.

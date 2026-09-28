@@ -34,6 +34,7 @@ internal static class SecureObjectiveAggregator
     private const uint ObservedTransientObjectiveSentinel = 1115742468;
     private const uint LiveVerifiedTraderIcon = 60935;
     private const uint LiveVerifiedTraderObjective = 721735;
+    private static readonly HashSet<uint> LiveVerifiedLandingIcons = [60597, 60598];
     private static readonly HashSet<(uint IconId, uint DataId, uint ObjectiveId)> LiveVerifiedNonObjectiveFamilies =
     [
         (63922, 0, 721462),
@@ -153,6 +154,9 @@ internal static class SecureObjectiveAggregator
          marker.DataId == 0 &&
          marker.ObjectiveId == LiveVerifiedTraderObjective &&
          marker.Tooltip.Trim().Equals("Trader", StringComparison.OrdinalIgnoreCase)) ||
+        (LiveVerifiedLandingIcons.Contains(marker.IconId) &&
+         marker.DataId == 0 &&
+         marker.ObjectiveId is 162 or ObservedTransientObjectiveSentinel) ||
         LiveVerifiedNonObjectiveFamilies.Contains((marker.IconId, marker.DataId, marker.ObjectiveId));
 
     public static string FamilyKey(FrontlineMapMarkerObservation marker) =>
