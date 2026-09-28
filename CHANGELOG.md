@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0.8 — Stable Secure center identity
+
+- Corrected the discovery-label assumption exposed by the latest complete Secure match: `SEC-xx` values were assigned by per-session promotion order and therefore did not identify the same physical location across matches.
+- Added the field-confirmed geometric map-center coordinate as the stable `SEC-CENTER` manual destination. This is a geometric identity only; it does not infer objective type, lifecycle, ownership, or strategy.
+- Made every remaining session-scoped Secure destination button include rounded X/Z coordinates and added an explicit UI/research warning that coordinates, not `SEC-xx`, are authoritative across matches.
+- Demoted the three newly proven pre-match/non-objective marker families (`63922/0/721462`, `71121/0/721223`, and the `71041/0/393222` Levemete marker) to raw research evidence so they cannot consume destination numbers or create misleading navigation buttons.
+- The supplied trace confirms all three v0.3.0.7 staged departure recoveries reached their staging point and repathed successfully, with no path-generation failures or rejected final routes. It also confirms the borderless Targeting-Me counter tracked observed hard-target counts during combat.
+- Preserved manual-only Secure navigation, single movement ownership, Company Chocobo preference, combat pause/resume, terminal death/STOP behavior, Native MCH Shadow default, and disabled autonomous strategy, queue/requeue, and provider-independent Limit Break execution.
+
 ## 0.3.0.7 — Staged stair recovery and complete research coordinates
 
 - Correlated the v0.3.0.6 Secure trace with both recordings. Preferred-mount travel is live-confirmed: every automatic request summoned Company Chocobo, including the preserved SEC-08 destination after RotationSolverReborn combat ownership cleared. Team classification remained clean at `1 SELF / 23 ALLY / 41 ENEMY / 0 UNKNOWN`.

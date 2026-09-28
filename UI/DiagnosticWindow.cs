@@ -331,7 +331,7 @@ internal sealed class DiagnosticWindow : Window
         {
             ImGui.Text(state.Battlefield.Map switch
             {
-                FrontlineMap.BorderlandRuins => "Secure discovery destinations:",
+                FrontlineMap.BorderlandRuins => "Secure destinations (SEC-xx is session-scoped; coordinates are authoritative):",
                 FrontlineMap.FieldsOfGlory => "Shatter objectives (UNRESOLVED buttons remain disabled):",
                 _ => "Discovered objective destinations:",
             });
@@ -340,7 +340,11 @@ internal sealed class DiagnosticWindow : Window
             {
                 var objective = objectives[index];
                 ImGui.BeginDisabled(objective.ReferencePosition is null);
-                if (ImGui.Button($"{objective.LogicalId}##m2-{objective.LogicalId}"))
+                var buttonLabel = state.Battlefield.Map == FrontlineMap.BorderlandRuins &&
+                                  objective.ReferencePosition is { } securePosition
+                    ? $"{objective.LogicalId} [{securePosition.X:F0},{securePosition.Z:F0}]"
+                    : objective.LogicalId;
+                if (ImGui.Button($"{buttonLabel}##m2-{objective.LogicalId}"))
                     navigation.RequestManualDestination(
                         objective.LogicalId,
                         objective.DisplayName,

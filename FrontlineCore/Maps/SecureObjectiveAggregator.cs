@@ -34,6 +34,12 @@ internal static class SecureObjectiveAggregator
     private const uint ObservedTransientObjectiveSentinel = 1115742468;
     private const uint LiveVerifiedTraderIcon = 60935;
     private const uint LiveVerifiedTraderObjective = 721735;
+    private static readonly HashSet<(uint IconId, uint DataId, uint ObjectiveId)> LiveVerifiedNonObjectiveFamilies =
+    [
+        (63922, 0, 721462),
+        (71121, 0, 721223),
+        (71041, 0, 393222),
+    ];
 
     public const int ObjectiveSignalStableScans = 8;
     public static readonly TimeSpan ObjectiveSignalStableAge = TimeSpan.FromSeconds(2);
@@ -143,10 +149,11 @@ internal static class SecureObjectiveAggregator
         marker.ObjectiveId == ObservedTransientObjectiveSentinel;
 
     public static bool IsLiveVerifiedNonObjectiveMarker(FrontlineMapMarkerObservation marker) =>
-        marker.IconId == LiveVerifiedTraderIcon &&
-        marker.DataId == 0 &&
-        marker.ObjectiveId == LiveVerifiedTraderObjective &&
-        marker.Tooltip.Trim().Equals("Trader", StringComparison.OrdinalIgnoreCase);
+        (marker.IconId == LiveVerifiedTraderIcon &&
+         marker.DataId == 0 &&
+         marker.ObjectiveId == LiveVerifiedTraderObjective &&
+         marker.Tooltip.Trim().Equals("Trader", StringComparison.OrdinalIgnoreCase)) ||
+        LiveVerifiedNonObjectiveFamilies.Contains((marker.IconId, marker.DataId, marker.ObjectiveId));
 
     public static string FamilyKey(FrontlineMapMarkerObservation marker) =>
         $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}/e{marker.EventState}";

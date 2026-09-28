@@ -60,7 +60,7 @@ Implemented in source:
 - collapsible Configuration groups plus a Development window organized around an always-visible Testing Controls foldout and separate Frontline/Team, Battlefield/Sensors, Threat, Objectives/Research, M2 Navigation, Combat, and Lifecycle foldouts
 - pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, Secure coordinate aggregation/stability/unresolved-state safety/evidence transitions, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
 
-Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.7. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates `SEC-xx` buttons only from bounded, stationary objective-like evidence. Live-verified moving marker families and the pre-match Trader marker remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
+Autonomous strategy, automatic objective capture, and native queue/requeue are deliberately disabled in v0.3.0.8. Objective buttons are manual-only; Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, and Secure creates buttons only from bounded, stationary objective-like evidence. The field-confirmed geometric center uses the stable `SEC-CENTER` identity; other `SEC-xx` values remain session-scoped and their displayed coordinates are authoritative across matches. Live-verified moving marker families and non-objective pre-match markers remain raw research evidence and never become buttons. Onsal and Worqor retain shared player/lifecycle/combat sensing through passive adapters while their objective models remain `UNRESOLVED`.
 
 ## Safety model
 
@@ -85,7 +85,7 @@ In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat 
 
 In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
 
-Queue/accept/requeue code remains preserved, but v0.3.0.7 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
+Queue/accept/requeue code remains preserved, but v0.3.0.8 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
 
 The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
 
@@ -146,7 +146,7 @@ Inside Frontline, confirm local PvP team is one of the live-validated zero-based
 
 On Shatter, confirm all 19 logical rows appear and compare inactive/preactivating/active, ETA, strength, coordinates, and physical confirmations against the map. On Seal Rock, confirm no duplicate logical row oscillates when paired marker records occupy the same coordinate; verify rank and observed GC ownership changes. Unresolved values must remain explicit.
 
-On Secure, leave manual navigation disarmed for the opening scan. Confirm the adapter reports territory 1273 / duty 127, repeated marker records at one coordinate collapse into one stable `SEC-xx` location, and names/types/state/owners remain `UNRESOLVED`. Observe at least one capture/loss and one central or temporary object so marker changes, physical objects, and `_WideText` evidence can be correlated after the match.
+On Secure, leave manual navigation disarmed for the opening scan. Confirm the adapter reports territory 1273 / duty 127, repeated marker records at one coordinate collapse into one location, the geometric center appears as `SEC-CENTER`, and other session labels visibly include X/Z coordinates. Names/types/state/owners remain `UNRESOLVED`. Observe at least one capture/loss and one central or temporary object so marker changes, physical objects, and `_WideText` evidence can be correlated after the match.
 
 ### Stage B — manual M2 vnavmesh navigation
 
