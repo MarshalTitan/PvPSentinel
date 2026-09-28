@@ -346,6 +346,18 @@ foreach (var nonObjective in new[]
         SecureObjectiveAggregator.ClassifyPromotionEvidence(
             SecureObjectiveAggregator.Aggregate([nonObjective])[0], false));
 }
+foreach (var landingMarker in new[]
+         {
+             SecureMarker(60597, 0, 162, new Vector3(-257.4f, -7.1f, 149.3f), "", 0),
+             SecureMarker(60597, 0, 1115742468, new Vector3(-257.4f, -7.1f, 149.3f), "", 0),
+             SecureMarker(60598, 0, 162, new Vector3(0.2f, -7f, -297.4f), "", 0),
+         })
+{
+    Check("field-verified Secure landing marker remains raw-only",
+        SecureMarkerPromotionClass.RawObservationOnly,
+        SecureObjectiveAggregator.ClassifyPromotionEvidence(
+            SecureObjectiveAggregator.Aggregate([landingMarker])[0], false));
+}
 var objectivePresent = SecureObjectiveAggregator.Aggregate(
     [SecureMarker(60575, 0, 486, securePosition, "South", 0)])[0];
 var objectiveFlicker = SecureObjectiveAggregator.Aggregate(
@@ -442,6 +454,14 @@ Check("stale generic combat does not permanently block navigation", false,
 var summaryStart = new DateTime(2026, 9, 27, 18, 0, 0, DateTimeKind.Utc);
 var summaryBuilder = new RetainedMatchSummaryBuilder(FrontlineMap.FieldsOfGlory, 554, 180, summaryStart);
 summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(1), FrontlineMatchLifecycle.MatchActive, 1, 23, 48, 0, 2, 1));
+summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(2), FrontlineMatchLifecycle.MatchActive, 1, 23, 48, 0, 2, 1) with
+{
+    ResearchNotes = ["Observed 1 candidate", "Durable unresolved caveat"],
+});
+summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(3), FrontlineMatchLifecycle.MatchActive, 1, 23, 48, 0, 2, 1) with
+{
+    ResearchNotes = ["Observed 2 candidates", "Durable unresolved caveat"],
+});
 summaryBuilder.RecordNavigation("navigation_request");
 summaryBuilder.RecordNavigation("navigation_arrived");
 summaryBuilder.RecordNavigation("navigation_path_failed");
@@ -449,7 +469,10 @@ summaryBuilder.RecordNavigation("navigation_stuck");
 summaryBuilder.RecordObjectiveChange(
     new ObjectiveChange("secure_observable_transition", "SEC-01", "icon=1 -> icon=2"),
     summaryStart.AddMinutes(2));
-summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(20), FrontlineMatchLifecycle.Results, 1, 20, 40, 0, 2, 1));
+summaryBuilder.Observe(BattlefieldForSummary(summaryStart.AddMinutes(20), FrontlineMatchLifecycle.Results, 1, 20, 40, 0, 2, 1) with
+{
+    ResearchNotes = ["Observed 2 candidates", "Durable unresolved caveat"],
+});
 var retained = summaryBuilder.Build(summaryStart.AddMinutes(21));
 Check("retained summary preserves peak allies", 23, retained.PeakAllies);
 Check("retained summary preserves peak enemies", 48, retained.PeakEnemies);
@@ -460,6 +483,10 @@ Check("retained summary counts stuck events", 1, retained.NavigationStuckEvents)
 Check("retained summary preserves objective transition evidence", 1, retained.ObjectiveTransitions.Count);
 Check("retained summary preserves territory", 554u, retained.TerritoryId);
 Check("retained summary preserves duty", 180u, retained.ContentFinderConditionId);
+Check("retained summary keeps only the latest dynamic research snapshot", false,
+    retained.UnresolvedObservations.Contains("Observed 1 candidate"));
+Check("retained summary keeps current research counters", true,
+    retained.UnresolvedObservations.Contains("Observed 2 candidates"));
 var retainedJson = JsonSerializer.Serialize(retained with
 {
     ObjectiveResearch =

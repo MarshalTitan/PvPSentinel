@@ -12,7 +12,7 @@ internal sealed class RetainedMatchSummaryBuilder(
     private readonly Dictionary<string, ObjectiveResearchSummary> objectiveResearch = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ResearchObjectSummary> researchObjects = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ObjectiveTransitionSummary> objectiveTransitions = [];
-    private readonly HashSet<string> unresolvedObservations = new(StringComparer.Ordinal);
+    private IReadOnlyList<string> unresolvedObservations = [];
     private int navigationRequests;
     private int navigationArrivals;
     private int navigationFailures;
@@ -82,8 +82,15 @@ internal sealed class RetainedMatchSummaryBuilder(
                 item.LastSeenUtc,
                 Diagnostics.PrivacySanitizer.Sanitize(item.Evidence));
         }
-        foreach (var note in state.ResearchNotes)
-            unresolvedObservations.Add(note);
+        // Research notes contain live counters as well as durable caveats. Keeping
+        // every distinct counter value across a match made Secure summaries grow
+        // past a megabyte. The final sensor snapshot is sufficient for retained
+        // diagnostics; objective transitions preserve the event history separately.
+        unresolvedObservations = state.ResearchNotes
+            .Select(Diagnostics.PrivacySanitizer.Sanitize)
+            .Distinct(StringComparer.Ordinal)
+            .Take(32)
+            .ToArray();
         if (state.Match.Lifecycle == FrontlineMatchLifecycle.MatchActive)
             MatchStartUtc ??= state.CapturedAtUtc;
         if (state.Match.Lifecycle == FrontlineMatchLifecycle.Results)
