@@ -190,8 +190,11 @@ internal static class SecureObjectiveAggregator
             $"icon={marker.IconId},data={marker.DataId},objective={NormalizeFlickeringObjectiveId(marker.ObjectiveId)},event={marker.EventState},text={tooltip}");
     }
 
-    private static uint NormalizeFlickeringObjectiveId(uint objectiveId) =>
-        objectiveId is 0 or 486 ? 0u : objectiveId;
+    internal static uint NormalizeFlickeringObjectiveId(uint objectiveId) =>
+        // Live Secure sessions have now exposed both 480 and 486 as the
+        // populated half of a per-scan 0/non-zero oscillation. Neither value is
+        // treated as an objective-state transition by itself.
+        objectiveId is 0 or 480 or 486 ? 0u : objectiveId;
 
     private static string NormalizeVolatileNumbers(string value)
     {

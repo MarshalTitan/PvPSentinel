@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1.0 — All-map discovery foundation and Onsal test build
+
+- Correlated the final v0.3.0.9 Secure session, including its fresh start after the game crash. The complete trace retained clean `1 SELF / 23 ALLY / 37 ENEMY / 0 UNKNOWN` classification, Company Chocobo travel, explicit STOP, death cancellation, combat yield/resume, and five successful `ARRIVED` routes without a plugin exception.
+- Normalized the newly observed Secure `ObjectiveId` 480/0 presentation flicker in addition to the earlier 486/0 case, and bounded repeated per-signal/global objective transitions so a noisy discovery source cannot dominate `summary.json`.
+- Restricted physical objective corroboration to event objects or large targetable battle NPCs. Player pets such as Demi-Bahamut and Bunshin remain available as raw research evidence but can no longer falsely confirm a Secure or discovery location.
+- Corrected mounted generated-stage completion for the live-observed actor/ground-mesh height offset. The allowance is bounded, applies only after a generated route has been followed, and still rejects a genuinely different floor.
+- Added discovery-first Onsal Hakair (territory 888 / duty 701) and Worqor Chirteh (territory 1313 / duty 1080) adapters. Both keep raw marker families separate from a maximum of 32 strongly stable, clickable `ONS-xx`/`WOR-xx` locations and leave objective semantics, rank, ownership, and strategy explicitly `UNRESOLVED`.
+- Made Testing Controls and Objectives / Map Research map-aware. Only the current map's destinations and research are shown; Onsal and Worqor session labels include authoritative X/Z coordinates, while large raw collections remain collapsed research evidence.
+- Registered explicit adapters for all five current Frontline maps while preserving the field-validated Secure, Shatter, and Seal Rock implementations and the shared navigation, mounting, combat-handoff, classification, threat, lifecycle, and retained-summary systems.
+- Expanded `_WideText` research retention for cross-map discovery and added regression coverage for all-map adapter registration, discovery aggregation/promotion, raw-only isolation, Secure 480 flicker, physical-object filtering, transition bounds, and mounted stage arrival.
+- Fixed retained-match team recording so live-valid zero-based Battalion team `0` is preserved instead of being treated as absent.
+- Autonomous strategy, automatic objective navigation, queue/requeue, provider-independent PvP Limit Break execution, and speculative Onsal/Worqor tactics remain disabled. Native MCH remains `Shadow / Observe` by default.
+
 ## 0.3.0.9 — Secure landing cleanup and bounded summaries
 
 - Correlated the complete v0.3.0.8 Secure match with both recordings. The stable `SEC-CENTER` identity and coordinate-bearing session labels worked, all three previously identified pre-match families remained raw-only, and classification stayed clean at `1 SELF / 23 ALLY / 41 ENEMY / 0 UNKNOWN`.

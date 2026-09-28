@@ -75,9 +75,14 @@ internal sealed partial class FrontlineUiSensor(IGameGui gameGui)
             : null;
     }
 
-    private static bool IsObjectiveAnnouncement(string text) =>
+    internal static bool IsObjectiveAnnouncement(string text) =>
         text.Contains("tomelith", StringComparison.OrdinalIgnoreCase) ||
         text.Contains("ice", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("ovoo", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("unclaimed", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("claim", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("triumph", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("weather", StringComparison.OrdinalIgnoreCase) ||
         text.Contains("captur", StringComparison.OrdinalIgnoreCase) ||
         text.Contains("deactiv", StringComparison.OrdinalIgnoreCase) ||
         text.Contains("occup", StringComparison.OrdinalIgnoreCase) ||

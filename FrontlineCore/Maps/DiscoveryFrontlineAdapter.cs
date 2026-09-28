@@ -5,22 +5,28 @@ using PvPSentinel.Models;
 
 namespace PvPSentinel.FrontlineCore.Maps;
 
+internal sealed record DiscoveryMapProfile(
+    FrontlineMap Map,
+    uint TerritoryId,
+    uint ContentFinderConditionId,
+    string AdapterName,
+    string LogicalPrefix,
+    string EventPrefix);
+
 /// <summary>
-/// Discovery-first Borderland Ruins adapter. It intentionally preserves marker and
-/// physical-object evidence without assigning community-derived objective meaning.
+/// Shared discovery/manual-M2 foundation for maps whose objective semantics have
+/// not yet been live verified. Raw evidence stays separate from the bounded list
+/// of stable, clickable locations.
 /// </summary>
-internal sealed class SecureAdapter : FrontlineMapAdapterBase
+internal abstract class DiscoveryFrontlineAdapter(DiscoveryMapProfile profile) : FrontlineMapAdapterBase
 {
-    public const uint TerritoryId = 1273;
-    public const uint ContentFinderConditionId = 127;
     private static readonly TimeSpan MissingEvidenceDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan CandidateRetention = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RawFamilyReportInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ResearchObjectChangeReportInterval = TimeSpan.FromSeconds(5);
     private const int MaximumTrackedPromotionCandidates = 128;
-    private const int MaximumResearchObjects = 256;
-    private const string StableCenterLogicalId = "SEC-CENTER";
-    private static readonly Vector3 StableCenterPosition = new(0f, 29f, 0f);
+    private const int MaximumRawMarkerFamilies = 128;
+    private const int MaximumResearchObjects = 192;
     private readonly Dictionary<string, MarkerCandidate> markerCandidates = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RawMarkerFamily> rawMarkerFamilies = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> logicalIdByPosition = new(StringComparer.Ordinal);
@@ -29,21 +35,22 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
     private int nextLocationIndex = 1;
     private int nextResearchIndex = 1;
     private int droppedResearchObjects;
+    private int droppedRawFamilies;
 
-    public override FrontlineMap Map => FrontlineMap.BorderlandRuins;
-    public override string Name => "Borderland Ruins (Secure discovery)";
+    public override FrontlineMap Map => profile.Map;
+    public override string Name => profile.AdapterName;
     public override IReadOnlyList<FrontlineResearchObject> ResearchObjects => researchObjects.Values
         .OrderBy(item => item.SortOrder)
         .Select(item => item.Snapshot())
         .ToArray();
     public override IReadOnlyList<string> ResearchNotes =>
     [
-        "Secure objective names, types, ownership, active state, and tactical meaning remain UNRESOLVED.",
-        "SEC-CENTER is the field-confirmed geometric center marker. Other SEC-xx identifiers are session-scoped discovery labels; use their displayed coordinates when comparing matches.",
-        $"Promotion tiers: objective signal {SecureObjectiveAggregator.ObjectiveSignalStableScans} scans/{SecureObjectiveAggregator.ObjectiveSignalStableAge.TotalSeconds:F0}s; durable unknown {SecureObjectiveAggregator.DurableEvidenceStableScans} scans/{SecureObjectiveAggregator.DurableEvidenceStableAge.TotalSeconds:F0}s; physical corroboration {SecureObjectiveAggregator.PhysicalEvidenceStableScans} scans/{SecureObjectiveAggregator.PhysicalEvidenceStableAge.TotalSeconds:F0}s.",
-        $"Observed {markerCandidates.Count} promotion candidate(s) and {rawMarkerFamilies.Count} raw-only family/families; promoted {Records.Count}/{SecureObjectiveAggregator.MaximumPromotedLocations} bounded SEC location(s); retained {researchObjects.Count}/{MaximumResearchObjects} physical research object(s), dropped {droppedResearchObjects} after the bound.",
+        $"{Map.DisplayName()} objective names, states, ranks, ownership, and tactical meaning remain UNRESOLVED pending live evidence.",
+        $"{profile.LogicalPrefix}-xx identifiers are session-scoped discovery labels; displayed coordinates are authoritative.",
+        $"Promotion tiers: objective signal {DiscoveryMarkerAggregator.ObjectiveSignalStableScans} scans/{DiscoveryMarkerAggregator.ObjectiveSignalStableAge.TotalSeconds:F0}s; durable unknown {DiscoveryMarkerAggregator.DurableEvidenceStableScans} scans/{DiscoveryMarkerAggregator.DurableEvidenceStableAge.TotalSeconds:F0}s; objective-like physical corroboration {DiscoveryMarkerAggregator.PhysicalEvidenceStableScans} scans/{DiscoveryMarkerAggregator.PhysicalEvidenceStableAge.TotalSeconds:F0}s.",
+        $"Observed {markerCandidates.Count} promotion candidate(s) and {rawMarkerFamilies.Count}/{MaximumRawMarkerFamilies} raw-only family/families (dropped {droppedRawFamilies}); promoted {Records.Count}/{DiscoveryMarkerAggregator.MaximumPromotedLocations} stable location(s); retained {researchObjects.Count}/{MaximumResearchObjects} physical research object(s), dropped {droppedResearchObjects}.",
         RawFamilySummary(),
-        "Marker/object disappearance means no longer observed; it is not interpreted as deactivation or destruction.",
+        "Raw marker evidence never creates a manual destination. Marker/object disappearance is recorded but is not interpreted as deactivation, destruction, or ownership change.",
     ];
 
     public override void Reset(DateTime now)
@@ -57,6 +64,7 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         nextLocationIndex = 1;
         nextResearchIndex = 1;
         droppedResearchObjects = 0;
+        droppedRawFamilies = 0;
     }
 
     public override IReadOnlyList<ObjectiveChange> Update(
@@ -69,14 +77,12 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         UpdateMarkers(now, markers, physicalObservations, changes);
         UpdateResearchObjects(now, physicalObservations, changes);
         AssociatePhysicalEvidence(now, changes);
-
         foreach (var record in Records.Values)
         {
             var nearby = CountNearby(record.ReferencePosition, players);
             record.NearbyAllies = nearby.Allies;
             record.NearbyEnemies = nearby.Enemies;
         }
-
         return changes;
     }
 
@@ -86,18 +92,16 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         IReadOnlyList<ObjectiveObservation> physicalObservations,
         List<ObjectiveChange> changes)
     {
-        var aggregates = SecureObjectiveAggregator.Aggregate(markers);
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var aggregate in aggregates)
+        foreach (var aggregate in DiscoveryMarkerAggregator.Aggregate(markers))
         {
             var physicallyCorroborated = physicalObservations.Any(observation =>
                 IsPotentialObjectivePhysical(observation) &&
                 HorizontalDistance(observation.Position, aggregate.Position) <= 8f &&
                 Math.Abs(observation.Position.Y - aggregate.Position.Y) <= 5f);
-            var promotionClass = SecureObjectiveAggregator.ClassifyPromotionEvidence(
-                aggregate,
-                physicallyCorroborated);
-            if (promotionClass == SecureMarkerPromotionClass.RawObservationOnly)
+            var promotionClass = DiscoveryMarkerAggregator.ClassifyPromotionEvidence(
+                aggregate, physicallyCorroborated);
+            if (promotionClass == DiscoveryMarkerPromotionClass.RawObservationOnly)
             {
                 ObserveRawFamily(now, aggregate, changes);
                 continue;
@@ -105,7 +109,7 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
 
             var candidateKey = ResolveCandidateKey(aggregate.Position, seenKeys) ?? aggregate.PositionKey;
             seenKeys.Add(candidateKey);
-            var sanitizedEvidence = PrivacySanitizer.Sanitize(aggregate.EvidenceSummary);
+            var evidence = PrivacySanitizer.Sanitize(aggregate.EvidenceSummary);
             if (!markerCandidates.TryGetValue(candidateKey, out var candidate))
             {
                 if (markerCandidates.Count >= MaximumTrackedPromotionCandidates)
@@ -114,21 +118,12 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     continue;
                 }
                 candidate = new MarkerCandidate(
-                    candidateKey,
-                    aggregate.Position,
-                    now,
-                    now,
-                    1,
-                    aggregate.TransitionFingerprint,
-                    sanitizedEvidence,
-                    true,
-                    promotionClass,
-                    aggregate.MarkerFamilyFingerprint);
+                    candidateKey, aggregate.Position, now, now, 1,
+                    aggregate.TransitionFingerprint, evidence, true,
+                    promotionClass, aggregate.MarkerFamilyFingerprint);
                 markerCandidates[candidateKey] = candidate;
-                changes.Add(new ObjectiveChange(
-                    "secure_marker_candidate_appeared",
-                    $"UNRESOLVED@{candidateKey}",
-                    $"position={FormatVector(aggregate.Position)}; class={promotionClass}; records={aggregate.EvidenceCount}; evidence={sanitizedEvidence}"));
+                changes.Add(Change("marker_candidate_appeared", $"UNRESOLVED@{candidateKey}",
+                    $"position={FormatVector(aggregate.Position)}; class={promotionClass}; records={aggregate.EvidenceCount}; evidence={evidence}"));
             }
             else
             {
@@ -137,20 +132,17 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     candidate.CurrentlyObserved = true;
                     candidate.StabilityStartedUtc = now;
                     candidate.ScanCount = 0;
-                    changes.Add(new ObjectiveChange(
-                        "secure_marker_candidate_reappeared",
-                        LogicalOrCandidateId(candidate.PositionKey),
-                        $"position={FormatVector(aggregate.Position)}; evidence={sanitizedEvidence}"));
+                    changes.Add(Change("marker_candidate_reappeared", LogicalOrCandidateId(candidate.PositionKey),
+                        $"position={FormatVector(aggregate.Position)}; evidence={evidence}"));
                 }
+
                 var familyChanged = !string.Equals(
-                    candidate.MarkerFamilyFingerprint,
-                    aggregate.MarkerFamilyFingerprint,
-                    StringComparison.Ordinal);
+                    candidate.MarkerFamilyFingerprint, aggregate.MarkerFamilyFingerprint, StringComparison.Ordinal);
                 var drifted = HorizontalDistance(candidate.AnchorPosition, aggregate.Position) > 1.25f;
                 candidate.Position = aggregate.Position;
                 candidate.LastSeenUtc = now;
                 candidate.ScanCount++;
-                if (promotionClass != candidate.PromotionClass || familyChanged || drifted)
+                if (candidate.PromotionClass != promotionClass || familyChanged || drifted)
                 {
                     candidate.PromotionClass = promotionClass;
                     candidate.MarkerFamilyFingerprint = aggregate.MarkerFamilyFingerprint;
@@ -158,63 +150,48 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     candidate.StabilityStartedUtc = now;
                     candidate.ScanCount = 1;
                 }
+
                 var previousEvidence = candidate.EvidenceSummary;
-                candidate.EvidenceSummary = sanitizedEvidence;
+                candidate.EvidenceSummary = evidence;
                 if (!string.Equals(candidate.EvidenceFingerprint, aggregate.TransitionFingerprint, StringComparison.Ordinal))
                 {
                     candidate.EvidenceFingerprint = aggregate.TransitionFingerprint;
-                    changes.Add(new ObjectiveChange(
-                        "secure_observable_transition",
-                        LogicalOrCandidateId(candidate.PositionKey),
-                        $"before={previousEvidence}; after={sanitizedEvidence}; position={FormatVector(aggregate.Position)}"));
+                    changes.Add(Change("observable_transition", LogicalOrCandidateId(candidate.PositionKey),
+                        $"before={previousEvidence}; after={evidence}; position={FormatVector(aggregate.Position)}"));
                 }
             }
 
             if (!logicalIdByPosition.TryGetValue(candidate.PositionKey, out var logicalId) &&
-                Records.Count < SecureObjectiveAggregator.MaximumPromotedLocations &&
-                SecureObjectiveAggregator.IsStable(
-                    candidate.StabilityStartedUtc,
-                    candidate.LastSeenUtc,
-                    candidate.ScanCount,
-                    candidate.PromotionClass))
+                Records.Count < DiscoveryMarkerAggregator.MaximumPromotedLocations &&
+                DiscoveryMarkerAggregator.IsStable(
+                    candidate.StabilityStartedUtc, candidate.LastSeenUtc,
+                    candidate.ScanCount, candidate.PromotionClass))
             {
-                var isStableCenter = IsStableCenter(candidate.Position);
-                logicalId = isStableCenter
-                    ? StableCenterLogicalId
-                    : NextSessionLogicalId();
+                logicalId = NextLogicalId();
                 logicalIdByPosition[candidate.PositionKey] = logicalId;
-                Records[logicalId] = new MutableObjective(
-                    logicalId,
-                    isStableCenter ? "Geometric center (field-confirmed coordinate)" : "UNRESOLVED",
-                    "UNRESOLVED",
-                    isStableCenter ? 0 : nextLocationIndex - 1)
+                Records[logicalId] = new MutableObjective(logicalId, "UNRESOLVED stable location", "UNRESOLVED", nextLocationIndex - 1)
                 {
                     ReferencePosition = candidate.Position,
                     State = ObjectiveLifecycle.Unknown,
                     Rank = "UNRESOLVED",
                     Owner = ObjectiveOwner.Unresolved,
                     ObservedGrandCompany = "UNRESOLVED",
-                    StateId = 0,
-                    SensorSource = "AgentMap.EventMarkers (Secure discovery; meaning unresolved)",
+                    SensorSource = $"AgentMap.EventMarkers ({profile.AdapterName}; meaning unresolved)",
                     Confidence = SensorConfidence.RuntimeDiscovery,
                     FirstSeenUtc = candidate.FirstSeenUtc,
                     LastSeenUtc = now,
                     Evidence = candidate.EvidenceSummary,
                 };
-                changes.Add(new ObjectiveChange(
-                    "secure_location_discovered",
-                    logicalId,
+                changes.Add(Change("location_discovered", logicalId,
                     $"position={FormatVector(candidate.Position)}; promotion={candidate.PromotionClass}; stable_scans={candidate.ScanCount}; stable_age={(candidate.LastSeenUtc - candidate.StabilityStartedUtc).TotalSeconds:F1}s; evidence={candidate.EvidenceSummary}"));
             }
             else if (!logicalIdByPosition.ContainsKey(candidate.PositionKey) &&
-                     Records.Count >= SecureObjectiveAggregator.MaximumPromotedLocations &&
+                     Records.Count >= DiscoveryMarkerAggregator.MaximumPromotedLocations &&
                      !candidate.PromotionCeilingReported)
             {
                 candidate.PromotionCeilingReported = true;
-                changes.Add(new ObjectiveChange(
-                    "secure_location_promotion_rejected",
-                    $"UNRESOLVED@{candidate.PositionKey}",
-                    $"reason=sanity ceiling {SecureObjectiveAggregator.MaximumPromotedLocations}; position={FormatVector(candidate.Position)}; class={candidate.PromotionClass}; evidence={candidate.EvidenceSummary}"));
+                changes.Add(Change("location_promotion_rejected", $"UNRESOLVED@{candidate.PositionKey}",
+                    $"reason=sanity ceiling {DiscoveryMarkerAggregator.MaximumPromotedLocations}; position={FormatVector(candidate.Position)}; class={candidate.PromotionClass}"));
             }
 
             if (logicalId is not null && Records.TryGetValue(logicalId, out var record))
@@ -222,7 +199,6 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                 record.ReferencePosition = candidate.Position;
                 record.LastSeenUtc = now;
                 record.Evidence = candidate.EvidenceSummary;
-                record.SensorSource = "AgentMap.EventMarkers (Secure discovery; meaning unresolved)";
             }
         }
 
@@ -232,14 +208,12 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                 now - candidate.LastSeenUtc < MissingEvidenceDelay)
                 continue;
             candidate.CurrentlyObserved = false;
-            changes.Add(new ObjectiveChange(
-                "secure_marker_candidate_unobserved",
-                LogicalOrCandidateId(candidate.PositionKey),
+            changes.Add(Change("marker_candidate_unobserved", LogicalOrCandidateId(candidate.PositionKey),
                 $"last_position={FormatVector(candidate.Position)}; last_evidence={candidate.EvidenceSummary}; no lifecycle meaning inferred"));
             if (logicalIdByPosition.TryGetValue(candidate.PositionKey, out var logicalId) &&
                 Records.TryGetValue(logicalId, out var record))
             {
-                record.SensorSource = "Secure marker currently unobserved (not interpreted)";
+                record.SensorSource = $"{profile.AdapterName} marker currently unobserved (not interpreted)";
                 record.Evidence = $"last observed: {candidate.EvidenceSummary}";
             }
         }
@@ -253,66 +227,38 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
             markerCandidates.Remove(staleKey);
     }
 
-    private string NextSessionLogicalId()
-    {
-        string logicalId;
-        do
-        {
-            logicalId = $"SEC-{nextLocationIndex:00}";
-            nextLocationIndex++;
-        }
-        while (Records.ContainsKey(logicalId));
-        return logicalId;
-    }
-
-    private static bool IsStableCenter(Vector3 position) =>
-        HorizontalDistance(position, StableCenterPosition) <= 2f &&
-        Math.Abs(position.Y - StableCenterPosition.Y) <= 2f;
-
     private void ObserveRawFamily(
         DateTime now,
-        SecureMarkerAggregate aggregate,
+        DiscoveryMarkerAggregate aggregate,
         List<ObjectiveChange> changes,
         string reason = "raw-observation-only")
     {
-        foreach (var familyGroup in aggregate.Observations.GroupBy(SecureObjectiveAggregator.FamilyKey, StringComparer.Ordinal))
+        foreach (var group in aggregate.Observations.GroupBy(DiscoveryMarkerAggregator.FamilyKey, StringComparer.Ordinal))
         {
-            var familyKey = familyGroup.Key;
-            var sample = familyGroup.First();
-            if (!rawMarkerFamilies.TryGetValue(familyKey, out var family))
+            var key = group.Key;
+            if (!rawMarkerFamilies.TryGetValue(key, out var family))
             {
-                family = new RawMarkerFamily(familyKey, now);
-                rawMarkerFamilies[familyKey] = family;
+                if (rawMarkerFamilies.Count >= MaximumRawMarkerFamilies)
+                {
+                    droppedRawFamilies += group.Count();
+                    continue;
+                }
+                family = new RawMarkerFamily(key, now);
+                rawMarkerFamilies[key] = family;
             }
-
-            family.ObservationCount += familyGroup.Count();
+            family.ObservationCount += group.Count();
             family.ScanCount++;
             family.LastSeenUtc = now;
             family.LastPosition = aggregate.Position;
-            family.Reason = reason;
             family.AddSample(aggregate.Position);
-
             if (family.LastReportedUtc != DateTime.MinValue &&
                 now - family.LastReportedUtc < RawFamilyReportInterval)
                 continue;
-
             family.LastReportedUtc = now;
-            var sanitizedText = PrivacySanitizer.Sanitize(sample.Tooltip);
-            changes.Add(new ObjectiveChange(
-                "secure_raw_marker_family_observed",
-                $"RAW:{familyKey}",
-                $"reason={reason}; observations={family.ObservationCount}; scans={family.ScanCount}; last_position={FormatVector(aggregate.Position)}; samples=[{string.Join(',', family.SamplePositions.Select(FormatVector))}]; text={(string.IsNullOrWhiteSpace(sanitizedText) ? "<none>" : sanitizedText)}"));
+            var text = PrivacySanitizer.Sanitize(group.First().Tooltip);
+            changes.Add(Change("raw_marker_family_observed", $"RAW:{key}",
+                $"reason={reason}; observations={family.ObservationCount}; scans={family.ScanCount}; last_position={FormatVector(aggregate.Position)}; samples=[{string.Join(',', family.SamplePositions.Select(FormatVector))}]; text={(text.Length == 0 ? "<none>" : text)}"));
         }
-    }
-
-    private string RawFamilySummary()
-    {
-        if (rawMarkerFamilies.Count == 0)
-            return "Raw-only marker evidence: none observed.";
-        return "Raw-only marker families (not clickable): " + string.Join("; ", rawMarkerFamilies.Values
-            .OrderByDescending(family => family.ObservationCount)
-            .Take(8)
-            .Select(family => $"{family.FamilyKey}={family.ObservationCount}"));
     }
 
     private void UpdateResearchObjects(
@@ -325,9 +271,9 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         {
             var key = PhysicalKey(observation);
             seen.Add(key);
-            var sanitizedName = PrivacySanitizer.Sanitize(observation.Name);
-            var signature = PhysicalSignature(observation, sanitizedName);
-            var evidence = PhysicalEvidence(observation, sanitizedName);
+            var name = PrivacySanitizer.Sanitize(observation.Name);
+            var signature = PhysicalSignature(observation, name);
+            var evidence = PhysicalEvidence(observation, name);
             if (!researchObjects.TryGetValue(key, out var record))
             {
                 if (researchObjects.Count >= MaximumResearchObjects)
@@ -346,41 +292,27 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
                     continue;
                 }
                 record = new MutableResearchObject(
-                    $"SEC-OBJ-{nextResearchIndex:000}",
-                    nextResearchIndex,
-                    sanitizedName,
-                    observation,
-                    now,
-                    signature,
-                    evidence);
+                    $"{profile.LogicalPrefix}-OBJ-{nextResearchIndex:000}",
+                    nextResearchIndex, name, observation, now, signature, evidence);
                 nextResearchIndex++;
                 researchObjects[key] = record;
-                changes.Add(new ObjectiveChange(
-                    "secure_research_object_appeared",
-                    record.ResearchId,
-                    evidence));
+                changes.Add(Change("research_object_appeared", record.ResearchId, evidence));
                 continue;
             }
 
             if (!record.CurrentlyObserved)
             {
                 record.CurrentlyObserved = true;
-                changes.Add(new ObjectiveChange(
-                    "secure_research_object_reappeared",
-                    record.ResearchId,
-                    evidence));
+                changes.Add(Change("research_object_reappeared", record.ResearchId, evidence));
             }
             if (!string.Equals(record.Signature, signature, StringComparison.Ordinal) &&
                 now - record.LastChangeReportedUtc >= ResearchObjectChangeReportInterval)
             {
-                var before = record.Evidence;
-                changes.Add(new ObjectiveChange(
-                    "secure_research_object_changed",
-                    record.ResearchId,
-                    $"before={before}; after={evidence}"));
+                changes.Add(Change("research_object_changed", record.ResearchId,
+                    $"before={record.Evidence}; after={evidence}"));
                 record.LastChangeReportedUtc = now;
             }
-            record.Update(sanitizedName, observation, now, signature, evidence);
+            record.Update(name, observation, now, signature, evidence);
         }
 
         foreach (var pair in researchObjects)
@@ -389,9 +321,7 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
             if (seen.Contains(pair.Key) || !record.CurrentlyObserved || now - record.LastSeenUtc < MissingEvidenceDelay)
                 continue;
             record.CurrentlyObserved = false;
-            changes.Add(new ObjectiveChange(
-                "secure_research_object_unobserved",
-                record.ResearchId,
+            changes.Add(Change("research_object_unobserved", record.ResearchId,
                 $"last={record.Evidence}; no lifecycle meaning inferred"));
         }
     }
@@ -413,42 +343,34 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
             if (nearest.Item is null)
             {
                 objective.PhysicalConfirmation = null;
-                var physicalSeparator = objective.Evidence.IndexOf(" | physical=", StringComparison.Ordinal);
-                if (physicalSeparator >= 0)
-                    objective.Evidence = objective.Evidence[..physicalSeparator];
                 if (physicalResearchIdByLocation.Remove(objective.LogicalId, out var previous))
-                {
-                    changes.Add(new ObjectiveChange(
-                        "secure_location_physical_unobserved",
-                        objective.LogicalId,
+                    changes.Add(Change("location_physical_unobserved", objective.LogicalId,
                         $"research_object={previous}; proximity evidence disappeared; no lifecycle meaning inferred"));
-                }
                 continue;
             }
 
             var item = nearest.Item;
             objective.PhysicalConfirmation = new ObjectivePhysicalConfirmation(
-                item.GameObjectId,
-                item.EntityId,
-                item.BaseId,
-                item.Position,
-                item.CurrentHp,
-                item.MaxHp,
-                item.IsTargetable,
-                now);
-            var separator = objective.Evidence.IndexOf(" | physical=", StringComparison.Ordinal);
-            var markerEvidence = separator >= 0 ? objective.Evidence[..separator] : objective.Evidence;
-            objective.Evidence = $"{markerEvidence} | physical={item.ResearchId}: {item.Evidence}";
-            if (!physicalResearchIdByLocation.TryGetValue(objective.LogicalId, out var previousId) ||
-                !string.Equals(previousId, item.ResearchId, StringComparison.Ordinal))
+                item.GameObjectId, item.EntityId, item.BaseId, item.Position,
+                item.CurrentHp, item.MaxHp, item.IsTargetable, now);
+            if (!physicalResearchIdByLocation.TryGetValue(objective.LogicalId, out var prior) ||
+                prior != item.ResearchId)
             {
                 physicalResearchIdByLocation[objective.LogicalId] = item.ResearchId;
-                changes.Add(new ObjectiveChange(
-                    "secure_location_physical_evidence",
-                    objective.LogicalId,
+                changes.Add(Change("location_physical_evidence", objective.LogicalId,
                     $"research_object={item.ResearchId}; distance={nearest.Distance:F1}; evidence={item.Evidence}"));
             }
         }
+    }
+
+    private ObjectiveChange Change(string suffix, string logicalId, string detail) =>
+        new($"{profile.EventPrefix}_{suffix}", logicalId, detail);
+
+    private string NextLogicalId()
+    {
+        var value = $"{profile.LogicalPrefix}-{nextLocationIndex:00}";
+        nextLocationIndex++;
+        return value;
     }
 
     private string LogicalOrCandidateId(string positionKey) =>
@@ -465,27 +387,34 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
             .Select(item => item.PositionKey)
             .FirstOrDefault();
 
+    private string RawFamilySummary() => rawMarkerFamilies.Count == 0
+        ? "Raw-only marker evidence: none observed."
+        : "Raw-only marker families (research only; not clickable): " + string.Join("; ", rawMarkerFamilies.Values
+            .OrderByDescending(family => family.ObservationCount)
+            .Take(8)
+            .Select(family => $"{family.FamilyKey}={family.ObservationCount}"));
+
+    private static bool IsPotentialObjectivePhysical(ObjectiveObservation item) =>
+        item.ObjectKind.Equals("EventObj", StringComparison.OrdinalIgnoreCase) ||
+        (item.ObjectKind.Equals("BattleNpc", StringComparison.OrdinalIgnoreCase) &&
+         item.IsTargetable && item.MaxHp >= 100_000);
+
+    private static bool IsPotentialObjectivePhysical(MutableResearchObject item) =>
+        item.ObjectKind.Equals("EventObj", StringComparison.OrdinalIgnoreCase) ||
+        (item.ObjectKind.Equals("BattleNpc", StringComparison.OrdinalIgnoreCase) &&
+         item.IsTargetable && item.MaxHp >= 100_000);
+
     private static string PhysicalKey(ObjectiveObservation observation) => observation.GameObjectId != 0
         ? $"object:{observation.GameObjectId:X16}"
-        : $"fallback:{observation.BaseId}:{SecureObjectiveAggregator.PositionKey(observation.Position)}";
+        : $"fallback:{observation.BaseId}:{DiscoveryMarkerAggregator.PositionKey(observation.Position)}";
 
-    private static string PhysicalSignature(ObjectiveObservation observation, string sanitizedName) =>
+    private static string PhysicalSignature(ObjectiveObservation observation, string name) =>
         string.Create(CultureInfo.InvariantCulture,
-            $"{observation.EntityId:X8}|{observation.BaseId}|{sanitizedName}|{observation.ObjectKind}|{observation.Position.X:F1}|{observation.Position.Y:F1}|{observation.Position.Z:F1}|{observation.IsTargetable}|{observation.IsDead}|{observation.CurrentHp}|{observation.MaxHp}");
+            $"{observation.EntityId:X8}|{observation.BaseId}|{name}|{observation.ObjectKind}|{observation.Position.X:F1}|{observation.Position.Y:F1}|{observation.Position.Z:F1}|{observation.IsTargetable}|{observation.IsDead}|{observation.CurrentHp}|{observation.MaxHp}");
 
-    private static string PhysicalEvidence(ObjectiveObservation observation, string sanitizedName) =>
+    private static string PhysicalEvidence(ObjectiveObservation observation, string name) =>
         string.Create(CultureInfo.InvariantCulture,
-            $"object=0x{observation.GameObjectId:X16}; entity=0x{observation.EntityId:X8}; base={observation.BaseId}; kind={observation.ObjectKind}; name={sanitizedName}; position={FormatVector(observation.Position)}; targetable={observation.IsTargetable}; dead={observation.IsDead}; hp={observation.CurrentHp}/{observation.MaxHp}");
-
-    internal static bool IsPotentialObjectivePhysical(ObjectiveObservation observation) =>
-        observation.ObjectKind.Equals("EventObj", StringComparison.OrdinalIgnoreCase) ||
-        (observation.ObjectKind.Equals("BattleNpc", StringComparison.OrdinalIgnoreCase) &&
-         observation.IsTargetable && observation.MaxHp >= 100_000);
-
-    private static bool IsPotentialObjectivePhysical(MutableResearchObject observation) =>
-        observation.ObjectKind.Equals("EventObj", StringComparison.OrdinalIgnoreCase) ||
-        (observation.ObjectKind.Equals("BattleNpc", StringComparison.OrdinalIgnoreCase) &&
-         observation.IsTargetable && observation.MaxHp >= 100_000);
+            $"object=0x{observation.GameObjectId:X16}; entity=0x{observation.EntityId:X8}; base={observation.BaseId}; kind={observation.ObjectKind}; name={name}; position={FormatVector(observation.Position)}; targetable={observation.IsTargetable}; dead={observation.IsDead}; hp={observation.CurrentHp}/{observation.MaxHp}");
 
     private static string FormatVector(Vector3 position) =>
         string.Create(CultureInfo.InvariantCulture, $"({position.X:F1},{position.Y:F1},{position.Z:F1})");
@@ -499,7 +428,7 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         string evidenceFingerprint,
         string evidenceSummary,
         bool currentlyObserved,
-        SecureMarkerPromotionClass promotionClass,
+        DiscoveryMarkerPromotionClass promotionClass,
         string markerFamilyFingerprint)
     {
         public string PositionKey { get; } = positionKey;
@@ -512,14 +441,14 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         public string EvidenceFingerprint { get; set; } = evidenceFingerprint;
         public string EvidenceSummary { get; set; } = evidenceSummary;
         public bool CurrentlyObserved { get; set; } = currentlyObserved;
-        public SecureMarkerPromotionClass PromotionClass { get; set; } = promotionClass;
+        public DiscoveryMarkerPromotionClass PromotionClass { get; set; } = promotionClass;
         public string MarkerFamilyFingerprint { get; set; } = markerFamilyFingerprint;
         public bool PromotionCeilingReported { get; set; }
     }
 
     private sealed class RawMarkerFamily(string familyKey, DateTime firstSeenUtc)
     {
-        private const int MaximumSamples = 8;
+        private const int MaximumSamples = 6;
         public string FamilyKey { get; } = familyKey;
         public DateTime FirstSeenUtc { get; } = firstSeenUtc;
         public DateTime LastSeenUtc { get; set; } = firstSeenUtc;
@@ -527,7 +456,6 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         public int ObservationCount { get; set; }
         public int ScanCount { get; set; }
         public Vector3 LastPosition { get; set; }
-        public string Reason { get; set; } = "raw-observation-only";
         public List<Vector3> SamplePositions { get; } = [];
 
         public void AddSample(Vector3 position)
@@ -592,20 +520,8 @@ internal sealed class SecureAdapter : FrontlineMapAdapterBase
         }
 
         public FrontlineResearchObject Snapshot() => new(
-            ResearchId,
-            Name,
-            ObjectKind,
-            GameObjectId,
-            EntityId,
-            BaseId,
-            Position,
-            IsTargetable,
-            IsDead,
-            CurrentHp,
-            MaxHp,
-            CurrentlyObserved,
-            FirstSeenUtc,
-            LastSeenUtc,
-            Evidence);
+            ResearchId, Name, ObjectKind, GameObjectId, EntityId, BaseId,
+            Position, IsTargetable, IsDead, CurrentHp, MaxHp,
+            CurrentlyObserved, FirstSeenUtc, LastSeenUtc, Evidence);
     }
 }
