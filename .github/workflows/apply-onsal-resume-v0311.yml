@@ -1,0 +1,29 @@
+name: Apply staged v0.3.1.1 source patch
+
+on:
+  push:
+    branches: [codex/onsal-combat-resume-v0311]
+    paths: [.github/workflows/apply-onsal-resume-v0311.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/onsal-combat-resume-v0311
+          fetch-depth: 0
+
+      - name: Apply validated source patch
+        run: git apply --index onsal-resume-v0311.patch
+
+      - name: Remove staging files and publish branch commit
+        run: |
+          git rm onsal-resume-v0311.patch .github/workflows/apply-onsal-resume-v0311.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Fix Reborn combat resume and Onsal marker promotion"
+          git push origin HEAD:codex/onsal-combat-resume-v0311
