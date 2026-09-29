@@ -13,13 +13,16 @@ internal sealed record RotationSolverEngagementDecision(
     ExternalEngagementState State,
     bool ShouldYield,
     int NearbyEnemies,
+    int EnemiesTargetingPlayer,
     string Explanation);
 
 /// <summary>
 /// Converts observable local combat state into a stable ownership decision.
 /// RotationSolverReborn has no supported PvP combat-permission IPC, so once an
 /// engagement starts PvPSentinel deliberately yields its path until the player
-/// is out of combat, the clearance area is empty, and the quiet period elapses.
+/// is out of combat, observed hard-target pressure clears, and a short quiet
+/// period elapses. Passive enemy proximity remains diagnostic and cannot starve
+/// a preserved route indefinitely.
 /// </summary>
 internal sealed class RotationSolverEngagementTracker
 {
@@ -38,10 +41,12 @@ internal sealed class RotationSolverEngagementTracker
         bool isCasting,
         bool isActionQueued,
         int nearbyEnemies,
+        int enemiesTargetingPlayer,
         bool isRespawnRegroup,
         float quietSeconds)
     {
         nearbyEnemies = Math.Max(0, nearbyEnemies);
+        enemiesTargetingPlayer = Math.Max(0, enemiesTargetingPlayer);
         quietSeconds = Math.Clamp(quietSeconds, 1f, 15f);
 
         if (!providerAvailableAndActive)
@@ -51,6 +56,7 @@ internal sealed class RotationSolverEngagementTracker
                 ExternalEngagementState.Unavailable,
                 false,
                 nearbyEnemies,
+                enemiesTargetingPlayer,
                 "RotationSolverReborn is not both loaded and active; PvPSentinel will not claim that external combat is being handled.");
         }
 
@@ -63,6 +69,7 @@ internal sealed class RotationSolverEngagementTracker
                 state,
                 false,
                 nearbyEnemies,
+                enemiesTargetingPlayer,
                 "The player is dead. Combat yield is released so the normal respawn/regroup lifecycle can proceed.");
         }
 
@@ -93,19 +100,21 @@ internal sealed class RotationSolverEngagementTracker
                 state,
                 true,
                 nearbyEnemies,
-                $"Engagement latched because {evidence}. Reborn owns local combat; strategic travel remains paused until combat and nearby threats clear.");
+                enemiesTargetingPlayer,
+                $"Engagement latched because {evidence}. Reborn owns local combat; strategic travel remains paused until combat and observed hard-target pressure clear.");
         }
 
         if (state == ExternalEngagementState.Engaged)
         {
-            if (nearbyEnemies > 0)
+            if (enemiesTargetingPlayer > 0)
             {
                 quietSinceUtc = DateTime.MinValue;
                 return new RotationSolverEngagementDecision(
                     state,
                     true,
                     nearbyEnemies,
-                    $"The combat flag cleared, but {nearbyEnemies} observed enemy player(s) remain inside the engagement-clearance radius.");
+                    enemiesTargetingPlayer,
+                    $"The combat flag cleared, but {enemiesTargetingPlayer} observed enemy player(s) inside the configured radius still hard-target the local player. Passive nearby enemies={nearbyEnemies}.");
             }
 
             if (quietSinceUtc == DateTime.MinValue)
@@ -118,7 +127,8 @@ internal sealed class RotationSolverEngagementTracker
                     state,
                     true,
                     nearbyEnemies,
-                    $"Combat and nearby enemies cleared; waiting {Math.Max(0, quietSeconds - elapsed.TotalSeconds):F1}s of quiet time before resuming strategic travel.");
+                    enemiesTargetingPlayer,
+                    $"Combat and observed hard-target pressure cleared; waiting {Math.Max(0, quietSeconds - elapsed.TotalSeconds):F1}s of quiet time before resuming strategic travel. Passive nearby enemies={nearbyEnemies} do not reset this timer.");
             }
 
             state = isRespawnRegroup ? ExternalEngagementState.Regrouping : ExternalEngagementState.Transit;
@@ -127,7 +137,8 @@ internal sealed class RotationSolverEngagementTracker
                 state,
                 false,
                 nearbyEnemies,
-                "Combat, nearby enemies, and the post-combat quiet period are clear; strategic travel may resume.");
+                enemiesTargetingPlayer,
+                $"Combat, observed hard-target pressure, and the post-combat quiet period are clear; strategic travel may resume. Passive nearby enemies={nearbyEnemies}.");
         }
 
         if (isRespawnRegroup || state == ExternalEngagementState.Regrouping)
@@ -137,6 +148,7 @@ internal sealed class RotationSolverEngagementTracker
                 state,
                 false,
                 nearbyEnemies,
+                enemiesTargetingPlayer,
                 state == ExternalEngagementState.Regrouping
                     ? "Post-respawn regrouping is active; Reborn remains enabled while PvPSentinel owns strategic travel."
                     : "Post-respawn regrouping completed; normal strategic transit may continue.");
@@ -147,6 +159,7 @@ internal sealed class RotationSolverEngagementTracker
             state,
             false,
             nearbyEnemies,
+            enemiesTargetingPlayer,
             isMounted
                 ? "Mounted strategic transit is active; Reborn should remain action-idle while mounted."
                 : "No combat engagement is latched; PvPSentinel owns strategic transit.");

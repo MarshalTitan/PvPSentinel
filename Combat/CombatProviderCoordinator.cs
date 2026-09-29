@@ -49,6 +49,7 @@ internal sealed class CombatProviderCoordinator(
                 game,
                 behavior,
                 config,
+                threat,
                 sentinelMountTransitionPending),
             CombatProvider.NativePvPSentinel => nativeController.Update(game, behavior, target, config, threat),
             _ => new CombatDecision(
@@ -62,7 +63,7 @@ internal sealed class CombatProviderCoordinator(
 
         developmentLog.Changed(
             "combat-provider",
-            $"{decision.Provider}|{decision.ControllerActive}|{decision.YieldNavigation}",
+            $"{decision.Provider}|{decision.ControllerActive}|{decision.YieldNavigation}|{decision.External?.EngagementState}|{decision.External?.NearbyEnemies}|{decision.External?.TargetingPlayer}",
             $"Provider {decision.Provider}; active={decision.ControllerActive}; yield navigation={decision.YieldNavigation}. {decision.Explanation}");
         return decision;
     }
@@ -71,6 +72,7 @@ internal sealed class CombatProviderCoordinator(
         GameStateSnapshot game,
         BehaviorState behavior,
         Configuration config,
+        PvPThreatSnapshot threat,
         bool sentinelMountTransitionPending)
     {
         var status = rotationSolverReborn.GetStatus(game.CapturedAtUtc);
@@ -78,6 +80,9 @@ internal sealed class CombatProviderCoordinator(
         var nearbyEnemies = game.LocalPlayer is null
             ? 0
             : CountNear(game.Enemies, game.LocalPlayer.Position, config.RotationSolverEnemyClearanceRadius);
+        var enemiesTargetingPlayer = threat.IsReliable
+            ? threat.Targeters.Count(targeter => targeter.Distance <= Math.Clamp(config.RotationSolverEnemyClearanceRadius, 10f, 60f))
+            : 0;
         var engagement = rebornEngagement.Update(
             game.CapturedAtUtc,
             providerActive && game.IsFrontline && game.IsClassificationReliable && game.LocalPlayer is not null,
@@ -89,6 +94,7 @@ internal sealed class CombatProviderCoordinator(
             game.IsCasting,
             game.IsActionQueued,
             nearbyEnemies,
+            enemiesTargetingPlayer,
             behavior == BehaviorState.RespawnRegroup,
             config.RotationSolverQuietSeconds);
 
@@ -111,6 +117,7 @@ internal sealed class CombatProviderCoordinator(
             status.NextGcdActionId,
             status.NextGcdAction,
             engagement.NearbyEnemies,
+            engagement.EnemiesTargetingPlayer,
             limitReady,
             status.Explanation);
 

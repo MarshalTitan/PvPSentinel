@@ -93,14 +93,15 @@ internal abstract class DiscoveryFrontlineAdapter(DiscoveryMapProfile profile) :
         List<ObjectiveChange> changes)
     {
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var aggregate in DiscoveryMarkerAggregator.Aggregate(markers))
+        foreach (var aggregate in DiscoveryMarkerAggregator.Aggregate(markers, NormalizeObjectiveIdForStability))
         {
             var physicallyCorroborated = physicalObservations.Any(observation =>
                 IsPotentialObjectivePhysical(observation) &&
                 HorizontalDistance(observation.Position, aggregate.Position) <= 8f &&
                 Math.Abs(observation.Position.Y - aggregate.Position.Y) <= 5f);
-            var promotionClass = DiscoveryMarkerAggregator.ClassifyPromotionEvidence(
-                aggregate, physicallyCorroborated);
+            var promotionClass = ForceRawObservation(aggregate)
+                ? DiscoveryMarkerPromotionClass.RawObservationOnly
+                : DiscoveryMarkerAggregator.ClassifyPromotionEvidence(aggregate, physicallyCorroborated);
             if (promotionClass == DiscoveryMarkerPromotionClass.RawObservationOnly)
             {
                 ObserveRawFamily(now, aggregate, changes);
@@ -365,6 +366,11 @@ internal abstract class DiscoveryFrontlineAdapter(DiscoveryMapProfile profile) :
 
     private ObjectiveChange Change(string suffix, string logicalId, string detail) =>
         new($"{profile.EventPrefix}_{suffix}", logicalId, detail);
+
+    protected virtual uint NormalizeObjectiveIdForStability(uint objectiveId) =>
+        DiscoveryMarkerAggregator.NormalizeFlickeringObjectiveId(objectiveId);
+
+    protected virtual bool ForceRawObservation(DiscoveryMarkerAggregate aggregate) => false;
 
     private string NextLogicalId()
     {

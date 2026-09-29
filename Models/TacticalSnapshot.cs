@@ -85,6 +85,7 @@ internal sealed record ExternalCombatDiagnostics(
     uint NextGcdActionId,
     string NextGcdAction,
     int NearbyEnemies,
+    int TargetingPlayer,
     bool LimitBreakReadyUnmanaged,
     string Status);
 
