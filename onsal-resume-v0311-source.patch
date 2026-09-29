@@ -1,0 +1,622 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index c7bde3e..892dc3b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,16 @@
+ # Changelog
+ 
++## 0.3.1.1 — Onsal evidence cleanup and prompt combat resume
++
++- Correlated the first complete Onsal discovery session with all four recordings. Twelve manual requests produced four `ARRIVED` routes, zero navigation/path failures, two bounded stuck recoveries, four combat yields, two automatic route resumes, clean `1 SELF / 23 ALLY / 46 ENEMY / 0 UNKNOWN` classification, three detected deaths/respawns, terminal results, and no sensor error or plugin exception.
++- Confirmed the reported post-fight stall was combat arbitration rather than vnavmesh failure. The former policy required five quiet seconds and reset that timer for every living targetable enemy inside 30 yalms, so unrelated enemy traffic could starve a preserved route indefinitely.
++- Changed RotationSolverReborn handoff to keep yielding for actual local combat/casting/action evidence and for shared-threat enemies observably hard-targeting the player, while passive enemy proximity remains diagnostic and cannot reset the resume timer.
++- Reduced the configurable Reborn post-combat default from five seconds to two seconds and migrates only the exact legacy default; deliberately customized values remain intact. A renewed real engagement still reacquires combat ownership and stops navigation immediately.
++- Added explicit external-provider diagnostics for both nearby enemies and enemies currently targeting the player, and made engagement-state/threat changes visible in event-driven Dalamud logging.
++- Demoted live-confirmed Onsal moving marker families `60359/60360 + 4278190080` and landing/base family `60599 + 62/4278190080` to raw research evidence even when they overlap an EventObj. They can no longer consume the 32-location ceiling or create false `ONS-xx` buttons.
++- Normalized the observed Onsal `ObjectiveId` 446/448 presentation flicker for stability/transition comparison while retaining the original IDs in raw evidence, eliminating high-frequency false transitions without assigning speculative objective semantics.
++- Added regression coverage for passive-enemy resume, observed hard-target blocking, Onsal moving-marker physical-overlap rejection, and 446/448 stability. Autonomous strategy, automatic objective navigation, queue/requeue, and provider-independent PvP Limit Break execution remain disabled; Native MCH remains `Shadow / Observe` by default.
++
+ ## 0.3.1.0 — All-map discovery foundation and Onsal test build
+ 
+ - Correlated the final v0.3.0.9 Secure session, including its fresh start after the game crash. The complete trace retained clean `1 SELF / 23 ALLY / 37 ENEMY / 0 UNKNOWN` classification, Company Chocobo travel, explicit STOP, death cancellation, combat yield/resume, and five successful `ARRIVED` routes without a plugin exception.
+diff --git a/Combat/CombatProviderCoordinator.cs b/Combat/CombatProviderCoordinator.cs
+index 36e9757..7d5d006 100644
+--- a/Combat/CombatProviderCoordinator.cs
++++ b/Combat/CombatProviderCoordinator.cs
+@@ -49,6 +49,7 @@ internal sealed class CombatProviderCoordinator(
+                 game,
+                 behavior,
+                 config,
++                threat,
+                 sentinelMountTransitionPending),
+             CombatProvider.NativePvPSentinel => nativeController.Update(game, behavior, target, config, threat),
+             _ => new CombatDecision(
+@@ -62,7 +63,7 @@ internal sealed class CombatProviderCoordinator(
+ 
+         developmentLog.Changed(
+             "combat-provider",
+-            $"{decision.Provider}|{decision.ControllerActive}|{decision.YieldNavigation}",
++            $"{decision.Provider}|{decision.ControllerActive}|{decision.YieldNavigation}|{decision.External?.EngagementState}|{decision.External?.NearbyEnemies}|{decision.External?.TargetingPlayer}",
+             $"Provider {decision.Provider}; active={decision.ControllerActive}; yield navigation={decision.YieldNavigation}. {decision.Explanation}");
+         return decision;
+     }
+@@ -71,6 +72,7 @@ internal sealed class CombatProviderCoordinator(
+         GameStateSnapshot game,
+         BehaviorState behavior,
+         Configuration config,
++        PvPThreatSnapshot threat,
+         bool sentinelMountTransitionPending)
+     {
+         var status = rotationSolverReborn.GetStatus(game.CapturedAtUtc);
+@@ -78,6 +80,9 @@ internal sealed class CombatProviderCoordinator(
+         var nearbyEnemies = game.LocalPlayer is null
+             ? 0
+             : CountNear(game.Enemies, game.LocalPlayer.Position, config.RotationSolverEnemyClearanceRadius);
++        var enemiesTargetingPlayer = threat.IsReliable
++            ? threat.Targeters.Count(targeter => targeter.Distance <= Math.Clamp(config.RotationSolverEnemyClearanceRadius, 10f, 60f))
++            : 0;
+         var engagement = rebornEngagement.Update(
+             game.CapturedAtUtc,
+             providerActive && game.IsFrontline && game.IsClassificationReliable && game.LocalPlayer is not null,
+@@ -89,6 +94,7 @@ internal sealed class CombatProviderCoordinator(
+             game.IsCasting,
+             game.IsActionQueued,
+             nearbyEnemies,
++            enemiesTargetingPlayer,
+             behavior == BehaviorState.RespawnRegroup,
+             config.RotationSolverQuietSeconds);
+ 
+@@ -111,6 +117,7 @@ internal sealed class CombatProviderCoordinator(
+             status.NextGcdActionId,
+             status.NextGcdAction,
+             engagement.NearbyEnemies,
++            engagement.EnemiesTargetingPlayer,
+             limitReady,
+             status.Explanation);
+ 
+diff --git a/Combat/RotationSolverEngagementTracker.cs b/Combat/RotationSolverEngagementTracker.cs
+index 541dd8b..a82b121 100644
+--- a/Combat/RotationSolverEngagementTracker.cs
++++ b/Combat/RotationSolverEngagementTracker.cs
+@@ -13,13 +13,16 @@ internal sealed record RotationSolverEngagementDecision(
+     ExternalEngagementState State,
+     bool ShouldYield,
+     int NearbyEnemies,
++    int EnemiesTargetingPlayer,
+     string Explanation);
+ 
+ /// <summary>
+ /// Converts observable local combat state into a stable ownership decision.
+ /// RotationSolverReborn has no supported PvP combat-permission IPC, so once an
+ /// engagement starts PvPSentinel deliberately yields its path until the player
+-/// is out of combat, the clearance area is empty, and the quiet period elapses.
++/// is out of combat, observed hard-target pressure clears, and a short quiet
++/// period elapses. Passive enemy proximity remains diagnostic and cannot starve
++/// a preserved route indefinitely.
+ /// </summary>
+ internal sealed class RotationSolverEngagementTracker
+ {
+@@ -38,10 +41,12 @@ internal sealed class RotationSolverEngagementTracker
+         bool isCasting,
+         bool isActionQueued,
+         int nearbyEnemies,
++        int enemiesTargetingPlayer,
+         bool isRespawnRegroup,
+         float quietSeconds)
+     {
+         nearbyEnemies = Math.Max(0, nearbyEnemies);
++        enemiesTargetingPlayer = Math.Max(0, enemiesTargetingPlayer);
+         quietSeconds = Math.Clamp(quietSeconds, 1f, 15f);
+ 
+         if (!providerAvailableAndActive)
+@@ -51,6 +56,7 @@ internal sealed class RotationSolverEngagementTracker
+                 ExternalEngagementState.Unavailable,
+                 false,
+                 nearbyEnemies,
++                enemiesTargetingPlayer,
+                 "RotationSolverReborn is not both loaded and active; PvPSentinel will not claim that external combat is being handled.");
+         }
+ 
+@@ -63,6 +69,7 @@ internal sealed class RotationSolverEngagementTracker
+                 state,
+                 false,
+                 nearbyEnemies,
++                enemiesTargetingPlayer,
+                 "The player is dead. Combat yield is released so the normal respawn/regroup lifecycle can proceed.");
+         }
+ 
+@@ -93,19 +100,21 @@ internal sealed class RotationSolverEngagementTracker
+                 state,
+                 true,
+                 nearbyEnemies,
+-                $"Engagement latched because {evidence}. Reborn owns local combat; strategic travel remains paused until combat and nearby threats clear.");
++                enemiesTargetingPlayer,
++                $"Engagement latched because {evidence}. Reborn owns local combat; strategic travel remains paused until combat and observed hard-target pressure clear.");
+         }
+ 
+         if (state == ExternalEngagementState.Engaged)
+         {
+-            if (nearbyEnemies > 0)
++            if (enemiesTargetingPlayer > 0)
+             {
+                 quietSinceUtc = DateTime.MinValue;
+                 return new RotationSolverEngagementDecision(
+                     state,
+                     true,
+                     nearbyEnemies,
+-                    $"The combat flag cleared, but {nearbyEnemies} observed enemy player(s) remain inside the engagement-clearance radius.");
++                    enemiesTargetingPlayer,
++                    $"The combat flag cleared, but {enemiesTargetingPlayer} observed enemy player(s) inside the configured radius still hard-target the local player. Passive nearby enemies={nearbyEnemies}.");
+             }
+ 
+             if (quietSinceUtc == DateTime.MinValue)
+@@ -118,7 +127,8 @@ internal sealed class RotationSolverEngagementTracker
+                     state,
+                     true,
+                     nearbyEnemies,
+-                    $"Combat and nearby enemies cleared; waiting {Math.Max(0, quietSeconds - elapsed.TotalSeconds):F1}s of quiet time before resuming strategic travel.");
++                    enemiesTargetingPlayer,
++                    $"Combat and observed hard-target pressure cleared; waiting {Math.Max(0, quietSeconds - elapsed.TotalSeconds):F1}s of quiet time before resuming strategic travel. Passive nearby enemies={nearbyEnemies} do not reset this timer.");
+             }
+ 
+             state = isRespawnRegroup ? ExternalEngagementState.Regrouping : ExternalEngagementState.Transit;
+@@ -127,7 +137,8 @@ internal sealed class RotationSolverEngagementTracker
+                 state,
+                 false,
+                 nearbyEnemies,
+-                "Combat, nearby enemies, and the post-combat quiet period are clear; strategic travel may resume.");
++                enemiesTargetingPlayer,
++                $"Combat, observed hard-target pressure, and the post-combat quiet period are clear; strategic travel may resume. Passive nearby enemies={nearbyEnemies}.");
+         }
+ 
+         if (isRespawnRegroup || state == ExternalEngagementState.Regrouping)
+@@ -137,6 +148,7 @@ internal sealed class RotationSolverEngagementTracker
+                 state,
+                 false,
+                 nearbyEnemies,
++                enemiesTargetingPlayer,
+                 state == ExternalEngagementState.Regrouping
+                     ? "Post-respawn regrouping is active; Reborn remains enabled while PvPSentinel owns strategic travel."
+                     : "Post-respawn regrouping completed; normal strategic transit may continue.");
+@@ -147,6 +159,7 @@ internal sealed class RotationSolverEngagementTracker
+             state,
+             false,
+             nearbyEnemies,
++            enemiesTargetingPlayer,
+             isMounted
+                 ? "Mounted strategic transit is active; Reborn should remain action-idle while mounted."
+                 : "No combat engagement is latched; PvPSentinel owns strategic transit.");
+diff --git a/Configuration.cs b/Configuration.cs
+index 76b68c6..d8ff151 100644
+--- a/Configuration.cs
++++ b/Configuration.cs
+@@ -7,7 +7,7 @@ namespace PvPSentinel;
+ [Serializable]
+ public sealed class Configuration : IPluginConfiguration
+ {
+-    public int Version { get; set; } = 10;
++    public int Version { get; set; } = 11;
+     public bool Enabled { get; set; }
+     public bool NavigationEnabled { get; set; }
+     public bool AutonomousStrategyEnabled { get; set; }
+@@ -51,7 +51,7 @@ public sealed class Configuration : IPluginConfiguration
+     public float TargetSwitchScoreAdvantage { get; set; } = 15f;
+     public float MinimumTargetCommitmentSeconds { get; set; } = 2f;
+     public float ExternalCombatYieldSeconds { get; set; } = 2.5f;
+-    public float RotationSolverQuietSeconds { get; set; } = 5f;
++    public float RotationSolverQuietSeconds { get; set; } = 2f;
+     public float RotationSolverEnemyClearanceRadius { get; set; } = 30f;
+     public float NativeRecuperateHpPercent { get; set; } = 75f;
+     public float NativeGuardHpPercent { get; set; } = 35f;
+@@ -119,7 +119,7 @@ public sealed class Configuration : IPluginConfiguration
+ 
+     private void MigrateFailClosedDefaults()
+     {
+-        if (Version >= 10)
++        if (Version >= 11)
+             return;
+ 
+         // Version 1 exposed independent booleans for navigation and native action
+@@ -228,7 +228,18 @@ public sealed class Configuration : IPluginConfiguration
+             PreferredMountName = "Company Chocobo";
+         }
+ 
+-        Version = 10;
++        if (Version < 11)
++        {
++            // The first live Onsal handoff trace showed that the former five-second
++            // default made a valid preserved route feel stalled after combat. Keep
++            // deliberate custom values, but migrate the exact legacy default to the
++            // shorter debounce now that observed hard-target pressure is the safety
++            // gate instead of mere enemy proximity.
++            if (Math.Abs(RotationSolverQuietSeconds - 5f) < 0.01f)
++                RotationSolverQuietSeconds = 2f;
++        }
++
++        Version = 11;
+         Save();
+     }
+ 
+diff --git a/FrontlineCore/Maps/DiscoveryFrontlineAdapter.cs b/FrontlineCore/Maps/DiscoveryFrontlineAdapter.cs
+index a175d83..4a1f13f 100644
+--- a/FrontlineCore/Maps/DiscoveryFrontlineAdapter.cs
++++ b/FrontlineCore/Maps/DiscoveryFrontlineAdapter.cs
+@@ -93,14 +93,15 @@ internal abstract class DiscoveryFrontlineAdapter(DiscoveryMapProfile profile) :
+         List<ObjectiveChange> changes)
+     {
+         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+-        foreach (var aggregate in DiscoveryMarkerAggregator.Aggregate(markers))
++        foreach (var aggregate in DiscoveryMarkerAggregator.Aggregate(markers, NormalizeObjectiveIdForStability))
+         {
+             var physicallyCorroborated = physicalObservations.Any(observation =>
+                 IsPotentialObjectivePhysical(observation) &&
+                 HorizontalDistance(observation.Position, aggregate.Position) <= 8f &&
+                 Math.Abs(observation.Position.Y - aggregate.Position.Y) <= 5f);
+-            var promotionClass = DiscoveryMarkerAggregator.ClassifyPromotionEvidence(
+-                aggregate, physicallyCorroborated);
++            var promotionClass = ForceRawObservation(aggregate)
++                ? DiscoveryMarkerPromotionClass.RawObservationOnly
++                : DiscoveryMarkerAggregator.ClassifyPromotionEvidence(aggregate, physicallyCorroborated);
+             if (promotionClass == DiscoveryMarkerPromotionClass.RawObservationOnly)
+             {
+                 ObserveRawFamily(now, aggregate, changes);
+@@ -366,6 +367,11 @@ internal abstract class DiscoveryFrontlineAdapter(DiscoveryMapProfile profile) :
+     private ObjectiveChange Change(string suffix, string logicalId, string detail) =>
+         new($"{profile.EventPrefix}_{suffix}", logicalId, detail);
+ 
++    protected virtual uint NormalizeObjectiveIdForStability(uint objectiveId) =>
++        DiscoveryMarkerAggregator.NormalizeFlickeringObjectiveId(objectiveId);
++
++    protected virtual bool ForceRawObservation(DiscoveryMarkerAggregate aggregate) => false;
++
+     private string NextLogicalId()
+     {
+         var value = $"{profile.LogicalPrefix}-{nextLocationIndex:00}";
+diff --git a/FrontlineCore/Maps/DiscoveryMarkerAggregator.cs b/FrontlineCore/Maps/DiscoveryMarkerAggregator.cs
+index 4f44de5..6b2c865 100644
+--- a/FrontlineCore/Maps/DiscoveryMarkerAggregator.cs
++++ b/FrontlineCore/Maps/DiscoveryMarkerAggregator.cs
+@@ -37,48 +37,53 @@ internal static class DiscoveryMarkerAggregator
+     internal const int MaximumPromotedLocations = 32;
+ 
+     public static IReadOnlyList<DiscoveryMarkerAggregate> Aggregate(
+-        IEnumerable<FrontlineMapMarkerObservation> markers) => markers
+-        .Where(IsObservable)
+-        .GroupBy(marker => PositionKey(marker.Position), StringComparer.Ordinal)
+-        .Select(group =>
+-        {
+-            var observations = group
+-                .OrderBy(marker => marker.IconId)
+-                .ThenBy(marker => marker.DataId)
+-                .ThenBy(marker => marker.ObjectiveId)
+-                .ThenBy(marker => marker.EventState)
+-                .ToArray();
+-            var position = new Vector3(
+-                observations.Average(marker => marker.Position.X),
+-                observations.Average(marker => marker.Position.Y),
+-                observations.Average(marker => marker.Position.Z));
+-            var families = observations
+-                .Select(marker => $"{marker.IconId}/{marker.DataId}/{NormalizeFlickeringObjectiveId(marker.ObjectiveId)}")
+-                .Distinct(StringComparer.Ordinal)
+-                .Order(StringComparer.Ordinal)
+-                .ToArray();
+-            var identities = observations
+-                .Select(marker => $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}/e{marker.EventState}/t{marker.EndTimestamp}")
+-                .Distinct(StringComparer.Ordinal)
+-                .ToArray();
+-            var tooltips = observations
+-                .Select(marker => Compact(marker.Tooltip))
+-                .Where(value => value.Length > 0)
+-                .Distinct(StringComparer.Ordinal)
+-                .ToArray();
+-            return new DiscoveryMarkerAggregate(
+-                group.Key,
+-                position,
+-                observations.Length,
+-                string.Join('|', families),
+-                string.Join('|', observations.Select(TransitionRow).Distinct(StringComparer.Ordinal)),
+-                $"ids=[{string.Join(',', identities)}]; text=[{(tooltips.Length == 0 ? "<none>" : string.Join(" | ", tooltips))}]",
+-                observations);
+-        })
+-        .OrderBy(item => item.Position.X)
+-        .ThenBy(item => item.Position.Z)
+-        .ThenBy(item => item.Position.Y)
+-        .ToArray();
++        IEnumerable<FrontlineMapMarkerObservation> markers,
++        Func<uint, uint>? objectiveIdNormalizer = null)
++    {
++        var normalizeObjectiveId = objectiveIdNormalizer ?? NormalizeFlickeringObjectiveId;
++        return markers
++            .Where(IsObservable)
++            .GroupBy(marker => PositionKey(marker.Position), StringComparer.Ordinal)
++            .Select(group =>
++            {
++                var observations = group
++                    .OrderBy(marker => marker.IconId)
++                    .ThenBy(marker => marker.DataId)
++                    .ThenBy(marker => marker.ObjectiveId)
++                    .ThenBy(marker => marker.EventState)
++                    .ToArray();
++                var position = new Vector3(
++                    observations.Average(marker => marker.Position.X),
++                    observations.Average(marker => marker.Position.Y),
++                    observations.Average(marker => marker.Position.Z));
++                var families = observations
++                    .Select(marker => $"{marker.IconId}/{marker.DataId}/{normalizeObjectiveId(marker.ObjectiveId)}")
++                    .Distinct(StringComparer.Ordinal)
++                    .Order(StringComparer.Ordinal)
++                    .ToArray();
++                var identities = observations
++                    .Select(marker => $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}/e{marker.EventState}/t{marker.EndTimestamp}")
++                    .Distinct(StringComparer.Ordinal)
++                    .ToArray();
++                var tooltips = observations
++                    .Select(marker => Compact(marker.Tooltip))
++                    .Where(value => value.Length > 0)
++                    .Distinct(StringComparer.Ordinal)
++                    .ToArray();
++                return new DiscoveryMarkerAggregate(
++                    group.Key,
++                    position,
++                    observations.Length,
++                    string.Join('|', families),
++                    string.Join('|', observations.Select(marker => TransitionRow(marker, normalizeObjectiveId)).Distinct(StringComparer.Ordinal)),
++                    $"ids=[{string.Join(',', identities)}]; text=[{(tooltips.Length == 0 ? "<none>" : string.Join(" | ", tooltips))}]",
++                    observations);
++            })
++            .OrderBy(item => item.Position.X)
++            .ThenBy(item => item.Position.Z)
++            .ThenBy(item => item.Position.Y)
++            .ToArray();
++    }
+ 
+     public static DiscoveryMarkerPromotionClass ClassifyPromotionEvidence(
+         DiscoveryMarkerAggregate aggregate,
+@@ -132,9 +137,11 @@ internal static class DiscoveryMarkerAggregator
+         (marker.IconId != 0 || marker.DataId != 0 || marker.ObjectiveId != 0 ||
+          !string.IsNullOrWhiteSpace(marker.Tooltip));
+ 
+-    private static string TransitionRow(FrontlineMapMarkerObservation marker) =>
++    private static string TransitionRow(
++        FrontlineMapMarkerObservation marker,
++        Func<uint, uint> normalizeObjectiveId) =>
+         string.Create(CultureInfo.InvariantCulture,
+-            $"icon={marker.IconId},data={marker.DataId},objective={NormalizeFlickeringObjectiveId(marker.ObjectiveId)},event={marker.EventState},text={NormalizeVolatileNumbers(Compact(marker.Tooltip))}");
++            $"icon={marker.IconId},data={marker.DataId},objective={normalizeObjectiveId(marker.ObjectiveId)},event={marker.EventState},text={NormalizeVolatileNumbers(Compact(marker.Tooltip))}");
+ 
+     private static string Compact(string value) => value.Trim().Replace('\r', ' ').Replace('\n', ' ');
+ 
+diff --git a/FrontlineCore/Maps/OnsalHakairAdapter.cs b/FrontlineCore/Maps/OnsalHakairAdapter.cs
+index bee50bd..10efef5 100644
+--- a/FrontlineCore/Maps/OnsalHakairAdapter.cs
++++ b/FrontlineCore/Maps/OnsalHakairAdapter.cs
+@@ -8,4 +8,30 @@ internal sealed class OnsalHakairAdapter() : DiscoveryFrontlineAdapter(new Disco
+     701,
+     "Onsal Hakair (discovery)",
+     "ONS",
+-    "onsal"));
++    "onsal"))
++{
++    private const uint ObservedMovingMarkerSentinel = 0xFF000000;
++
++    // The first complete live session showed the same Ovoo marker alternating
++    // between 446 and 448 with no semantic/text change. Preserve the raw IDs in
++    // research evidence, but treat the pair as one identity for stability and
++    // transition comparisons so it cannot generate 4 Hz lifecycle noise.
++    protected override uint NormalizeObjectiveIdForStability(uint objectiveId) => objectiveId switch
++    {
++        446 or 448 => 446,
++        _ => base.NormalizeObjectiveIdForStability(objectiveId),
++    };
++
++    // Live evidence identified 60359/60360 + 4278190080 as moving player-like
++    // markers and 60599 + 62/4278190080 as landing/base evidence. Their temporary
++    // proximity to an EventObj must never promote them into ONS navigation buttons.
++    protected override bool ForceRawObservation(DiscoveryMarkerAggregate aggregate) =>
++        aggregate.Observations.Count > 0 &&
++        aggregate.Observations.All(marker =>
++            marker.DataId == 0 &&
++            marker.EventState <= 0 &&
++            string.IsNullOrWhiteSpace(marker.Tooltip) &&
++            ((marker.IconId is 60359 or 60360 && marker.ObjectiveId == ObservedMovingMarkerSentinel) ||
++             (marker.IconId == 60599 &&
++              (marker.ObjectiveId == 62 || marker.ObjectiveId == ObservedMovingMarkerSentinel))));
++}
+diff --git a/Models/TacticalSnapshot.cs b/Models/TacticalSnapshot.cs
+index 0459235..c9839f0 100644
+--- a/Models/TacticalSnapshot.cs
++++ b/Models/TacticalSnapshot.cs
+@@ -85,6 +85,7 @@ internal sealed record ExternalCombatDiagnostics(
+     uint NextGcdActionId,
+     string NextGcdAction,
+     int NearbyEnemies,
++    int TargetingPlayer,
+     bool LimitBreakReadyUnmanaged,
+     string Status);
+ 
+diff --git a/Navigation/NavigationController.cs b/Navigation/NavigationController.cs
+index 76d516d..c741939 100644
+--- a/Navigation/NavigationController.cs
++++ b/Navigation/NavigationController.cs
+@@ -949,7 +949,7 @@ internal sealed class NavigationController(
+         manualSnapshot = BuildManualSnapshot(
+             MovementOwner.ExternalCombat,
+             ManualRouteState.YieldedExternalCombat,
+-            $"Combat owns movement; destination {activeManual?.DestinationId ?? manualRequest?.DestinationId} is preserved and will be repathed after Reborn's engagement-clearance quiet period. {combat.Explanation}",
++            $"Combat owns movement; destination {activeManual?.DestinationId ?? manualRequest?.DestinationId} is preserved and will be repathed after Reborn's targeting-threat quiet period. {combat.Explanation}",
+             localPosition);
+         return Decision(
+             false,
+diff --git a/PvPSentinel.csproj b/PvPSentinel.csproj
+index 949394a..7ccd24f 100644
+--- a/PvPSentinel.csproj
++++ b/PvPSentinel.csproj
+@@ -1,6 +1,6 @@
+ <Project Sdk="Dalamud.NET.Sdk/15.0.0">
+   <PropertyGroup>
+-    <Version>0.3.1.0</Version>
++    <Version>0.3.1.1</Version>
+     <Author>MarshalTitan</Author>
+     <Name>PvP Sentinel</Name>
+     <Punchline>Frontline strategy, safe navigation, lifecycle, and modular combat providers.</Punchline>
+diff --git a/README.md b/README.md
+index 5bd3bf5..ed9dc1a 100644
+--- a/README.md
++++ b/README.md
+@@ -49,7 +49,7 @@ Implemented in source:
+ - structured native diagnostics including `WOULD TARGET`, `WOULD TARGET: NONE`, `WOULD USE`, competing/rejected scores, defensive preemption, dynamic Guard factors, Purify and LB rejection reasons, action-layer resolution, HP/MP, allied focus, tools, Wildfire, Overheated, and limit gauge
+ - generic external-combat coordination based only on local combat, casting, and queued-action state, with a configurable resume grace period
+ - optional RotationSolverReborn detection and read-only status/action-event diagnostics without invoking Reborn's PvP-blocked state-changing IPC
+-- a stable Reborn engagement latch that yields owned navigation until combat ends, living/targetable nearby enemies clear, and a configurable quiet period expires; enemy corpses do not hold the latch, death releases it for respawn/regroup, and Sentinel's own pending mount cast is not treated as combat
++- a stable Reborn engagement latch that yields owned navigation through actual combat and observed hard-target pressure, then resumes after a short configurable quiet period; passive enemy proximity cannot starve a preserved route, death releases the latch for respawn/regroup, and Sentinel's own pending mount cast is not treated as combat
+ - fail-closed navigation when the Reborn provider is selected but the plugin, status IPC, or autorotation is unavailable
+ - an explicit MCH limit-gauge warning because Reborn's current MCH PvP rotation does not automate Marksman's Spite
+ - Daily Challenge: Frontline inspection through the game's Duty Finder, including localized game-data names
+@@ -61,11 +61,11 @@ Implemented in source:
+ - collapsible Configuration groups plus a Development window organized around an always-visible Testing Controls foldout and separate Frontline/Team, Battlefield/Sensors, Threat, Objectives/Research, M2 Navigation, Combat, and Lifecycle foldouts
+ - pure logic tests for team classification, stale eviction, deterministic clustering, Shatter transitions, Seal Rock paired aggregation/ownership, Secure coordinate aggregation/stability/unresolved-state safety/evidence transitions, Onsal/Worqor discovery promotion and raw-only isolation, all-map adapter registration, terminal results, combat normalization, retained summaries, route comparison, bounded recovery/ownership, mocked vnavmesh planning, logging diff/rate limits, and privacy, in addition to the existing combat/provider suite
+ 
+-Autonomous strategy, automatic objective capture/navigation, and native queue/requeue are deliberately disabled in v0.3.1.0. Objective buttons are manual-only and automatically change with the current map: Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, Secure creates buttons only from bounded stationary objective-like evidence, and Onsal/Worqor promote only stable discovery evidence. The field-confirmed Secure geometric center uses the stable `SEC-CENTER` identity; other `SEC-xx`, `ONS-xx`, and `WOR-xx` values are session-scoped and their displayed coordinates are authoritative. Raw observations remain research-only. Onsal and Worqor objective meanings, states, ownership, and tactics remain `UNRESOLVED` pending live evidence.
++Autonomous strategy, automatic objective capture/navigation, and native queue/requeue are deliberately disabled in v0.3.1.1. Objective buttons are manual-only and automatically change with the current map: Shatter exposes A1–A4/B1–B15, Seal Rock populates discovered logical locations dynamically, Secure creates buttons only from bounded stationary objective-like evidence, and Onsal/Worqor promote only stable discovery evidence. The field-confirmed Secure geometric center uses the stable `SEC-CENTER` identity; other `SEC-xx`, `ONS-xx`, and `WOR-xx` values are session-scoped and their displayed coordinates are authoritative. Raw observations remain research-only. Onsal and Worqor objective meanings, states, ownership, and tactics remain `UNRESOLVED` pending live evidence.
+ 
+ ## Safety model
+ 
+-Configuration version 10 preserves the earlier fail-closed combat migration, keeps Native in `Shadow / Observe`, forcibly turns off autonomous strategy, objective navigation, and queue/requeue for manual M2 validation, and defaults the preferred Mount-sheet selection to Company Chocobo. Manual movement still requires explicit master enable, navigation enable, arming, and destination selection. Map discovery does not change Combat Provider configuration. Selecting Native does not silently activate combat execution.
++Configuration version 11 preserves the earlier fail-closed combat migration, keeps Native in `Shadow / Observe`, forcibly turns off autonomous strategy, objective navigation, and queue/requeue for manual M2 validation, and defaults the preferred Mount-sheet selection to Company Chocobo. It also migrates the exact legacy five-second Reborn quiet default to two seconds while preserving any deliberately customized value. Manual movement still requires explicit master enable, navigation enable, arming, and destination selection. Map discovery does not change Combat Provider configuration. Selecting Native does not silently activate combat execution.
+ 
+ The targeting-me counter is deliberately limited to enemy players currently loaded and classified whose observable hard target is the local player. It cannot detect soft targeting, queued attacks, future intent, or an enemy that has not yet switched its observable target. The HUD shows every such observed hard target; Guard consumes the within-30y subset from that same shared observation so the live-validated defensive tuning is not silently widened.
+ 
+@@ -82,11 +82,11 @@ PvPSentinel stops only the vnavmesh path it owns. It never falls back to running
+ 
+ In `External Combat / ACR` mode, PvPSentinel does not set targets or execute combat actions. It has no IPC contract with MMOMinion or Champion. Local combat, casting, or queued-action state stops PvPSentinel-owned navigation; strategic travel resumes after those signals clear and the configured grace period expires.
+ 
+-In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat targeting, actions, cooldowns, and ordinary PvP defensives. PvPSentinel reads installation/autorotation status and announced next-action events but never calls Reborn's PvP-blocked control endpoints. Once local combat starts, PvPSentinel stops its owned path but preserves the strategic/manual destination. After the combat flag clears, no living, targetable classified enemy remains within the clearance radius, and the quiet period expires, Sentinel discards the interrupted route, repaths from the current position, and resumes travel. Selecting another destination while paused replaces the preserved destination without taking movement back from combat. Death and explicit STOP still cancel the destination. Strategic navigation is fail-closed if Reborn cannot be confirmed active.
++In `RotationSolverReborn (External)` mode, Reborn exclusively owns local combat targeting, actions, cooldowns, and ordinary PvP defensives. PvPSentinel reads installation/autorotation status and announced next-action events but never calls Reborn's PvP-blocked control endpoints. Once local combat starts, PvPSentinel stops its owned path but preserves the strategic/manual destination. After the combat flag clears, the shared threat tracker reports no enemy inside the configured radius observably hard-targeting the player, and the short quiet period expires, Sentinel discards the interrupted route, repaths from the current position, and resumes travel. Merely nearby enemies remain visible in diagnostics but do not reset the timer. A renewed real engagement immediately returns movement ownership to combat. Selecting another destination while paused replaces the preserved destination without taking movement back from combat. Death and explicit STOP still cancel the destination. Strategic navigation is fail-closed if Reborn cannot be confirmed active.
+ 
+ In Native `Shadow / Observe`, the provider runs target, defense, execute, burst, tool, utility, and pressure evaluation but never invokes the target/action executor. Native combat contains no movement code; strategic navigation remains a separate subsystem. Active mode is still gated by master enable, a recognized Frontline, authoritative player classification, a live supported job, a valid action context, local action-data verification, and client-reported action readiness.
+ 
+-Queue/accept/requeue code remains preserved, but v0.3.1.0 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
++Queue/accept/requeue code remains preserved, but v0.3.1.1 does not invoke it. The configuration UI reports the M2 lock instead of offering an automation toggle.
+ 
+ The emergency stop immediately stops PvPSentinel-owned movement, attempts to cancel a PvPSentinel-owned queue, latches lifecycle automation, disables every PvPSentinel action-capable switch, and sets the combat provider to `Off`. External plugins remain independent and must be stopped through their own controls. Clearing the Sentinel latch does not re-enable any switch.
+ 
+@@ -170,7 +170,7 @@ Select one objective at a time. Verify `Snapped Position`, actual `Waypoint Coun
+ - Reborn auto-disable when dead/after combat: off
+ - Reborn auto-disable at match end: on
+ 
+-Verify installed/loaded/version/autorotation diagnostics, mounted transit, first engagement, persistent combat ownership, death/respawn regrouping, and match-end deactivation. Reborn must own every local target and combat action. PvPSentinel must hold navigation throughout combat and while classified enemies remain inside the clearance radius, then mount/regroup only after the quiet period. Marksman's Spite remains manual in this first provider build.
++Verify installed/loaded/version/autorotation diagnostics, mounted transit, first engagement, persistent combat ownership, death/respawn regrouping, and match-end deactivation. Reborn must own every local target and combat action. PvPSentinel must hold navigation throughout actual combat and while an observed enemy inside the targeting-threat radius hard-targets the player, then repath after the quiet period even if unrelated enemies remain nearby. Marksman's Spite remains manual in this first provider build.
+ 
+ ### Stage D — lifecycle observation only
+ 
+diff --git a/Tests/Program.cs b/Tests/Program.cs
+index 2d41374..5a7d278 100644
+--- a/Tests/Program.cs
++++ b/Tests/Program.cs
+@@ -73,33 +73,33 @@ Check("reset clears external yield", false,
+ var rebornEngagement = new RotationSolverEngagementTracker();
+ var rebornStart = new DateTime(2026, 9, 27, 1, 0, 0, DateTimeKind.Utc);
+ Check("inactive Reborn does not claim combat ownership", ExternalEngagementState.Unavailable,
+-    rebornEngagement.Update(rebornStart, false, false, false, false, false, true, false, false, 3, false, 5f).State);
++    rebornEngagement.Update(rebornStart, false, false, false, false, false, true, false, false, 3, 0, false, 5f).State);
+ Check("active Reborn begins in transit", ExternalEngagementState.Transit,
+-    rebornEngagement.Update(rebornStart, true, false, false, false, false, false, false, false, 0, false, 5f).State);
++    rebornEngagement.Update(rebornStart, true, false, false, false, false, false, false, false, 0, 0, false, 5f).State);
+ Check("mount cast does not latch a combat engagement", false,
+-    rebornEngagement.Update(rebornStart.AddSeconds(1), true, false, false, true, false, false, true, true, 0, false, 5f).ShouldYield);
++    rebornEngagement.Update(rebornStart.AddSeconds(1), true, false, false, true, false, false, true, true, 0, 0, false, 5f).ShouldYield);
+ Check("unflagged mount cast without nearby enemies does not latch combat", false,
+-    rebornEngagement.Update(rebornStart.AddSeconds(1.5), true, false, false, false, false, false, true, true, 0, false, 5f).ShouldYield);
++    rebornEngagement.Update(rebornStart.AddSeconds(1.5), true, false, false, false, false, false, true, true, 0, 0, false, 5f).ShouldYield);
+ Check("Sentinel mount request latch suppresses the pre-condition cast frame", false,
+-    rebornEngagement.Update(rebornStart.AddSeconds(1.75), true, false, false, false, true, false, true, true, 2, false, 5f).ShouldYield);
++    rebornEngagement.Update(rebornStart.AddSeconds(1.75), true, false, false, false, true, false, true, true, 2, 0, false, 5f).ShouldYield);
+ Check("combat latches the Reborn engagement", true,
+-    rebornEngagement.Update(rebornStart.AddSeconds(2), true, false, false, false, false, true, false, false, 4, false, 5f).ShouldYield);
+-Check("nearby enemies hold engagement after combat flag clears", true,
+-    rebornEngagement.Update(rebornStart.AddSeconds(3), true, false, false, false, false, false, false, false, 2, false, 5f).ShouldYield);
+-Check("clear battlefield starts quiet period", true,
+-    rebornEngagement.Update(rebornStart.AddSeconds(4), true, false, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
++    rebornEngagement.Update(rebornStart.AddSeconds(2), true, false, false, false, false, true, false, false, 4, 1, false, 5f).ShouldYield);
++Check("observed enemy hard target holds engagement after combat flag clears", true,
++    rebornEngagement.Update(rebornStart.AddSeconds(3), true, false, false, false, false, false, false, false, 2, 1, false, 5f).ShouldYield);
++Check("passive nearby enemies start quiet period instead of starving resume", true,
++    rebornEngagement.Update(rebornStart.AddSeconds(4), true, false, false, false, false, false, false, false, 2, 0, false, 5f).ShouldYield);
+ Check("quiet period continues before configured boundary", true,
+-    rebornEngagement.Update(rebornStart.AddSeconds(8.9), true, false, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
++    rebornEngagement.Update(rebornStart.AddSeconds(8.9), true, false, false, false, false, false, false, false, 3, 0, false, 5f).ShouldYield);
+ var rebornCleared = rebornEngagement.Update(
+-    rebornStart.AddSeconds(9), true, false, false, false, false, false, false, false, 0, false, 5f);
+-Check("strategic travel resumes after clear quiet period", false, rebornCleared.ShouldYield);
++    rebornStart.AddSeconds(9), true, false, false, false, false, false, false, false, 3, 0, false, 5f);
++Check("strategic travel resumes after quiet period despite passive enemies", false, rebornCleared.ShouldYield);
+ Check("cleared engagement returns to transit", ExternalEngagementState.Transit, rebornCleared.State);
+ Check("death releases navigation yield", false,
+-    rebornEngagement.Update(rebornStart.AddSeconds(10), true, true, false, false, false, true, false, false, 5, false, 5f).ShouldYield);
++    rebornEngagement.Update(rebornStart.AddSeconds(10), true, true, false, false, false, true, false, false, 5, 2, false, 5f).ShouldYield);
+ Check("death is reported distinctly", ExternalEngagementState.Dead,
+-    rebornEngagement.Update(rebornStart.AddSeconds(10.1), true, true, false, false, false, false, false, false, 0, false, 5f).State);
++    rebornEngagement.Update(rebornStart.AddSeconds(10.1), true, true, false, false, false, false, false, false, 0, 0, false, 5f).State);
+ Check("respawn enters regroup state without combat yield", ExternalEngagementState.Regrouping,
+-    rebornEngagement.Update(rebornStart.AddSeconds(11), true, false, false, false, false, false, false, false, 0, true, 5f).State);
++    rebornEngagement.Update(rebornStart.AddSeconds(11), true, false, false, false, false, false, false, false, 0, 0, true, 5f).State);
+ 
+ Check("Recuperate eligible below 75%", true,
+     NativeCombatPolicy.RecuperateEligible(74.9f, 75f, 2000));
+@@ -488,6 +488,30 @@ for (var scan = 0; scan < 60; scan++)
+         [rawDiscoveryMarker with { Position = securePosition + new Vector3(scan, 0, 0) }], [], []);
+ Check("Onsal raw observations never become buttons", 0, rawOnlyOnsal.Objectives.Count);
+ 
++var liveTransientOnsal = new OnsalHakairAdapter();
++liveTransientOnsal.Reset(trackingNow);
++var liveMovingMarker = SecureMarker(
++    60360, 0, 0xFF000000, securePosition, "", -1);
++var nearbyEventObject = new ObjectiveObservation(
++    0x1111, 0x2222, 9999, "Unresolved Event Object", "EventObj",
++    securePosition, false, false, 0, 0);
++for (var scan = 0; scan < DiscoveryMarkerAggregator.PhysicalEvidenceStableScans + 4; scan++)
++    liveTransientOnsal.Update(trackingNow.AddMilliseconds(scan * 300),
++        [liveMovingMarker], [nearbyEventObject], []);
++Check("live-confirmed moving Onsal family stays raw beside physical objects", 0,
++    liveTransientOnsal.Objectives.Count);
++
++var flickeringOnsal = new OnsalHakairAdapter();
++flickeringOnsal.Reset(trackingNow);
++for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans + 1; scan++)
++{
++    var marker = SecureMarker(60590, 0, scan % 2 == 0 ? 446u : 448u,
++        securePosition, "Ovoo 10 Rank A Claimed", -1);
++    flickeringOnsal.Update(trackingNow.AddMilliseconds(scan * 300), [marker], [], []);
++}
++Check("Onsal 446/448 presentation flicker does not reset location stability", 1,
++    flickeringOnsal.Objectives.Count);
++
+ var worqorAdapter = new WorqorChirtehAdapter();
+ worqorAdapter.Reset(trackingNow);
+ for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans; scan++)
+diff --git a/UI/ConfigurationWindow.cs b/UI/ConfigurationWindow.cs
+index f5f32c6..a2e992c 100644
+--- a/UI/ConfigurationWindow.cs
++++ b/UI/ConfigurationWindow.cs
+@@ -134,7 +134,7 @@ internal sealed class ConfigurationWindow : Window
+             if (config.CombatProvider == CombatProvider.RotationSolverReborn)
+             {
+                 DrawFloat("Reborn post-combat quiet period", config.RotationSolverQuietSeconds, 1f, 15f, value => config.RotationSolverQuietSeconds = value, "%.1f s");
+-                DrawFloat("Reborn enemy-clearance radius", config.RotationSolverEnemyClearanceRadius, 10f, 60f, value => config.RotationSolverEnemyClearanceRadius = value, "%.1f y");
++                DrawFloat("Reborn targeting-threat radius", config.RotationSolverEnemyClearanceRadius, 10f, 60f, value => config.RotationSolverEnemyClearanceRadius = value, "%.1f y");
+             }
+         }
+ 
+diff --git a/UI/DiagnosticWindow.cs b/UI/DiagnosticWindow.cs
+index 3e09390..a0267e9 100644
+--- a/UI/DiagnosticWindow.cs
++++ b/UI/DiagnosticWindow.cs
+@@ -257,7 +257,7 @@ internal sealed class DiagnosticWindow : Window
+             KeyValue("Status IPC / autorotation active", $"{YesNo(external.IpcAvailable)} / {YesNo(external.AutorotationActive)}");
+             KeyValue("Reborn next action", $"{external.NextAction} ({external.NextActionId})");
+             KeyValue("Reborn next GCD", $"{external.NextGcdAction} ({external.NextGcdActionId})");
+-            KeyValue("Enemies in clearance radius", external.NearbyEnemies.ToString());
++            KeyValue("Nearby enemies / targeting me", $"{external.NearbyEnemies} / {external.TargetingPlayer}");
+             KeyValue("Limit Break ready / unmanaged", YesNo(external.LimitBreakReadyUnmanaged));
+             ImGui.TextWrapped(external.Status);
+             ImGui.TextDisabled("Reborn action events announce decisions only; they do not confirm that an action executed.");
