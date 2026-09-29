@@ -1,0 +1,31 @@
+name: Publish clean v0.3.1.1 validation branch
+
+on:
+  push:
+    branches: [codex/onsal-combat-resume-v0311]
+    paths: [.github/workflows/publish-onsal-resume-v0311.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/onsal-combat-resume-v0311
+          fetch-depth: 0
+
+      - name: Preserve validated patch
+        run: cp onsal-resume-v0311-source.patch /tmp/onsal-resume-v0311-source.patch
+
+      - name: Create clean validation branch from main
+        run: |
+          git fetch origin main
+          git checkout -B codex/onsal-combat-resume-v0311-ready origin/main
+          git apply --index /tmp/onsal-resume-v0311-source.patch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Fix Reborn combat resume and Onsal marker promotion"
+          git push origin HEAD:codex/onsal-combat-resume-v0311-ready
