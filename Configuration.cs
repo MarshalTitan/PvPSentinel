@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 10;
+    public int Version { get; set; } = 11;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
@@ -51,7 +51,7 @@ public sealed class Configuration : IPluginConfiguration
     public float TargetSwitchScoreAdvantage { get; set; } = 15f;
     public float MinimumTargetCommitmentSeconds { get; set; } = 2f;
     public float ExternalCombatYieldSeconds { get; set; } = 2.5f;
-    public float RotationSolverQuietSeconds { get; set; } = 5f;
+    public float RotationSolverQuietSeconds { get; set; } = 2f;
     public float RotationSolverEnemyClearanceRadius { get; set; } = 30f;
     public float NativeRecuperateHpPercent { get; set; } = 75f;
     public float NativeGuardHpPercent { get; set; } = 35f;
@@ -119,7 +119,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 10)
+        if (Version >= 11)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -228,7 +228,18 @@ public sealed class Configuration : IPluginConfiguration
             PreferredMountName = "Company Chocobo";
         }
 
-        Version = 10;
+        if (Version < 11)
+        {
+            // The first live Onsal handoff trace showed that the former five-second
+            // default made a valid preserved route feel stalled after combat. Keep
+            // deliberate custom values, but migrate the exact legacy default to the
+            // shorter debounce now that observed hard-target pressure is the safety
+            // gate instead of mere enemy proximity.
+            if (Math.Abs(RotationSolverQuietSeconds - 5f) < 0.01f)
+                RotationSolverQuietSeconds = 2f;
+        }
+
+        Version = 11;
         Save();
     }
 

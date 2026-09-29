@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1.1 — Onsal evidence cleanup and prompt combat resume
+
+- Correlated the first complete Onsal discovery session with all four recordings. Twelve manual requests produced four `ARRIVED` routes, zero navigation/path failures, two bounded stuck recoveries, four combat yields, two automatic route resumes, clean `1 SELF / 23 ALLY / 46 ENEMY / 0 UNKNOWN` classification, three detected deaths/respawns, terminal results, and no sensor error or plugin exception.
+- Confirmed the reported post-fight stall was combat arbitration rather than vnavmesh failure. The former policy required five quiet seconds and reset that timer for every living targetable enemy inside 30 yalms, so unrelated enemy traffic could starve a preserved route indefinitely.
+- Changed RotationSolverReborn handoff to keep yielding for actual local combat/casting/action evidence and for shared-threat enemies observably hard-targeting the player, while passive enemy proximity remains diagnostic and cannot reset the resume timer.
+- Reduced the configurable Reborn post-combat default from five seconds to two seconds and migrates only the exact legacy default; deliberately customized values remain intact. A renewed real engagement still reacquires combat ownership and stops navigation immediately.
+- Added explicit external-provider diagnostics for both nearby enemies and enemies currently targeting the player, and made engagement-state/threat changes visible in event-driven Dalamud logging.
+- Demoted live-confirmed Onsal moving marker families `60359/60360 + 4278190080` and landing/base family `60599 + 62/4278190080` to raw research evidence even when they overlap an EventObj. They can no longer consume the 32-location ceiling or create false `ONS-xx` buttons.
+- Normalized the observed Onsal `ObjectiveId` 446/448 presentation flicker for stability/transition comparison while retaining the original IDs in raw evidence, eliminating high-frequency false transitions without assigning speculative objective semantics.
+- Added regression coverage for passive-enemy resume, observed hard-target blocking, Onsal moving-marker physical-overlap rejection, and 446/448 stability. Autonomous strategy, automatic objective navigation, queue/requeue, and provider-independent PvP Limit Break execution remain disabled; Native MCH remains `Shadow / Observe` by default.
+
 ## 0.3.1.0 — All-map discovery foundation and Onsal test build
 
 - Correlated the final v0.3.0.9 Secure session, including its fresh start after the game crash. The complete trace retained clean `1 SELF / 23 ALLY / 37 ENEMY / 0 UNKNOWN` classification, Company Chocobo travel, explicit STOP, death cancellation, combat yield/resume, and five successful `ARRIVED` routes without a plugin exception.

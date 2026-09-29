@@ -73,33 +73,33 @@ Check("reset clears external yield", false,
 var rebornEngagement = new RotationSolverEngagementTracker();
 var rebornStart = new DateTime(2026, 9, 27, 1, 0, 0, DateTimeKind.Utc);
 Check("inactive Reborn does not claim combat ownership", ExternalEngagementState.Unavailable,
-    rebornEngagement.Update(rebornStart, false, false, false, false, false, true, false, false, 3, false, 5f).State);
+    rebornEngagement.Update(rebornStart, false, false, false, false, false, true, false, false, 3, 0, false, 5f).State);
 Check("active Reborn begins in transit", ExternalEngagementState.Transit,
-    rebornEngagement.Update(rebornStart, true, false, false, false, false, false, false, false, 0, false, 5f).State);
+    rebornEngagement.Update(rebornStart, true, false, false, false, false, false, false, false, 0, 0, false, 5f).State);
 Check("mount cast does not latch a combat engagement", false,
-    rebornEngagement.Update(rebornStart.AddSeconds(1), true, false, false, true, false, false, true, true, 0, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(1), true, false, false, true, false, false, true, true, 0, 0, false, 5f).ShouldYield);
 Check("unflagged mount cast without nearby enemies does not latch combat", false,
-    rebornEngagement.Update(rebornStart.AddSeconds(1.5), true, false, false, false, false, false, true, true, 0, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(1.5), true, false, false, false, false, false, true, true, 0, 0, false, 5f).ShouldYield);
 Check("Sentinel mount request latch suppresses the pre-condition cast frame", false,
-    rebornEngagement.Update(rebornStart.AddSeconds(1.75), true, false, false, false, true, false, true, true, 2, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(1.75), true, false, false, false, true, false, true, true, 2, 0, false, 5f).ShouldYield);
 Check("combat latches the Reborn engagement", true,
-    rebornEngagement.Update(rebornStart.AddSeconds(2), true, false, false, false, false, true, false, false, 4, false, 5f).ShouldYield);
-Check("nearby enemies hold engagement after combat flag clears", true,
-    rebornEngagement.Update(rebornStart.AddSeconds(3), true, false, false, false, false, false, false, false, 2, false, 5f).ShouldYield);
-Check("clear battlefield starts quiet period", true,
-    rebornEngagement.Update(rebornStart.AddSeconds(4), true, false, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(2), true, false, false, false, false, true, false, false, 4, 1, false, 5f).ShouldYield);
+Check("observed enemy hard target holds engagement after combat flag clears", true,
+    rebornEngagement.Update(rebornStart.AddSeconds(3), true, false, false, false, false, false, false, false, 2, 1, false, 5f).ShouldYield);
+Check("passive nearby enemies start quiet period instead of starving resume", true,
+    rebornEngagement.Update(rebornStart.AddSeconds(4), true, false, false, false, false, false, false, false, 2, 0, false, 5f).ShouldYield);
 Check("quiet period continues before configured boundary", true,
-    rebornEngagement.Update(rebornStart.AddSeconds(8.9), true, false, false, false, false, false, false, false, 0, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(8.9), true, false, false, false, false, false, false, false, 3, 0, false, 5f).ShouldYield);
 var rebornCleared = rebornEngagement.Update(
-    rebornStart.AddSeconds(9), true, false, false, false, false, false, false, false, 0, false, 5f);
-Check("strategic travel resumes after clear quiet period", false, rebornCleared.ShouldYield);
+    rebornStart.AddSeconds(9), true, false, false, false, false, false, false, false, 3, 0, false, 5f);
+Check("strategic travel resumes after quiet period despite passive enemies", false, rebornCleared.ShouldYield);
 Check("cleared engagement returns to transit", ExternalEngagementState.Transit, rebornCleared.State);
 Check("death releases navigation yield", false,
-    rebornEngagement.Update(rebornStart.AddSeconds(10), true, true, false, false, false, true, false, false, 5, false, 5f).ShouldYield);
+    rebornEngagement.Update(rebornStart.AddSeconds(10), true, true, false, false, false, true, false, false, 5, 2, false, 5f).ShouldYield);
 Check("death is reported distinctly", ExternalEngagementState.Dead,
-    rebornEngagement.Update(rebornStart.AddSeconds(10.1), true, true, false, false, false, false, false, false, 0, false, 5f).State);
+    rebornEngagement.Update(rebornStart.AddSeconds(10.1), true, true, false, false, false, false, false, false, 0, 0, false, 5f).State);
 Check("respawn enters regroup state without combat yield", ExternalEngagementState.Regrouping,
-    rebornEngagement.Update(rebornStart.AddSeconds(11), true, false, false, false, false, false, false, false, 0, true, 5f).State);
+    rebornEngagement.Update(rebornStart.AddSeconds(11), true, false, false, false, false, false, false, false, 0, 0, true, 5f).State);
 
 Check("Recuperate eligible below 75%", true,
     NativeCombatPolicy.RecuperateEligible(74.9f, 75f, 2000));
@@ -487,6 +487,30 @@ for (var scan = 0; scan < 60; scan++)
     rawOnlyOnsal.Update(trackingNow.AddMilliseconds(scan * 250),
         [rawDiscoveryMarker with { Position = securePosition + new Vector3(scan, 0, 0) }], [], []);
 Check("Onsal raw observations never become buttons", 0, rawOnlyOnsal.Objectives.Count);
+
+var liveTransientOnsal = new OnsalHakairAdapter();
+liveTransientOnsal.Reset(trackingNow);
+var liveMovingMarker = SecureMarker(
+    60360, 0, 0xFF000000, securePosition, "", -1);
+var nearbyEventObject = new ObjectiveObservation(
+    0x1111, 0x2222, 9999, "Unresolved Event Object", "EventObj",
+    securePosition, false, false, 0, 0);
+for (var scan = 0; scan < DiscoveryMarkerAggregator.PhysicalEvidenceStableScans + 4; scan++)
+    liveTransientOnsal.Update(trackingNow.AddMilliseconds(scan * 300),
+        [liveMovingMarker], [nearbyEventObject], []);
+Check("live-confirmed moving Onsal family stays raw beside physical objects", 0,
+    liveTransientOnsal.Objectives.Count);
+
+var flickeringOnsal = new OnsalHakairAdapter();
+flickeringOnsal.Reset(trackingNow);
+for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans + 1; scan++)
+{
+    var marker = SecureMarker(60590, 0, scan % 2 == 0 ? 446u : 448u,
+        securePosition, "Ovoo 10 Rank A Claimed", -1);
+    flickeringOnsal.Update(trackingNow.AddMilliseconds(scan * 300), [marker], [], []);
+}
+Check("Onsal 446/448 presentation flicker does not reset location stability", 1,
+    flickeringOnsal.Objectives.Count);
 
 var worqorAdapter = new WorqorChirtehAdapter();
 worqorAdapter.Reset(trackingNow);

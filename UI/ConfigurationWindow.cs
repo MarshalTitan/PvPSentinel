@@ -134,7 +134,7 @@ internal sealed class ConfigurationWindow : Window
             if (config.CombatProvider == CombatProvider.RotationSolverReborn)
             {
                 DrawFloat("Reborn post-combat quiet period", config.RotationSolverQuietSeconds, 1f, 15f, value => config.RotationSolverQuietSeconds = value, "%.1f s");
-                DrawFloat("Reborn enemy-clearance radius", config.RotationSolverEnemyClearanceRadius, 10f, 60f, value => config.RotationSolverEnemyClearanceRadius = value, "%.1f y");
+                DrawFloat("Reborn targeting-threat radius", config.RotationSolverEnemyClearanceRadius, 10f, 60f, value => config.RotationSolverEnemyClearanceRadius = value, "%.1f y");
             }
         }
 

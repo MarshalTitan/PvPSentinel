@@ -949,7 +949,7 @@ internal sealed class NavigationController(
         manualSnapshot = BuildManualSnapshot(
             MovementOwner.ExternalCombat,
             ManualRouteState.YieldedExternalCombat,
-            $"Combat owns movement; destination {activeManual?.DestinationId ?? manualRequest?.DestinationId} is preserved and will be repathed after Reborn's engagement-clearance quiet period. {combat.Explanation}",
+            $"Combat owns movement; destination {activeManual?.DestinationId ?? manualRequest?.DestinationId} is preserved and will be repathed after Reborn's targeting-threat quiet period. {combat.Explanation}",
             localPosition);
         return Decision(
             false,

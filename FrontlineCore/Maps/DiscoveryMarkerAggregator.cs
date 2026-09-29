@@ -37,48 +37,53 @@ internal static class DiscoveryMarkerAggregator
     internal const int MaximumPromotedLocations = 32;
 
     public static IReadOnlyList<DiscoveryMarkerAggregate> Aggregate(
-        IEnumerable<FrontlineMapMarkerObservation> markers) => markers
-        .Where(IsObservable)
-        .GroupBy(marker => PositionKey(marker.Position), StringComparer.Ordinal)
-        .Select(group =>
-        {
-            var observations = group
-                .OrderBy(marker => marker.IconId)
-                .ThenBy(marker => marker.DataId)
-                .ThenBy(marker => marker.ObjectiveId)
-                .ThenBy(marker => marker.EventState)
-                .ToArray();
-            var position = new Vector3(
-                observations.Average(marker => marker.Position.X),
-                observations.Average(marker => marker.Position.Y),
-                observations.Average(marker => marker.Position.Z));
-            var families = observations
-                .Select(marker => $"{marker.IconId}/{marker.DataId}/{NormalizeFlickeringObjectiveId(marker.ObjectiveId)}")
-                .Distinct(StringComparer.Ordinal)
-                .Order(StringComparer.Ordinal)
-                .ToArray();
-            var identities = observations
-                .Select(marker => $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}/e{marker.EventState}/t{marker.EndTimestamp}")
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
-            var tooltips = observations
-                .Select(marker => Compact(marker.Tooltip))
-                .Where(value => value.Length > 0)
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
-            return new DiscoveryMarkerAggregate(
-                group.Key,
-                position,
-                observations.Length,
-                string.Join('|', families),
-                string.Join('|', observations.Select(TransitionRow).Distinct(StringComparer.Ordinal)),
-                $"ids=[{string.Join(',', identities)}]; text=[{(tooltips.Length == 0 ? "<none>" : string.Join(" | ", tooltips))}]",
-                observations);
-        })
-        .OrderBy(item => item.Position.X)
-        .ThenBy(item => item.Position.Z)
-        .ThenBy(item => item.Position.Y)
-        .ToArray();
+        IEnumerable<FrontlineMapMarkerObservation> markers,
+        Func<uint, uint>? objectiveIdNormalizer = null)
+    {
+        var normalizeObjectiveId = objectiveIdNormalizer ?? NormalizeFlickeringObjectiveId;
+        return markers
+            .Where(IsObservable)
+            .GroupBy(marker => PositionKey(marker.Position), StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var observations = group
+                    .OrderBy(marker => marker.IconId)
+                    .ThenBy(marker => marker.DataId)
+                    .ThenBy(marker => marker.ObjectiveId)
+                    .ThenBy(marker => marker.EventState)
+                    .ToArray();
+                var position = new Vector3(
+                    observations.Average(marker => marker.Position.X),
+                    observations.Average(marker => marker.Position.Y),
+                    observations.Average(marker => marker.Position.Z));
+                var families = observations
+                    .Select(marker => $"{marker.IconId}/{marker.DataId}/{normalizeObjectiveId(marker.ObjectiveId)}")
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray();
+                var identities = observations
+                    .Select(marker => $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}/e{marker.EventState}/t{marker.EndTimestamp}")
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                var tooltips = observations
+                    .Select(marker => Compact(marker.Tooltip))
+                    .Where(value => value.Length > 0)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                return new DiscoveryMarkerAggregate(
+                    group.Key,
+                    position,
+                    observations.Length,
+                    string.Join('|', families),
+                    string.Join('|', observations.Select(marker => TransitionRow(marker, normalizeObjectiveId)).Distinct(StringComparer.Ordinal)),
+                    $"ids=[{string.Join(',', identities)}]; text=[{(tooltips.Length == 0 ? "<none>" : string.Join(" | ", tooltips))}]",
+                    observations);
+            })
+            .OrderBy(item => item.Position.X)
+            .ThenBy(item => item.Position.Z)
+            .ThenBy(item => item.Position.Y)
+            .ToArray();
+    }
 
     public static DiscoveryMarkerPromotionClass ClassifyPromotionEvidence(
         DiscoveryMarkerAggregate aggregate,
@@ -132,9 +137,11 @@ internal static class DiscoveryMarkerAggregator
         (marker.IconId != 0 || marker.DataId != 0 || marker.ObjectiveId != 0 ||
          !string.IsNullOrWhiteSpace(marker.Tooltip));
 
-    private static string TransitionRow(FrontlineMapMarkerObservation marker) =>
+    private static string TransitionRow(
+        FrontlineMapMarkerObservation marker,
+        Func<uint, uint> normalizeObjectiveId) =>
         string.Create(CultureInfo.InvariantCulture,
-            $"icon={marker.IconId},data={marker.DataId},objective={NormalizeFlickeringObjectiveId(marker.ObjectiveId)},event={marker.EventState},text={NormalizeVolatileNumbers(Compact(marker.Tooltip))}");
+            $"icon={marker.IconId},data={marker.DataId},objective={normalizeObjectiveId(marker.ObjectiveId)},event={marker.EventState},text={NormalizeVolatileNumbers(Compact(marker.Tooltip))}");
 
     private static string Compact(string value) => value.Trim().Replace('\r', ' ').Replace('\n', ' ');
 
