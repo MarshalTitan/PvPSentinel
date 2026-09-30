@@ -142,6 +142,17 @@ internal sealed class NavigationController(
         BattlefieldState battlefield,
         Configuration config)
     {
+        if (battlefield.Match.Lifecycle == FrontlineMatchLifecycle.Results)
+        {
+            if (activeManual is not null || manualRequest is not null || manualPendingPath is not null ||
+                manualYieldedToCombat)
+                CancelManual("Match results ended manual navigation; a new match requires a fresh request.",
+                    ManualRouteState.Cancelled, "navigation_cancelled");
+            StopOwnedPath(clearDestination: true);
+            return Decision(false, null, NavigationPathState.Paused, MountState.Disabled,
+                "Match results are visible; manual and autonomous navigation are stopped.");
+        }
+
         if (game.LocalPlayer?.IsDead == true)
         {
             if (activeManual is not null || manualRequest is not null || ownsPath)
