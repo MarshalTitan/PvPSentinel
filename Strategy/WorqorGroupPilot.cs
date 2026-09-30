@@ -23,6 +23,7 @@ internal sealed class WorqorGroupPilot
     private Vector3? spawnPosition;
     private string? committedId;
     private string? lastArrivedId;
+    private bool diedThisMatch;
     private DateTime lastArrivalUtc = DateTime.MinValue;
     private DateTime selectAfterUtc = DateTime.MinValue;
     private bool manualOverride;
@@ -71,6 +72,7 @@ internal sealed class WorqorGroupPilot
         }
         if (game.LocalPlayer.IsDead)
         {
+            diedThisMatch = true;
             committedId = null;
             manualOverride = false;
             selectAfterUtc = now.AddSeconds(4);
@@ -136,7 +138,7 @@ internal sealed class WorqorGroupPilot
             return null;
         }
 
-        var firstLeg = lastArrivedId is null && spawnPosition is not null;
+        var firstLeg = !diedThisMatch && lastArrivedId is null && spawnPosition is not null;
         var viable = battlefield.Objectives
             .Where(objective => objective.ReferencePosition is not null &&
                 objective.LastSeenUtc is { } seen && now - seen <= TimeSpan.FromSeconds(3) &&
@@ -199,7 +201,10 @@ internal sealed class WorqorGroupPilot
         manualOverride = false;
         pausedAfterFailure = false;
         if (clearSpawn)
+        {
             spawnPosition = null;
+            diedThisMatch = false;
+        }
         Status = "Off";
     }
 
