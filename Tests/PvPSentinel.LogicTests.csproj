@@ -26,6 +26,7 @@
     <Compile Include="../Navigation/ManualNavigationPolicy.cs" Link="Navigation/ManualNavigationPolicy.cs" />
     <Compile Include="../Navigation/ManualRoutePlanner.cs" Link="Navigation/ManualRoutePlanner.cs" />
     <Compile Include="../Navigation/RouteComparison.cs" Link="Navigation/RouteComparison.cs" />
+    <Compile Include="../Navigation/WorqorCentralRecovery.cs" Link="Navigation/WorqorCentralRecovery.cs" />
     <Compile Include="../Navigation/RouteExecutionPlan.cs" Link="Navigation/RouteExecutionPlan.cs" />
     <Compile Include="../FrontlineCore/BattlefieldModels.cs" Link="FrontlineCore/BattlefieldModels.cs" />
     <Compile Include="../FrontlineCore/TeamClassifier.cs" Link="FrontlineCore/TeamClassifier.cs" />
