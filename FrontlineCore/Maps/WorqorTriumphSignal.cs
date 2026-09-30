@@ -27,7 +27,10 @@ internal static partial class WorqorTriumphSignals
 
     public static WorqorTriumphSignal? Parse(string tooltip)
     {
-        var match = TooltipPattern().Match(tooltip.Trim());
+        // Claimed tooltips in the sixth live trace carry a trailing control
+        // payload. Keep the text anchored after removing only control bytes.
+        var readable = new string(tooltip.Where(character => !char.IsControl(character)).ToArray()).Trim();
+        var match = TooltipPattern().Match(readable);
         if (!match.Success || !int.TryParse(match.Groups["number"].Value, out var number) ||
             number is < 1 or > 12)
             return null;

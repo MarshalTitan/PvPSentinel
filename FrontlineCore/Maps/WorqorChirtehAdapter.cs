@@ -72,5 +72,6 @@ internal sealed class WorqorChirtehAdapter() : DiscoveryFrontlineAdapter(new Dis
                (marker.IconId is 60573 or 60574 &&
                 (marker.ObjectiveId == 0 || marker.ObjectiveId == ObservedMovingMarkerSentinel)) ||
                (marker.IconId is >= 60597 and <= 60599 &&
-                (marker.ObjectiveId is 0 or 26 or 62 or 181 || marker.ObjectiveId == ObservedMovingMarkerSentinel))))));
+                (marker.ObjectiveId is 0 or 26 or 62 or 181 || marker.ObjectiveId == ObservedMovingMarkerSentinel ||
+                 marker.IconId == 60599 && marker.ObjectiveId == 210))))));
 }

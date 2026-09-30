@@ -24,10 +24,13 @@ internal sealed class WorqorGroupPilot
     private string? committedId;
     private string? lastArrivedId;
     private bool diedThisMatch;
+    private bool postDeathRegroupPending;
     private DateTime lastArrivalUtc = DateTime.MinValue;
     private DateTime selectAfterUtc = DateTime.MinValue;
     private bool manualOverride;
     private bool pausedAfterFailure;
+    private string lastWaitingReason = string.Empty;
+    private DateTime lastWaitingEventUtc = DateTime.MinValue;
 
     public string Status { get; private set; } = "Off";
     public string? CommittedDestinationId => committedId;
@@ -64,19 +67,31 @@ internal sealed class WorqorGroupPilot
             Reset(clearSpawn: false);
             return null;
         }
-        if (game.LocalPlayer is null || !game.IsClassificationReliable ||
-            battlefield.Match.Lifecycle != FrontlineMatchLifecycle.MatchActive || !rebornReady)
-        {
-            Status = "Waiting for active match, reliable team, and Reborn";
-            return null;
-        }
-        if (game.LocalPlayer.IsDead)
+        // Death must retire a committed manual route even if the provider or
+        // team sensor went unavailable on the same frame.
+        if (game.LocalPlayer?.IsDead == true)
         {
             diedThisMatch = true;
+            postDeathRegroupPending = true;
             committedId = null;
             manualOverride = false;
             selectAfterUtc = now.AddSeconds(4);
-            Status = "Dead; choosing a new supported Triumph after respawn";
+            Status = "Dead; will find a supported Triumph or allied group after respawn";
+            return null;
+        }
+        if (battlefield.Match.Lifecycle != FrontlineMatchLifecycle.MatchActive)
+        {
+            WaitFor("Waiting for active match", now);
+            return null;
+        }
+        if (game.LocalPlayer is null || !game.IsClassificationReliable)
+        {
+            WaitFor($"Waiting for reliable team: {game.ClassificationReliabilityExplanation}", now);
+            return null;
+        }
+        if (!rebornReady)
+        {
+            WaitFor("Reborn autorotation is inactive; enable it after death or reconnect to resume group travel", now);
             return null;
         }
 
@@ -92,6 +107,8 @@ internal sealed class WorqorGroupPilot
             if (route.DestinationId == current && route.State == ManualRouteState.Arrived)
             {
                 committedId = null;
+                if (current == "WOR-REGROUP")
+                    postDeathRegroupPending = false;
                 lastArrivedId = current;
                 lastArrivalUtc = now;
                 selectAfterUtc = now.AddSeconds(6);
@@ -172,11 +189,27 @@ internal sealed class WorqorGroupPilot
 
         if (viable.Length == 0)
         {
-            Status = "Waiting for a fresh unclaimed/activating Triumph with an allied group nearby";
+            if (postDeathRegroupPending)
+            {
+                var regroup = WorqorRegroupPolicy.Choose(game.LocalPlayer.Position,
+                    clusters.Select(cluster => new WorqorRegroupCandidate(
+                        cluster.Center, cluster.PlayerCount)));
+                if (regroup is not null)
+                {
+                    committedId = "WOR-REGROUP";
+                    var regroupDetail = $"destination={committedId}; group={regroup.PlayerCount}; distance={HorizontalDistance(game.LocalPlayer.Position, regroup.Position):F1}; reason=no-supported-Triumph-after-death; commitment=arrival-or-death";
+                    Event("worqor_group_regroup_selected", regroupDetail, now);
+                    Status = "Regrouping with allied cluster after death until arrival";
+                    return new WorqorGroupPlan(committedId, "Allied group after respawn",
+                        regroup.Position, [], regroupDetail);
+                }
+            }
+            WaitFor("Waiting for a fresh Triumph with allied support or a reachable allied group after death", now);
             return null;
         }
 
         var choice = viable[0];
+        postDeathRegroupPending = false;
         committedId = choice.Objective.LogicalId;
         var detail = $"destination={committedId}; state={choice.Objective.State}; rank={choice.Objective.Rank}; allies={choice.Objective.NearbyAllies}; enemies={choice.Objective.NearbyEnemies}; group={choice.Support!.PlayerCount}; heading={choice.Heading:F2}; score={choice.Score:F1}; commitment=arrival-or-death";
         Event("worqor_group_selected", detail, now);
@@ -200,6 +233,9 @@ internal sealed class WorqorGroupPilot
         selectAfterUtc = DateTime.MinValue;
         manualOverride = false;
         pausedAfterFailure = false;
+        postDeathRegroupPending = false;
+        lastWaitingReason = string.Empty;
+        lastWaitingEventUtc = DateTime.MinValue;
         if (clearSpawn)
         {
             spawnPosition = null;
@@ -210,6 +246,16 @@ internal sealed class WorqorGroupPilot
 
     private void Event(string name, string detail, DateTime now) =>
         events.Enqueue(new ManualNavigationEvent(name, detail, now));
+
+    private void WaitFor(string reason, DateTime now)
+    {
+        Status = reason;
+        if (lastWaitingReason == reason && now - lastWaitingEventUtc < TimeSpan.FromSeconds(30))
+            return;
+        lastWaitingReason = reason;
+        lastWaitingEventUtc = now;
+        Event("worqor_group_waiting", reason, now);
+    }
 
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));

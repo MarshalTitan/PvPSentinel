@@ -84,7 +84,7 @@ internal sealed class ConfigurationWindow : Window
             DrawCheckbox("Enable long-distance mounting", config.MountingEnabled, value => config.MountingEnabled = value);
             DrawCheckbox("Worqor group navigation (opt-in)", config.WorqorGroupNavigationEnabled,
                 value => config.WorqorGroupNavigationEnabled = value);
-            ImGui.TextWrapped("Requires PvP Sentinel navigation and RotationSolverReborn. Picks a fresh unclaimed or soon-activating Triumph near a friendly group, then keeps that destination until arrival or death. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it for the match.");
+            ImGui.TextWrapped("Requires PvP Sentinel navigation and active RotationSolverReborn autorotation. Picks a fresh unclaimed or soon-activating Triumph near a friendly group and keeps it until arrival or death. After respawn, if no such Triumph is available, it makes one trip to a visible allied field group. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it for the match.");
             ImGui.TextDisabled("Other-map autonomous strategy, queue/requeue: disabled");
             ImGui.Unindent();
         }
