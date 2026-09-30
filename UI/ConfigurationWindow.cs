@@ -46,7 +46,7 @@ internal sealed class ConfigurationWindow : Window
 
     public override void Draw()
     {
-        ImGui.TextWrapped("M2 development controls. Strategic destination selection, objective automation, and queue/requeue are disabled. Manual movement requires the master and navigation switches plus an armed route from Diagnostics.");
+        ImGui.TextWrapped("Frontline development controls. Manual routes remain available on all maps. Worqor group navigation is separately opt-in; queue/requeue and generic objective automation remain disabled.");
         ImGui.Separator();
 
         if (ImGui.Button("EMERGENCY STOP", new Vector2(180, 34)))
@@ -82,7 +82,10 @@ internal sealed class ConfigurationWindow : Window
             DrawCheckbox("Enable strategic target scoring", config.TargetSelectionEnabled, value => config.TargetSelectionEnabled = value);
             DrawCheckbox("Prioritize safe finish-KO opportunities", config.FinishKoPriorityEnabled, value => config.FinishKoPriorityEnabled = value);
             DrawCheckbox("Enable long-distance mounting", config.MountingEnabled, value => config.MountingEnabled = value);
-            ImGui.TextDisabled("Autonomous strategy/objective navigation: disabled for manual M2 validation");
+            DrawCheckbox("Worqor group navigation (opt-in)", config.WorqorGroupNavigationEnabled,
+                value => config.WorqorGroupNavigationEnabled = value);
+            ImGui.TextWrapped("Requires PvP Sentinel navigation and RotationSolverReborn. Picks a fresh unclaimed or soon-activating Triumph near a friendly group, then keeps that destination until arrival or death. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it for the match.");
+            ImGui.TextDisabled("Other-map autonomous strategy, queue/requeue: disabled");
             ImGui.Unindent();
         }
 

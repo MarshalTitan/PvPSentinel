@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 12;
+    public int Version { get; set; } = 13;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
@@ -54,6 +54,7 @@ public sealed class Configuration : IPluginConfiguration
     public float RotationSolverQuietSeconds { get; set; } = 2f;
     public float RotationSolverEnemyClearanceRadius { get; set; } = 30f;
     public bool ContinueManualTravelDuringRebornCombat { get; set; } = true;
+    public bool WorqorGroupNavigationEnabled { get; set; }
     public float NativeRecuperateHpPercent { get; set; } = 75f;
     public float NativeGuardHpPercent { get; set; } = 35f;
     public float NativeGuardMaximumHpPercent { get; set; } = 65f;
@@ -120,7 +121,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 12)
+        if (Version >= 13)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -248,7 +249,14 @@ public sealed class Configuration : IPluginConfiguration
             ContinueManualTravelDuringRebornCombat = true;
         }
 
-        Version = 12;
+        if (Version < 13)
+        {
+            // A new explicit opt-in for one map must not inherit the old,
+            // disabled strategic-navigation setting.
+            WorqorGroupNavigationEnabled = false;
+        }
+
+        Version = 13;
         Save();
     }
 

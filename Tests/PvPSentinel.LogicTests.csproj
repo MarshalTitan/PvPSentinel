@@ -47,6 +47,7 @@
     <Compile Include="../FrontlineCore/Maps/DiscoveryFrontlineAdapter.cs" Link="FrontlineCore/Maps/DiscoveryFrontlineAdapter.cs" />
     <Compile Include="../FrontlineCore/Maps/OnsalHakairAdapter.cs" Link="FrontlineCore/Maps/OnsalHakairAdapter.cs" />
     <Compile Include="../FrontlineCore/Maps/WorqorChirtehAdapter.cs" Link="FrontlineCore/Maps/WorqorChirtehAdapter.cs" />
+    <Compile Include="../FrontlineCore/Maps/WorqorTriumphSignal.cs" Link="FrontlineCore/Maps/WorqorTriumphSignal.cs" />
     <Compile Include="../FrontlineCore/Diagnostics/EventDiffLimiter.cs" Link="FrontlineCore/Diagnostics/EventDiffLimiter.cs" />
     <Compile Include="../FrontlineCore/Diagnostics/FrontlineJson.cs" Link="FrontlineCore/Diagnostics/FrontlineJson.cs" />
     <Compile Include="../FrontlineCore/Diagnostics/PrivacySanitizer.cs" Link="FrontlineCore/Diagnostics/PrivacySanitizer.cs" />

@@ -16,6 +16,8 @@ internal sealed class DiagnosticWindow : Window
     private readonly BattlefieldService battlefieldService;
     private readonly WrathAdapter wrath;
     private readonly Func<string> lastAction;
+    private readonly Func<string> groupPilotStatus;
+    private readonly Action stopNavigation;
     private readonly Action closed;
 
     public DiagnosticWindow(
@@ -25,6 +27,8 @@ internal sealed class DiagnosticWindow : Window
         BattlefieldService battlefieldService,
         WrathAdapter wrath,
         Func<string> lastAction,
+        Func<string> groupPilotStatus,
+        Action stopNavigation,
         Action closed)
         : base("PvP Sentinel - Development###PvPSentinelDiagnostics")
     {
@@ -34,6 +38,8 @@ internal sealed class DiagnosticWindow : Window
         this.battlefieldService = battlefieldService;
         this.wrath = wrath;
         this.lastAction = lastAction;
+        this.groupPilotStatus = groupPilotStatus;
+        this.stopNavigation = stopNavigation;
         this.closed = closed;
         Size = new Vector2(680, 760);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -319,14 +325,23 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Current Frontline", state.Battlefield.Map.DisplayName());
         KeyValue("Active adapter", state.Battlefield.ActiveAdapter);
         if (ImGui.Button(manual.Armed ? "Disarm Manual Navigation" : "Arm Manual Navigation", new Vector2(210, 34)))
-            navigation.SetManualNavigationArmed(!manual.Armed);
+        {
+            if (manual.Armed)
+            {
+                stopNavigation();
+                navigation.SetManualNavigationArmed(false);
+            }
+            else
+                navigation.SetManualNavigationArmed(true);
+        }
         ImGui.SameLine();
         if (ImGui.Button("STOP NAVIGATION", new Vector2(180, 34)))
-            navigation.StopManualNavigation();
+            stopNavigation();
 
         KeyValue("Selected destination", $"{manual.DestinationId} — {manual.DestinationName}");
         KeyValue("Route state", manual.State.ToString());
         KeyValue("Manual navigation armed", YesNo(manual.Armed));
+        KeyValue("Worqor group navigation", groupPilotStatus());
 
         var objectives = state.Battlefield.Objectives.ToArray();
         if (objectives.Length > 0)
