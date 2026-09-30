@@ -757,6 +757,27 @@ var firstDeparture = Vector2.Normalize(new Vector2(
     departureAnchors[0].Z - secureTwelveFailure[0].Z));
 Check("first recovery stage is perpendicular to failed corridor", true,
     Math.Abs(Vector2.Dot(failedDirection, firstDeparture)) < 0.01f);
+var filmedCenterPosition = new Vector3(-3.1f, -16.8f, 6.8f);
+var filmedBlockedCorridor = new[]
+{
+    filmedCenterPosition,
+    new Vector3(-31.2f, -16.5f, -35.2f),
+};
+Check("filmed Worqor snowman corridor prefers observed generated east exit", true,
+    WorqorCentralRecovery.PreferredDeparture(
+        FrontlineMap.WorqorChirteh, filmedCenterPosition, filmedBlockedCorridor) ==
+    WorqorCentralRecovery.ObservedEastExit);
+Check("other maps retain generic departure recovery", true,
+    WorqorCentralRecovery.PreferredDeparture(
+        FrontlineMap.OnsalHakair, filmedCenterPosition, filmedBlockedCorridor) is null);
+Check("other Worqor floors retain generic departure recovery", true,
+    WorqorCentralRecovery.PreferredDeparture(
+        FrontlineMap.WorqorChirteh, filmedCenterPosition + new Vector3(0, 8, 0),
+        filmedBlockedCorridor) is null);
+Check("other Worqor directions retain generic departure recovery", true,
+    WorqorCentralRecovery.PreferredDeparture(
+        FrontlineMap.WorqorChirteh, filmedCenterPosition,
+        [filmedCenterPosition, new Vector3(20f, -17f, 35f)]) is null);
 Check("same horizontal route on another floor is not treated as identical", false,
     RouteComparison.MateriallyIdentical(routeA, routeA.Select(point => point + new Vector3(0, 8, 0)).ToArray()));
 Check("bounded recovery allows attempt below limit", true, ManualNavigationPolicy.CanRetry(2, 3));
