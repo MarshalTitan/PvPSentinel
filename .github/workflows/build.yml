@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "The third Worqor live trace confirms manual routes advance through RotationSolverReborn combat: seven combat intervals ended in arrivals and two in death cancellation, with no stuck or path failures in the match. Filter the observed player, Levemete, and base marker identities from clickable Worqor destinations while retaining their raw research evidence and named Triumph destinations. The previous snowman obstruction did not recur, so a detour remains unvalidated. Automatic group following, objective strategy, queue/requeue, and provider-independent LB execution remain disabled; Native MCH remains Shadow / Observe by default."
+            --notes "A 41-second Worqor video confirms the central snowman blocks a northwest route from the lower center. After that specific corridor stalls, Sentinel now tries the north/east exit reached by a different generated route in the same match, then repaths the original destination. The attempt remains fully vnavmesh-generated and bounded; a fresh live match must validate it. Combat travel and named Triumph destinations remain in place. Automatic group following, objective strategy, queue/requeue, and provider-independent LB execution remain disabled; Native MCH remains Shadow / Observe by default."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

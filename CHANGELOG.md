@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1.5 — Worqor central snowman recovery
+
+- Correlated the fourth Worqor match and its 41-second video. All 12 promoted destinations were named Triumph markers. Twenty-two manual requests produced 13 arrivals, one bounded failure, three stuck events, no path-generation failures, and no sensor errors. Eight combat-continuation intervals showed four arrivals, two death cancellations, and two explicit STOPs.
+- The video confirms the central snowman physically blocks a northwest vnavmesh route from the lower center at about `(-3,-17,7)`. The obstacle was absent from the nearby object list; a generic short side step and a second generated departure both failed. A different generated route from `(6,-17,5)` then reached Triumph 2 at `(52,-17,34)` by traveling north and east.
+- When a generated northwest corridor fails within that filmed lower-center footprint, prefer the observed east exit as the first recovery destination. Vnavmesh still generates and drives the full stage before repathing the original manual destination. The strategy is restricted by map, floor, position, and failed-corridor direction; other routes keep generic recovery. STOP, death, results, and three-attempt failure remain terminal. This staged recovery requires another live validation before being considered reliable.
+- Autonomous group following remains disabled pending group-target selection and observed obstacle-route validation.
+
 ## 0.3.1.4 — Worqor destination cleanup after combat travel validation
 
 - Correlated the third Worqor match: 17 manual requests, 13 arrivals, nine combat-continuation intervals with seven subsequent arrivals and two death cancellations, zero navigation/path failures, zero stuck events, and no sensor errors. The new combat travel policy made measurable progress through active Reborn combat; results cancelled the remaining route.

@@ -596,7 +596,7 @@ internal sealed class NavigationController(
                 manualRoute = [];
                 manualRouteCursor = 0;
                 manualStageEnd = 0;
-                BeginManualRecovery(local.Position);
+                BeginManualRecovery(local.Position, battlefield.Map);
             }
             else
             {
@@ -619,7 +619,7 @@ internal sealed class NavigationController(
             manualRoute = [];
             manualRouteCursor = 0;
             manualStageEnd = 0;
-            BeginManualRecovery(local.Position);
+            BeginManualRecovery(local.Position, battlefield.Map);
         }
 
         if (!ManualNavigationPolicy.CanRetry(consecutiveFailures, config.MaximumPathFailures))
@@ -804,9 +804,12 @@ internal sealed class NavigationController(
         developmentLog.Changed("manual-nav-candidate", $"{manualCandidateIndex}|{reason}", reason);
     }
 
-    private void BeginManualRecovery(Vector3 currentPosition)
+    private void BeginManualRecovery(Vector3 currentPosition, FrontlineMap map)
     {
         manualDepartureCandidates = RouteComparison.DepartureAnchors(currentPosition, failedManualCorridor).ToList();
+        var observedExit = WorqorCentralRecovery.PreferredDeparture(map, currentPosition, failedManualCorridor);
+        if (observedExit is { } exit)
+            manualDepartureCandidates.Insert(0, exit);
         manualDepartureCandidateIndex = 0;
         manualCandidateIndex = 0;
         manualRecoveryPhase = ManualRecoveryPhase.DepartureStage;
@@ -815,7 +818,7 @@ internal sealed class NavigationController(
         manualReplacementAttempt = true;
         Emit(
             "navigation_recovery_started",
-            $"destination={activeManual?.DestinationId}; origin={FormatVector(currentPosition)}; candidates={FormatRoute(manualDepartureCandidates)}; failed_corridor={FormatRoute(failedManualCorridor)}");
+            $"destination={activeManual?.DestinationId}; origin={FormatVector(currentPosition)}; strategy={(observedExit is null ? "generic" : "observed-worqor-east-exit")}; candidates={FormatRoute(manualDepartureCandidates)}; failed_corridor={FormatRoute(failedManualCorridor)}");
     }
 
     private bool EnsureManualCandidateAvailable()
