@@ -197,11 +197,11 @@ internal sealed class WorqorGroupPilot
                 if (regroup is not null)
                 {
                     committedId = "WOR-REGROUP";
-                    var detail = $"destination={committedId}; group={regroup.PlayerCount}; distance={HorizontalDistance(game.LocalPlayer.Position, regroup.Position):F1}; reason=no-supported-Triumph-after-death; commitment=arrival-or-death";
-                    Event("worqor_group_regroup_selected", detail, now);
+                    var regroupDetail = $"destination={committedId}; group={regroup.PlayerCount}; distance={HorizontalDistance(game.LocalPlayer.Position, regroup.Position):F1}; reason=no-supported-Triumph-after-death; commitment=arrival-or-death";
+                    Event("worqor_group_regroup_selected", regroupDetail, now);
                     Status = "Regrouping with allied cluster after death until arrival";
                     return new WorqorGroupPlan(committedId, "Allied group after respawn",
-                        regroup.Position, [], detail);
+                        regroup.Position, [], regroupDetail);
                 }
             }
             WaitFor("Waiting for a fresh Triumph with allied support or a reachable allied group after death", now);
