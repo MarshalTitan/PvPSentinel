@@ -9,6 +9,7 @@ using PvPSentinel.FrontlineCore.Diagnostics;
 using PvPSentinel.FrontlineCore.Maps;
 using PvPSentinel.Models;
 using PvPSentinel.Navigation;
+using PvPSentinel.Strategy;
 
 var failures = new List<string>();
 
@@ -531,6 +532,8 @@ Check("Worqor countdown parses activating phase", WorqorTriumphPhase.Activating,
 Check("Worqor countdown parses seconds", 29, activatingTriumph?.ActivationEtaSeconds);
 Check("Worqor claimed marker keeps raw faction", 6,
     WorqorTriumphSignals.Parse("Triumph 11 Rank A Claimed  6 ")?.MarkerFaction);
+Check("Worqor claimed marker strips observed control payload", WorqorTriumphPhase.Claimed,
+    WorqorTriumphSignals.Parse("Triumph 11 Rank A Claimed  5 \u0002")?.Phase);
 Check("Worqor unrelated marker does not become a Triumph", true,
     WorqorTriumphSignals.Parse("Triumph 13 Rank S Unclaimed") is null);
 
@@ -554,6 +557,12 @@ statefulWorqor.Update(trackingNow.AddSeconds(6),
 Check("Worqor claimed objective owner stays unresolved", ObjectiveOwner.Unresolved,
     statefulWorqor.Objectives.Single().Owner);
 Check("Worqor claimed objective is still a manual destination", 1, statefulWorqor.Objectives.Count);
+statefulWorqor.Update(trackingNow.AddSeconds(7),
+    [statefulMarker with { Tooltip = "Triumph 11 Rank S Unclaimed" }], [], []);
+statefulWorqor.Update(trackingNow.AddSeconds(8),
+    [statefulMarker with { Tooltip = "Triumph 11 Rank S Claimed  5 \u0002" }], [], []);
+Check("Worqor claimed objective with control suffix is unresolved", ObjectiveOwner.Unresolved,
+    statefulWorqor.Objectives.Single().Owner);
 
 var liveTransientWorqor = new WorqorChirtehAdapter();
 liveTransientWorqor.Reset(trackingNow);
@@ -585,6 +594,52 @@ Check("other Worqor team's moving and base families remain raw", 1,
     secondTeamWorqor.Objectives.Count);
 Check("other Worqor team's named Triumph marker remains clickable",
     worqorObjectiveMarker.Position, secondTeamWorqor.Objectives.Single().ReferencePosition);
+
+var spawnBaseMarker = SecureMarker(60599, 0, 210,
+    new Vector3(0f, 19.7f, 286f), "", -1);
+var baseOnlyWorqor = new WorqorChirtehAdapter();
+baseOnlyWorqor.Reset(trackingNow);
+for (var scan = 0; scan < DiscoveryMarkerAggregator.PhysicalEvidenceStableScans + 5; scan++)
+    baseOnlyWorqor.Update(trackingNow.AddMilliseconds(scan * 300),
+        [spawnBaseMarker, spawnBaseMarker with { ObjectiveId = 0xFF000000 }],
+        [nearbyEventObject with { Position = spawnBaseMarker.Position }], []);
+Check("Worqor team-two spawn marker 60599/210 never becomes a destination", 0,
+    baseOnlyWorqor.Objectives.Count);
+
+var regroupChoice = WorqorRegroupPolicy.Choose(Vector3.Zero,
+    [new(new Vector3(5, 0, 5), 9), new(new Vector3(100, 0, 0), 3),
+     new(new Vector3(450, 0, 0), 12)]);
+Check("post-death regroup ignores spawn and out-of-range clusters", new Vector3(100, 0, 0),
+    regroupChoice?.Position ?? Vector3.Zero);
+Check("post-death regroup waits without field allies", true,
+    WorqorRegroupPolicy.Choose(Vector3.Zero, [new(new Vector3(10, 0, 0), 3)]) is null);
+
+var pilotNow = trackingNow.AddHours(1);
+var pilot = new WorqorGroupPilot();
+var activeWorqor = BattlefieldState.Unavailable(pilotNow, "test") with
+{
+    Match = new FrontlineMatchState(FrontlineMatchLifecycle.MatchActive,
+        TimeSpan.FromMinutes(15), 1400, [], false, "UNAVAILABLE", "test"),
+    Objectives = [new MapObjectiveState("WOR-02", "Triumph 2 — unclaimed", "Triumph",
+        ObjectiveLifecycle.Active, "B", ObjectiveOwner.Neutral, "UNRESOLVED",
+        new Vector3(100, 0, 0), [], null, null, 60585, "AgentMap.EventMarkers",
+        SensorConfidence.RuntimeDiscovery, pilotNow, pilotNow, null, 3, 0, "test")],
+};
+var pilotGame = new GameStateSnapshot(pilotNow, FrontlineMap.WorqorChirteh,
+    new TestPilotPlayer(Vector3.Zero, false), true);
+var fieldGroup = new FriendlyCluster(new Vector3(92, 0, 0), new Vector3(2, 0, 0), 4);
+var firstPilotPlan = pilot.Update(pilotGame, activeWorqor, [fieldGroup],
+    ManualNavigationSnapshot.Disarmed, true, true);
+Check("Worqor pilot chooses supported Triumph", "WOR-02", firstPilotPlan?.DestinationId ?? "NONE");
+pilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(1),
+    LocalPlayer = new TestPilotPlayer(Vector3.Zero, true), IsClassificationReliable = false },
+    activeWorqor, [fieldGroup], ManualNavigationSnapshot.Disarmed, true, false);
+Check("death clears pilot commitment even when team and Reborn are unavailable", true,
+    pilot.CommittedDestinationId is null);
+var postDeathPlan = pilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(6) },
+    activeWorqor with { Objectives = [] }, [fieldGroup], ManualNavigationSnapshot.Disarmed, true, true);
+Check("after death with no supported Triumph pilot commits to field group", "WOR-REGROUP",
+    postDeathPlan?.DestinationId ?? "NONE");
 
 var thirdTraceWorqor = new WorqorChirtehAdapter();
 thirdTraceWorqor.Reset(trackingNow);

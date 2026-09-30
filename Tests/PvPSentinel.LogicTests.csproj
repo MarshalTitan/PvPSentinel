@@ -28,6 +28,8 @@
     <Compile Include="../Navigation/RouteComparison.cs" Link="Navigation/RouteComparison.cs" />
     <Compile Include="../Navigation/WorqorCentralRecovery.cs" Link="Navigation/WorqorCentralRecovery.cs" />
     <Compile Include="../Navigation/RouteExecutionPlan.cs" Link="Navigation/RouteExecutionPlan.cs" />
+    <Compile Include="../Strategy/WorqorRegroupPolicy.cs" Link="Strategy/WorqorRegroupPolicy.cs" />
+    <Compile Include="../Strategy/WorqorGroupPilot.cs" Link="Strategy/WorqorGroupPilot.cs" />
     <Compile Include="../FrontlineCore/BattlefieldModels.cs" Link="FrontlineCore/BattlefieldModels.cs" />
     <Compile Include="../FrontlineCore/TeamClassifier.cs" Link="FrontlineCore/TeamClassifier.cs" />
     <Compile Include="../FrontlineCore/PlayerTrackingPolicy.cs" Link="FrontlineCore/PlayerTrackingPolicy.cs" />

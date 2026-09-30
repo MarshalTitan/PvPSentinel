@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1.7 — Worqor reconnect and respawn regroup
+
+- Correlated two abrupt session endings and the complete sixth Worqor match. The full run had 24 navigation requests, 16 arrivals, six deaths, zero path failures, zero stuck events, and zero sensor errors. The two earlier files end without a managed exception or crash dump, so the disconnect cause is not established. The direct event-framework marker probe returned zero named markers in all reconnect sessions; remove that unproductive native call and initialize the map agent once in a safe window after five seconds in Worqor, including pre-match.
+- Fix the pilot's death ordering. When Reborn autorotation became inactive during a death, the former early gate skipped clearing its committed destination; respawn could leave the pilot committed to a route the navigation controller had already cancelled. Death now clears the commitment before the Reborn gate. Waiting status and bounded log events specify whether match, team, or Reborn readiness is blocking selection.
+- After death, prefer a fresh Triumph supported by allies. If none is viable and Reborn is active, make one bounded, committed trip to a visible field cluster of at least three allies; ignore groups still at spawn and hold on arrival before considering another Triumph. Manual routing, STOP, and path-failure limits retain priority.
+- Parse the trailing control payload on live claimed Triumph tooltips. All claimed markers had previously stayed visually unclaimed because the exact-text parser rejected them; ownership still remains unresolved. Exclude the observed `60599/0/210` team-two spawn marker from clickable WOR destinations even beside an EventObj.
+
 ## 0.3.1.6 — Worqor marker readiness and opt-in group destination
 
 - The fifth Worqor match promoted all 12 named Triumph locations after the map became available. Five manual requests yielded four arrivals and one explicit STOP, with zero path failures, stuck events, or sensor errors. The 0.3.1.5 snowman recovery did not trigger in this match.

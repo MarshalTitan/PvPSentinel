@@ -1,7 +1,5 @@
-using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
-using FFXIVClientStructs.STD;
 using PvPSentinel.Models;
 
 namespace PvPSentinel.FrontlineCore.Sensors;
@@ -13,13 +11,10 @@ internal sealed record MarkerCapture(
 
 internal sealed unsafe class FrontlineMapMarkerSensor
 {
-    private DateTime firstActiveUtc = DateTime.MinValue;
-    private DateTime lastDirectorProbeUtc = DateTime.MinValue;
+    private DateTime firstWorqorCaptureUtc = DateTime.MinValue;
     private DateTime bootstrapOpenedUtc = DateTime.MinValue;
     private bool bootstrapAttempted;
     private bool bootstrapOwned;
-    private IReadOnlyList<FrontlineMapMarkerObservation> cachedDirectorMarkers = [];
-
     public MarkerCapture Capture(GameStateSnapshot game, FrontlineMatchLifecycle lifecycle)
     {
         var agent = AgentMap.Instance();
@@ -27,24 +22,8 @@ internal sealed unsafe class FrontlineMapMarkerSensor
         if (game.FrontlineMap != FrontlineMap.WorqorChirteh)
             return new MarkerCapture(mapMarkers, "AgentMap.EventMarkers", string.Empty);
 
-        if (lifecycle == FrontlineMatchLifecycle.MatchActive)
-        {
-            if (firstActiveUtc == DateTime.MinValue)
-                firstActiveUtc = game.CapturedAtUtc;
-        }
-        else
-        {
-            firstActiveUtc = DateTime.MinValue;
-        }
-
-        // The fifth Worqor trace had no Triumph markers until the map was
-        // opened. Query the event director without presenting the map first.
-        if (!HasNamedTriumph(mapMarkers) &&
-            game.CapturedAtUtc - lastDirectorProbeUtc >= TimeSpan.FromSeconds(1))
-        {
-            lastDirectorProbeUtc = game.CapturedAtUtc;
-            cachedDirectorMarkers = ReadDirectorMarkers(game.TerritoryId);
-        }
+        if (firstWorqorCaptureUtc == DateTime.MinValue)
+            firstWorqorCaptureUtc = game.CapturedAtUtc;
 
         var action = string.Empty;
         if (bootstrapOwned && game.CapturedAtUtc - bootstrapOpenedUtc >= TimeSpan.FromSeconds(1.25))
@@ -55,12 +34,12 @@ internal sealed unsafe class FrontlineMapMarkerSensor
             action = "closed-owned-map-after-marker-bootstrap";
         }
 
-        var markers = HasNamedTriumph(mapMarkers) ? mapMarkers
-            : HasNamedTriumph(cachedDirectorMarkers) ? cachedDirectorMarkers
-            : mapMarkers.Count > 0 ? mapMarkers : cachedDirectorMarkers;
-        if (!HasNamedTriumph(markers) && !bootstrapAttempted &&
-            firstActiveUtc != DateTime.MinValue &&
-            game.CapturedAtUtc - firstActiveUtc >= TimeSpan.FromSeconds(6) &&
+        // The direct event-framework probe returned no named markers in all
+        // three reconnect sessions. Initialize the known working map agent
+        // once before the match starts, without polling that native function.
+        if (!HasNamedTriumph(mapMarkers) && !bootstrapAttempted &&
+            (lifecycle is FrontlineMatchLifecycle.PreMatch or FrontlineMatchLifecycle.MatchActive) &&
+            game.CapturedAtUtc - firstWorqorCaptureUtc >= TimeSpan.FromSeconds(5) &&
             game.MapId != 0 && agent is not null &&
             !game.IsInCombat && !game.IsBetweenAreas && game.LocalPlayer is { IsDead: false } &&
             !agent->IsAddonShown())
@@ -72,9 +51,7 @@ internal sealed unsafe class FrontlineMapMarkerSensor
             action = "opened-map-once-to-initialize-worqor-markers";
         }
 
-        return new MarkerCapture(markers,
-            ReferenceEquals(markers, cachedDirectorMarkers) ? "EventFramework.GetEventMapMarkers" : "AgentMap.EventMarkers",
-            action);
+        return new MarkerCapture(mapMarkers, "AgentMap.EventMarkers", action);
     }
 
     public void Reset()
@@ -87,10 +64,8 @@ internal sealed unsafe class FrontlineMapMarkerSensor
         }
         bootstrapOwned = false;
         bootstrapAttempted = false;
-        firstActiveUtc = DateTime.MinValue;
-        lastDirectorProbeUtc = DateTime.MinValue;
+        firstWorqorCaptureUtc = DateTime.MinValue;
         bootstrapOpenedUtc = DateTime.MinValue;
-        cachedDirectorMarkers = [];
     }
 
     private static bool HasNamedTriumph(IReadOnlyList<FrontlineMapMarkerObservation> markers) =>
@@ -109,29 +84,6 @@ internal sealed unsafe class FrontlineMapMarkerSensor
                 result.Add(Copy(marker, "AgentMap.EventMarkers"));
         }
         return result;
-    }
-
-    private static IReadOnlyList<FrontlineMapMarkerObservation> ReadDirectorMarkers(uint territoryId)
-    {
-        if (territoryId == 0 || territoryId > ushort.MaxValue)
-            return [];
-        var framework = EventFramework.Instance();
-        if (framework is null)
-            return [];
-
-        StdVector<MapMarkerData> native = default;
-        try
-        {
-            framework->GetEventMapMarkers((ushort)territoryId, &native);
-            var result = new List<FrontlineMapMarkerObservation>();
-            for (var index = 0; index < Math.Min(native.Count, 512); index++)
-                result.Add(Copy(native.First + index, "EventFramework.GetEventMapMarkers"));
-            return result;
-        }
-        finally
-        {
-            native.Dispose();
-        }
     }
 
     private static FrontlineMapMarkerObservation Copy(MapMarkerData* marker, string source) => new(
