@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1.2 — Worqor discovery filtering and result-screen navigation
+
+- Correlated the first complete Worqor Chirteh match. Seventeen manual requests produced ten arrivals, no path failures, seven combat yields, two automatic resumes, clean `1 SELF / 23 ALLY / 37 ENEMY / 0 UNKNOWN` peak classification, nine death/respawn pairs, and terminal results with no sensor errors. The two recorded stuck recoveries occurred after results appeared, when the client stopped moving; no in-match stuck event was recorded.
+- Kept live-confirmed Worqor `60359/60360 + 4278190080` moving markers and `60599 + 26/4278190080` landing/base markers in raw research even when they overlap physical objects. They no longer create misleading `WOR-xx` buttons or fill the 32-location limit.
+- Stop owned navigation and cancel a pending manual route when results become visible. Further requests cannot start movement until a new match begins.
+- Preserve the stable, named Triumph marker locations and their raw evidence without inferring ownership or autonomous strategy.
+
 ## 0.3.1.1 — Onsal evidence cleanup and prompt combat resume
 
 - Correlated the first complete Onsal discovery session with all four recordings. Twelve manual requests produced four `ARRIVED` routes, zero navigation/path failures, two bounded stuck recoveries, four combat yields, two automatic route resumes, clean `1 SELF / 23 ALLY / 46 ENEMY / 0 UNKNOWN` classification, three detected deaths/respawns, terminal results, and no sensor error or plugin exception.

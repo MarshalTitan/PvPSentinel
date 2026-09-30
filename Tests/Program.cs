@@ -520,6 +520,22 @@ Check("Worqor scaffold promotes stable manual-test locations", "WOR-01",
     worqorAdapter.Objectives.Single().LogicalId);
 Check("Worqor adapter identity is explicit", FrontlineMap.WorqorChirteh, worqorAdapter.Map);
 
+var liveTransientWorqor = new WorqorChirtehAdapter();
+liveTransientWorqor.Reset(trackingNow);
+var worqorMovingMarker = SecureMarker(60359, 0, 0xFF000000, securePosition, "", -1);
+var worqorBaseMarker = SecureMarker(60599, 0, 26, securePosition + new Vector3(20f, 0f, 0f), "", -1);
+var worqorBaseSentinel = worqorBaseMarker with { ObjectiveId = 0xFF000000 };
+var worqorObjectiveMarker = SecureMarker(60594, 0, 320,
+    securePosition + new Vector3(40f, 0f, 0f), "Triumph 3 Rank S Claimed", -1);
+for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans + 4; scan++)
+    liveTransientWorqor.Update(trackingNow.AddMilliseconds(scan * 300),
+        [worqorMovingMarker, worqorBaseMarker, worqorBaseSentinel, worqorObjectiveMarker],
+        [nearbyEventObject, nearbyEventObject with { Position = worqorBaseMarker.Position }], []);
+Check("Worqor moving and base families remain raw beside physical objects", 1,
+    liveTransientWorqor.Objectives.Count);
+Check("Worqor retains named Triumph marker as the only manual destination",
+    worqorObjectiveMarker.Position, liveTransientWorqor.Objectives.Single().ReferencePosition);
+
 var mapAdapters = new IFrontlineMapAdapter[]
 {
     new SecureAdapter(),
