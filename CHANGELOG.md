@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1.6 — Worqor marker readiness and opt-in group destination
+
+- The fifth Worqor match promoted all 12 named Triumph locations after the map became available. Five manual requests yielded four arrivals and one explicit STOP, with zero path failures, stuck events, or sensor errors. The 0.3.1.5 snowman recovery did not trigger in this match.
+- Probe the event framework for Triumph markers before falling back to opening and closing the map once, out of combat, after six active-match seconds without named locations. Log the marker source and bootstrap action for live validation.
+- Parse observed English Triumph marker text into activating, unclaimed, or claimed states, rank, and countdown. Preserve the claimed marker faction 4/5/6 as raw evidence; our-team ownership remains unresolved.
+- Add an opt-in Worqor group pilot. It chooses a fresh unclaimed or soon-activating Triumph supported by an allied cluster, prefers the starting side for the first leg, and keeps its destination until arrival or death. A manual selection takes priority; STOP disables the mode, and a bounded route failure pauses it. RotationSolverReborn remains responsible for combat actions while existing manual-route travel handles movement through combat.
+- The map-independent autonomous strategy and queue/requeue remain disabled. Marker bootstrap and pilot selection require live validation.
+
 ## 0.3.1.5 — Worqor central snowman recovery
 
 - Correlated the fourth Worqor match and its 41-second video. All 12 promoted destinations were named Triumph markers. Twenty-two manual requests produced 13 arrivals, one bounded failure, three stuck events, no path-generation failures, and no sensor errors. Eight combat-continuation intervals showed four arrivals, two death cancellations, and two explicit STOPs.

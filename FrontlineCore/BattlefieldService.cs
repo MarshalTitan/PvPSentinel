@@ -34,6 +34,7 @@ internal sealed class BattlefieldService
     private DeathRespawnState priorDeathState = DeathRespawnState.Unavailable;
     private FrontlineCombatContext priorCombatContext;
     private IReadOnlyList<FrontlineMapMarkerObservation> lastSuccessfulMarkers = [];
+    private string lastMarkerSource = string.Empty;
     private DateTime lastTeamProbeEventUtc = DateTime.MinValue;
     private DateTime lastThreatEventUtc = DateTime.MinValue;
     private DateTime lastClusterEventUtc = DateTime.MinValue;
@@ -114,7 +115,7 @@ internal sealed class BattlefieldService
         }
         EmitTeamProbe(game);
 
-        var markers = CaptureMarkers(game.CapturedAtUtc);
+        var markers = CaptureMarkers(game);
         var ui = CaptureUi(game.CapturedAtUtc);
         if (!string.IsNullOrWhiteSpace(ui.WideTextAnnouncement) &&
             diffs.ShouldEmit("wide-text", ui.WideTextAnnouncement, game.CapturedAtUtc))
@@ -224,7 +225,9 @@ internal sealed class BattlefieldService
         deathTracker.Reset();
         combatTracker.Reset();
         priorRelationships.Clear();
+        markerSensor.Reset();
         lastSuccessfulMarkers = [];
+        lastMarkerSource = string.Empty;
         lastTeamProbeEventUtc = DateTime.MinValue;
         lastThreatEventUtc = DateTime.MinValue;
         lastClusterEventUtc = DateTime.MinValue;
@@ -267,24 +270,36 @@ internal sealed class BattlefieldService
         deathTracker.Reset();
         combatTracker.Reset();
         priorRelationships.Clear();
+        markerSensor.Reset();
         lastSuccessfulMarkers = [];
+        lastMarkerSource = string.Empty;
         lastTeamProbeEventUtc = DateTime.MinValue;
         lastThreatEventUtc = DateTime.MinValue;
         lastClusterEventUtc = DateTime.MinValue;
     }
 
-    private IReadOnlyList<FrontlineMapMarkerObservation> CaptureMarkers(DateTime now)
+    private IReadOnlyList<FrontlineMapMarkerObservation> CaptureMarkers(GameStateSnapshot game)
     {
+        var now = game.CapturedAtUtc;
         try
         {
-            var value = markerSensor.Capture();
+            var capture = markerSensor.Capture(game, Current.Match.Lifecycle);
+            var value = capture.Markers;
             lastSuccessfulMarkers = value;
+            if (!string.Equals(lastMarkerSource, capture.Source, StringComparison.Ordinal))
+            {
+                lastMarkerSource = capture.Source;
+                if (game.FrontlineMap == FrontlineMap.WorqorChirteh)
+                    Record("worqor_marker_source_changed", now, new { source = capture.Source, count = value.Count });
+            }
+            if (capture.BootstrapAction.Length > 0)
+                Record("worqor_marker_bootstrap", now, new { action = capture.BootstrapAction, source = capture.Source, count = value.Count });
             var identities = string.Join(", ", value
                 .Select(marker => $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}")
                 .Distinct(StringComparer.Ordinal)
                 .Take(12));
             Success("AgentMap.EventMarkers", now,
-                $"Observed {value.Count} global records; first distinct icon/data/objective IDs: {(identities.Length == 0 ? "NONE" : identities)}.");
+                $"{capture.Source}: {value.Count} records; first distinct icon/data/objective IDs: {(identities.Length == 0 ? "NONE" : identities)}.");
             return value;
         }
         catch (Exception ex)

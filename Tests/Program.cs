@@ -526,6 +526,35 @@ Check("Worqor scaffold promotes stable manual-test locations", "WOR-01",
     worqorAdapter.Objectives.Single().LogicalId);
 Check("Worqor adapter identity is explicit", FrontlineMap.WorqorChirteh, worqorAdapter.Map);
 
+var activatingTriumph = WorqorTriumphSignals.Parse("Triumph 11 Rank S Activating in: 0:29");
+Check("Worqor countdown parses activating phase", WorqorTriumphPhase.Activating, activatingTriumph?.Phase);
+Check("Worqor countdown parses seconds", 29, activatingTriumph?.ActivationEtaSeconds);
+Check("Worqor claimed marker keeps raw faction", 6,
+    WorqorTriumphSignals.Parse("Triumph 11 Rank A Claimed  6 ")?.MarkerFaction);
+Check("Worqor unrelated marker does not become a Triumph", true,
+    WorqorTriumphSignals.Parse("Triumph 13 Rank S Unclaimed") is null);
+
+var statefulWorqor = new WorqorChirtehAdapter();
+statefulWorqor.Reset(trackingNow);
+var statefulMarker = SecureMarker(60594, 0, 320, new Vector3(145f, 4f, 25f),
+    "Triumph 11 Rank S Activating in: 0:29", -1);
+for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans + 1; scan++)
+    statefulWorqor.Update(trackingNow.AddMilliseconds(scan * 300), [statefulMarker], [], []);
+Check("Worqor activating objective is preactivating", ObjectiveLifecycle.Preactivating,
+    statefulWorqor.Objectives.Single().State);
+Check("Worqor activating countdown is exposed", 29,
+    statefulWorqor.Objectives.Single().ActivationEtaSeconds);
+statefulWorqor.Update(trackingNow.AddSeconds(5),
+    [statefulMarker with { Tooltip = "Triumph 11 Rank S Unclaimed" }], [], []);
+Check("Worqor unclaimed objective is neutral and active", ObjectiveOwner.Neutral,
+    statefulWorqor.Objectives.Single().Owner);
+Check("Worqor unclaimed objective rank is exposed", "S", statefulWorqor.Objectives.Single().Rank);
+statefulWorqor.Update(trackingNow.AddSeconds(6),
+    [statefulMarker with { Tooltip = "Triumph 11 Rank S Claimed  5" }], [], []);
+Check("Worqor claimed objective owner stays unresolved", ObjectiveOwner.Unresolved,
+    statefulWorqor.Objectives.Single().Owner);
+Check("Worqor claimed objective is still a manual destination", 1, statefulWorqor.Objectives.Count);
+
 var liveTransientWorqor = new WorqorChirtehAdapter();
 liveTransientWorqor.Reset(trackingNow);
 var worqorMovingMarker = SecureMarker(60359, 0, 0xFF000000, securePosition, "", -1);

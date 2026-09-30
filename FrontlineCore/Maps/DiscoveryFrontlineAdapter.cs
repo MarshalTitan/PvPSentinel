@@ -200,6 +200,7 @@ internal abstract class DiscoveryFrontlineAdapter(DiscoveryMapProfile profile) :
                 record.ReferencePosition = candidate.Position;
                 record.LastSeenUtc = now;
                 record.Evidence = candidate.EvidenceSummary;
+                UpdateKnownLocation(record, aggregate, changes);
             }
         }
 
@@ -216,6 +217,7 @@ internal abstract class DiscoveryFrontlineAdapter(DiscoveryMapProfile profile) :
             {
                 record.SensorSource = $"{profile.AdapterName} marker currently unobserved (not interpreted)";
                 record.Evidence = $"last observed: {candidate.EvidenceSummary}";
+                OnLocationUnobserved(record);
             }
         }
 
@@ -371,6 +373,11 @@ internal abstract class DiscoveryFrontlineAdapter(DiscoveryMapProfile profile) :
         DiscoveryMarkerAggregator.NormalizeFlickeringObjectiveId(objectiveId);
 
     protected virtual bool ForceRawObservation(DiscoveryMarkerAggregate aggregate) => false;
+
+    protected virtual void UpdateKnownLocation(
+        MutableObjective record, DiscoveryMarkerAggregate aggregate, List<ObjectiveChange> changes) { }
+
+    protected virtual void OnLocationUnobserved(MutableObjective record) { }
 
     private string NextLogicalId()
     {

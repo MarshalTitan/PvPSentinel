@@ -89,7 +89,7 @@ internal abstract class FrontlineMapAdapterBase : IFrontlineMapAdapter
         int sortOrder)
     {
         public string LogicalId { get; } = logicalId;
-        public string DisplayName { get; } = displayName;
+        public string DisplayName { get; set; } = displayName;
         public string Kind { get; } = kind;
         public int SortOrder { get; } = sortOrder;
         public ObjectiveLifecycle State { get; set; } = ObjectiveLifecycle.Unknown;

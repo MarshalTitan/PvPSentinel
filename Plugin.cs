@@ -38,6 +38,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MainGroupTracker mainGroupTracker;
     private readonly TargetSelector targetSelector;
     private readonly ObjectiveStrategyService objectiveStrategy;
+    private readonly WorqorGroupPilot worqorGroupPilot = new();
     private readonly BehaviorEngine behaviorEngine = new();
     private readonly VNavmeshAdapter vnav;
     private readonly NavigationController navigation;
@@ -107,7 +108,8 @@ public sealed class Plugin : IDalamudPlugin
         var queueAdapter = new FrontlineQueueAdapter(gameGui, dataManager, developmentLog);
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
-        diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath, () => combat.LastAction, OnDiagnosticsClosed)
+        diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath,
+            () => combat.LastAction, () => worqorGroupPilot.Status, StopNavigationFromUi, OnDiagnosticsClosed)
         {
             IsOpen = config.ShowDiagnostics,
         };
@@ -185,6 +187,21 @@ public sealed class Plugin : IDalamudPlugin
             config,
             threat,
             navigation.IsMountTransitionPending(game.CapturedAtUtc));
+        if (!config.WorqorGroupNavigationEnabled &&
+            navigation.ManualSnapshot.DestinationId == worqorGroupPilot.CommittedDestinationId)
+            navigation.StopManualNavigation("Worqor group navigation was turned off.");
+        var groupPlan = worqorGroupPilot.Update(
+            game, battlefieldState, clusters, navigation.ManualSnapshot,
+            config.Enabled && config.NavigationEnabled && config.WorqorGroupNavigationEnabled,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive);
+        if (groupPlan is not null)
+        {
+            navigation.SetManualNavigationArmed(true);
+            navigation.RequestManualDestination(groupPlan.DestinationId, groupPlan.DestinationName,
+                groupPlan.Position, groupPlan.ApproachAnchors);
+        }
+        foreach (var groupEvent in worqorGroupPilot.DrainEvents())
+            battlefield.RecordNavigationEvent(groupEvent);
         var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, battlefieldState, config);
         foreach (var navigationEvent in navigation.DrainManualEvents())
             battlefield.RecordNavigationEvent(navigationEvent);
@@ -252,6 +269,13 @@ public sealed class Plugin : IDalamudPlugin
         log.Information("PvPSentinel verbose logging {State}.", enabled ? "enabled" : "disabled");
     }
 
+    private void StopNavigationFromUi()
+    {
+        config.WorqorGroupNavigationEnabled = false;
+        config.Save();
+        navigation.StopManualNavigation();
+    }
+
     private void EmergencyStop()
     {
         navigation.StopOwnedMovement();
@@ -260,6 +284,7 @@ public sealed class Plugin : IDalamudPlugin
         config.NavigationEnabled = false;
         config.MountingEnabled = false;
         config.ObjectiveNavigationEnabled = false;
+        config.WorqorGroupNavigationEnabled = false;
         config.QueueAutomationEnabled = false;
         config.CombatProvider = CombatProvider.Off;
         config.Save();
