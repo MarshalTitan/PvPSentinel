@@ -50,6 +50,7 @@ internal sealed class NavigationController(
     private int lastReportedManualWaypointCount = -1;
     private string manualMountSignature = string.Empty;
     private bool manualYieldedToCombat;
+    private bool manualCombatTravelReported;
     private ManualNavigationSnapshot manualSnapshot = ManualNavigationSnapshot.Disarmed;
 
     public ManualNavigationSnapshot ManualSnapshot => manualSnapshot;
@@ -89,6 +90,7 @@ internal sealed class NavigationController(
             referencePosition,
             validatedApproachAnchors ?? [],
             DateTime.UtcNow);
+        manualCombatTravelReported = false;
 
         if (manualYieldedToCombat && activeManual is { } interrupted)
         {
@@ -164,9 +166,29 @@ internal sealed class NavigationController(
 
         var hasManualDestination = manualArmed &&
             (manualRequest is not null || activeManual is not null || manualPendingPath is not null || manualYieldedToCombat);
+        var continueManualWithReborn = config.ContinueManualTravelDuringRebornCombat &&
+            config.Enabled && config.NavigationEnabled &&
+            combat.Provider == CombatProvider.RotationSolverReborn && combat.ControllerActive &&
+            game.IsFrontline && !game.IsBetweenAreas && game.IsClassificationReliable &&
+            (!game.IsMounted || config.MountingEnabled) &&
+            battlefield.Match.Lifecycle == FrontlineMatchLifecycle.MatchActive &&
+            game.LocalPlayer is { IsDead: false };
+        var combatEvidence = battlefield.Combat.BlocksMovement || combat.YieldNavigation;
+        var combatTravelActive = hasManualDestination && continueManualWithReborn && combatEvidence;
+        if (combatTravelActive && !manualCombatTravelReported)
+        {
+            manualCombatTravelReported = true;
+            Emit("navigation_continuing_during_combat",
+                $"destination={activeManual?.DestinationId ?? manualRequest?.DestinationId}; provider=RotationSolverReborn; movement=vnavmesh-on-foot; combat_actions=external");
+        }
+        else if (!combatEvidence || !hasManualDestination || !continueManualWithReborn)
+        {
+            manualCombatTravelReported = false;
+        }
         var manualCombatPause = ManualCombatYieldPolicy.ShouldPause(
             battlefield.Combat.BlocksMovement,
-            combat.YieldNavigation);
+            combat.YieldNavigation,
+            continueManualWithReborn);
         if (hasManualDestination && manualCombatPause)
         {
             return PauseManualForCombat(game, battlefield, combat, config);
@@ -175,13 +197,14 @@ internal sealed class NavigationController(
         if (ManualCombatYieldPolicy.ShouldResume(
                 manualYieldedToCombat,
                 battlefield.Combat.BlocksMovement,
-                combat.YieldNavigation))
+                combat.YieldNavigation,
+                continueManualWithReborn))
         {
             ResumeManualAfterCombat(game.LocalPlayer?.Position);
         }
 
         if (manualArmed && (manualRequest is not null || activeManual is not null || manualPendingPath is not null || ownsPath))
-            return UpdateManual(game, battlefield, config);
+            return UpdateManual(game, battlefield, config, combatTravelActive);
 
         if (battlefield.Combat.BlocksMovement)
         {
@@ -379,7 +402,8 @@ internal sealed class NavigationController(
         retryAfterUtc = DateTime.MinValue;
     }
 
-    private NavigationDecision UpdateManual(GameStateSnapshot game, BattlefieldState battlefield, Configuration config)
+    private NavigationDecision UpdateManual(
+        GameStateSnapshot game, BattlefieldState battlefield, Configuration config, bool combatTravelActive)
     {
         var now = game.CapturedAtUtc;
         var local = game.LocalPlayer;
@@ -442,13 +466,14 @@ internal sealed class NavigationController(
         var remainingRouteDistance = manualPlan is null
             ? distance
             : manualPlan.RemainingLength(local.Position, manualRouteCursor);
-        var longDistance = remainingRouteDistance >= config.MountDistance;
+        var longDistance = !combatTravelActive && remainingRouteDistance >= config.MountDistance;
         var shouldDismount = MountTravelPolicy.ShouldDismount(
             game.IsMounted,
             remainingRouteDistance,
             config.DismountDistance,
-            combatOwnsMovement: false) && manualPlan is not null &&
-            manualRecoveryPhase != ManualRecoveryPhase.DepartureStage;
+            combatOwnsMovement: combatTravelActive) &&
+            (combatTravelActive || (manualPlan is not null &&
+                                    manualRecoveryPhase != ManualRecoveryPhase.DepartureStage));
         var mountDecision = mount.Update(game, longDistance, shouldDismount, nearbyMountThreats, config);
         ReportManualMountDecision(mountDecision, remainingRouteDistance, nearbyMountThreats, game);
         if (ManualMountPolicy.ShouldWaitBeforeMovement(
@@ -561,7 +586,7 @@ internal sealed class NavigationController(
                 consecutiveFailures++;
                 manualStuckCount++;
                 Emit("navigation_stuck",
-                    $"destination={activeManual.DestinationId}; route={manualRouteId}; remaining={distance:F1}; attempt={consecutiveFailures}; player={FormatVector(local.Position)}; previous={FormatOptional(WaypointAt(manualRouteCursor - 1))}; current={FormatOptional(WaypointAt(manualRouteCursor))}; next={FormatOptional(WaypointAt(manualRouteCursor + 1))}; failed_corridor={FormatRoute(failedManualCorridor)}");
+                    $"destination={activeManual.DestinationId}; route={manualRouteId}; remaining={distance:F1}; attempt={consecutiveFailures}; player={FormatVector(local.Position)}; previous={FormatOptional(WaypointAt(manualRouteCursor - 1))}; current={FormatOptional(WaypointAt(manualRouteCursor))}; next={FormatOptional(WaypointAt(manualRouteCursor + 1))}; failed_corridor={FormatRoute(failedManualCorridor)}; nearby_nonplayer={NearbyNonPlayerEvidence(game, local.Position)}");
                 vnav.Stop();
                 ownsPath = false;
                 manualReplacementAttempt = true;
@@ -587,7 +612,7 @@ internal sealed class NavigationController(
             failedManualCorridor = RouteComparison.FailureCorridor(
                 manualRoute, local.Position, minimumWaypointIndex: Math.Min(manualRouteCursor + 1, Math.Max(0, manualRoute.Count - 1)));
             Emit("navigation_stuck",
-                $"destination={activeManual.DestinationId}; route={manualRouteId}; path stopped before stage arrival; attempt={consecutiveFailures}; player={FormatVector(local.Position)}; stage_target={FormatOptional(WaypointAt(manualStageEnd))}; failed_corridor={FormatRoute(failedManualCorridor)}");
+                $"destination={activeManual.DestinationId}; route={manualRouteId}; path stopped before stage arrival; attempt={consecutiveFailures}; player={FormatVector(local.Position)}; stage_target={FormatOptional(WaypointAt(manualStageEnd))}; failed_corridor={FormatRoute(failedManualCorridor)}; nearby_nonplayer={NearbyNonPlayerEvidence(game, local.Position)}");
             ownsPath = false;
             manualReplacementAttempt = true;
             manualPlan = null;
@@ -664,14 +689,14 @@ internal sealed class NavigationController(
             {
                 manualPathFailureCount++;
                 AdvanceManualCandidate($"{CurrentCandidateLabel()} had no reachable mesh point.");
-                return UpdateManual(game, battlefield, config);
+                return UpdateManual(game, battlefield, config, combatTravelActive);
             }
             if (manualRecoveryPhase == ManualRecoveryPhase.DepartureStage &&
                 HorizontalDistance(local.Position, manualSnapped.Value) < 5f)
             {
                 manualPathFailureCount++;
                 AdvanceManualCandidate($"{CurrentCandidateLabel()} snapped less than 5y from the failed origin.", true);
-                return UpdateManual(game, battlefield, config);
+                return UpdateManual(game, battlefield, config, combatTravelActive);
             }
             manualPathRequestedUtc = now;
             manualPendingPath = vnav.FindPathAsync(local.Position, manualSnapped.Value, 2.5f);
@@ -854,6 +879,7 @@ internal sealed class NavigationController(
         manualRouteId = "NONE";
         manualSnapped = null;
         manualYieldedToCombat = false;
+        manualCombatTravelReported = false;
         manualSnapshot = new ManualNavigationSnapshot(
             manualArmed, MovementOwner.None, state, id, "None", null, null,
             0, 0, null, null, null, 0, "NONE", manualRouteAttempt, 0f,
@@ -1123,6 +1149,17 @@ internal sealed class NavigationController(
             player.CurrentHp > 0 &&
             player.IsTargetable &&
             HorizontalDistance(player.Position, origin) <= radius);
+
+    private static string NearbyNonPlayerEvidence(GameStateSnapshot game, Vector3 origin)
+    {
+        var observations = game.ObjectiveObservations
+            .Where(item => HorizontalDistance(item.Position, origin) <= 15f &&
+                           Math.Abs(item.Position.Y - origin.Y) <= 6f)
+            .OrderBy(item => HorizontalDistance(item.Position, origin))
+            .Take(6)
+            .Select(item => $"{item.ObjectKind}/{item.BaseId}@{FormatVector(item.Position)}:targetable={item.IsTargetable}");
+        return $"[{string.Join(',', observations)}]";
+    }
 
     private static float HorizontalDistance(Vector3 a, Vector3 b) =>
         Vector2.Distance(new Vector2(a.X, a.Z), new Vector2(b.X, b.Z));

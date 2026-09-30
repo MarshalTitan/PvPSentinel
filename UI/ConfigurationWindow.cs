@@ -71,6 +71,12 @@ internal sealed class ConfigurationWindow : Window
             ImGui.Indent();
             DrawCheckbox("Enable navigation", config.NavigationEnabled, value => config.NavigationEnabled = value);
             DrawCombatProvider();
+            if (config.CombatProvider == CombatProvider.RotationSolverReborn)
+            {
+                DrawCheckbox("Continue manual route during Reborn combat", config.ContinueManualTravelDuringRebornCombat,
+                    value => config.ContinueManualTravelDuringRebornCombat = value);
+                ImGui.TextWrapped("Reborn still handles combat actions. PvP Sentinel keeps following the selected vnavmesh route on foot, even while combat is active. Movement may interrupt casts. STOP, death, results, and path-failure limits still cancel movement.");
+            }
             if (config.CombatProvider == CombatProvider.NativePvPSentinel)
                 DrawNativeCombatMode();
             DrawCheckbox("Enable strategic target scoring", config.TargetSelectionEnabled, value => config.TargetSelectionEnabled = value);
@@ -300,7 +306,7 @@ internal sealed class ConfigurationWindow : Window
                 : new Vector4(1f, 0.55f, 0.25f, 1f);
             ImGui.TextColored(color,
                 $"Reborn: installed {YesNo(status.Installed)}, loaded {YesNo(status.Loaded)}, active {YesNo(status.AutorotationActive)}, version {status.Version}");
-            ImGui.TextWrapped("Reborn owns local targeting, combat actions, and ordinary PvP defensives. PvPSentinel observes Reborn's read-only status and yields strategic travel for an entire engagement. Reborn's PvP-blocked control IPC is never invoked.");
+            ImGui.TextWrapped("Reborn owns local targeting, combat actions, and ordinary PvP defensives. PvPSentinel observes Reborn's read-only status. Manual travel may continue during combat when the option above is enabled; autonomous travel still yields. Reborn's PvP-blocked control IPC is never invoked.");
             ImGui.TextWrapped("Recommended Reborn setup: auto-enable at PvP start ON; auto-disable at match end ON; auto-disable when dead OFF; auto-disable after combat OFF; stop actions while Guarding ON; cancel casts when the target Guards ON; position lock OFF; Purify Heavy/Bind ON.");
             if (config.NativeCombatMode == NativeCombatMode.Active)
                 ImGui.TextDisabled("Native Active is configured but dormant while the Reborn provider is selected. PvPSentinel never runs both combat owners together.");
