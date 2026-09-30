@@ -557,6 +557,32 @@ Check("other Worqor team's moving and base families remain raw", 1,
 Check("other Worqor team's named Triumph marker remains clickable",
     worqorObjectiveMarker.Position, secondTeamWorqor.Objectives.Single().ReferencePosition);
 
+var thirdTraceWorqor = new WorqorChirtehAdapter();
+thirdTraceWorqor.Reset(trackingNow);
+var baseWest = securePosition + new Vector3(70f, 0f, 0f);
+var baseEast = securePosition + new Vector3(90f, 0f, 0f);
+var baseNorth = securePosition + new Vector3(110f, 0f, 0f);
+var newlyConfirmedNonObjectives = new[]
+{
+    SecureMarker(71121, 0, 721223, securePosition, "[PLAYER]", -1),
+    SecureMarker(71041, 0, 393222, securePosition + new Vector3(20f, 0f, 0f), "Levemete", -1),
+    SecureMarker(60597, 0, 0, baseWest, "", -1),
+    SecureMarker(60597, 0, 181, baseWest, "", -1),
+    SecureMarker(60573, 0, 0xFF000000, baseEast, "", -1),
+    SecureMarker(60574, 0, 0, baseNorth, "", -1),
+    SecureMarker(60574, 0, 0xFF000000, baseNorth, "", -1),
+    worqorObjectiveMarker,
+};
+for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans + 4; scan++)
+    thirdTraceWorqor.Update(trackingNow.AddMilliseconds(scan * 300), newlyConfirmedNonObjectives,
+        [nearbyEventObject with { Position = baseWest },
+         nearbyEventObject with { Position = baseEast },
+         nearbyEventObject with { Position = baseNorth }], []);
+Check("Worqor player, Levemete, and base evidence cannot create destinations", 1,
+    thirdTraceWorqor.Objectives.Count);
+Check("Worqor still promotes named Triumph beside filtered evidence",
+    worqorObjectiveMarker.Position, thirdTraceWorqor.Objectives.Single().ReferencePosition);
+
 var mapAdapters = new IFrontlineMapAdapter[]
 {
     new SecureAdapter(),

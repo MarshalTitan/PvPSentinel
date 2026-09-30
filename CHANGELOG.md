@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1.4 — Worqor destination cleanup after combat travel validation
+
+- Correlated the third Worqor match: 17 manual requests, 13 arrivals, nine combat-continuation intervals with seven subsequent arrivals and two death cancellations, zero navigation/path failures, zero stuck events, and no sensor errors. The new combat travel policy made measurable progress through active Reborn combat; results cancelled the remaining route.
+- Kept the live-observed player and Levemete marker identities, the `60597 + 0/181` base pair, and `60573 + 4278190080` base evidence in raw research rather than clickable `WOR-xx` destinations. The paired `60574 + 0/4278190080` base marker remains raw even when physical objects overlap it; named Triumph markers still qualify.
+- Automatic group following remains off while group-target selection and moving-player separation lack live validation. A central snowman obstruction did not recur in this match; no fixed detour is inferred from its absence.
+
 ## 0.3.1.3 — Worqor combat travel and team-marker cleanup
 
 - Correlated the second Worqor match. Fourteen manual requests yielded two arrivals, eight combat handoffs, five death cancellations, and one bounded route failure at the central obstacle. No classification or sensor errors occurred.
