@@ -230,6 +230,12 @@ Check("manual destination does not resume while Reborn still owns combat", false
     ManualCombatYieldPolicy.ShouldResume(true, false, true));
 Check("manual destination resumes after battlefield and provider clear", true,
     ManualCombatYieldPolicy.ShouldResume(true, false, false));
+Check("active Reborn travel mode keeps a manual route moving in combat", false,
+    ManualCombatYieldPolicy.ShouldPause(true, true, true));
+Check("enabling active Reborn travel resumes a paused manual route", true,
+    ManualCombatYieldPolicy.ShouldResume(true, true, true, true));
+Check("normal manual travel still yields for combat", true,
+    ManualCombatYieldPolicy.ShouldPause(true, true, false));
 Check("mount threshold crossing alone does not dismount", false,
     MountTravelPolicy.ShouldDismount(true, 54f, 28f, false));
 Check("a visible enemy alone does not change mounted travel policy", false,
@@ -535,6 +541,21 @@ Check("Worqor moving and base families remain raw beside physical objects", 1,
     liveTransientWorqor.Objectives.Count);
 Check("Worqor retains named Triumph marker as the only manual destination",
     worqorObjectiveMarker.Position, liveTransientWorqor.Objectives.Single().ReferencePosition);
+
+var secondTeamWorqor = new WorqorChirtehAdapter();
+secondTeamWorqor.Reset(trackingNow);
+var otherTeamMovingMarker = SecureMarker(60361, 0, 0xFF000000, securePosition, "", -1);
+var otherTeamBaseMarker = SecureMarker(60598, 0, 181,
+    securePosition + new Vector3(20f, 0f, 0f), "", -1);
+for (var scan = 0; scan < DiscoveryMarkerAggregator.ObjectiveSignalStableScans + 4; scan++)
+    secondTeamWorqor.Update(trackingNow.AddMilliseconds(scan * 300),
+        [otherTeamMovingMarker, otherTeamBaseMarker, otherTeamBaseMarker with { ObjectiveId = 0xFF000000 },
+         worqorObjectiveMarker],
+        [nearbyEventObject, nearbyEventObject with { Position = otherTeamBaseMarker.Position }], []);
+Check("other Worqor team's moving and base families remain raw", 1,
+    secondTeamWorqor.Objectives.Count);
+Check("other Worqor team's named Triumph marker remains clickable",
+    worqorObjectiveMarker.Position, secondTeamWorqor.Objectives.Single().ReferencePosition);
 
 var mapAdapters = new IFrontlineMapAdapter[]
 {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1.3 — Worqor combat travel and team-marker cleanup
+
+- Correlated the second Worqor match. Fourteen manual requests yielded two arrivals, eight combat handoffs, five death cancellations, and one bounded route failure at the central obstacle. No classification or sensor errors occurred.
+- Keep an active manual vnavmesh route moving on foot during combat when RotationSolverReborn is confirmed active. Reborn still owns combat actions; STOP, death, results, and bounded path failures still stop movement. A visible option can restore the prior full-engagement yield behavior.
+- Extend raw-only Worqor discovery filtering across observed team variants: moving `60359`–`60361 + 4278190080` and landing/base `60598/60599 + 26/181/4278190080`, with the adjacent third-team base icon and previously observed 62 value treated conservatively. Named Triumph evidence remains eligible for stable manual destinations.
+- Add nearby non-player object IDs and coordinates to stuck diagnostics. The central snowman/collision route still needs a visual confirmation and dedicated obstacle route validation before automatic group following is enabled.
+
 ## 0.3.1.2 — Worqor discovery filtering and result-screen navigation
 
 - Correlated the first complete Worqor Chirteh match. Seventeen manual requests produced ten arrivals, no path failures, seven combat yields, two automatic resumes, clean `1 SELF / 23 ALLY / 37 ENEMY / 0 UNKNOWN` peak classification, nine death/respawn pairs, and terminal results with no sensor errors. The two recorded stuck recoveries occurred after results appeared, when the client stopped moving; no in-match stuck event was recorded.

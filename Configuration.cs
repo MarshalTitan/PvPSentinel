@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 11;
+    public int Version { get; set; } = 12;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
@@ -53,6 +53,7 @@ public sealed class Configuration : IPluginConfiguration
     public float ExternalCombatYieldSeconds { get; set; } = 2.5f;
     public float RotationSolverQuietSeconds { get; set; } = 2f;
     public float RotationSolverEnemyClearanceRadius { get; set; } = 30f;
+    public bool ContinueManualTravelDuringRebornCombat { get; set; } = true;
     public float NativeRecuperateHpPercent { get; set; } = 75f;
     public float NativeGuardHpPercent { get; set; } = 35f;
     public float NativeGuardMaximumHpPercent { get; set; } = 65f;
@@ -119,7 +120,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 11)
+        if (Version >= 12)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -239,7 +240,15 @@ public sealed class Configuration : IPluginConfiguration
                 RotationSolverQuietSeconds = 2f;
         }
 
-        Version = 11;
+        if (Version < 12)
+        {
+            // The user explicitly selected continuous manual travel during
+            // Reborn combat. Only manual routes use this option; strategy and
+            // queue automation remain disabled.
+            ContinueManualTravelDuringRebornCombat = true;
+        }
+
+        Version = 12;
         Save();
     }
 
