@@ -40,6 +40,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ObjectiveStrategyService objectiveStrategy;
     private readonly WorqorGroupPilot worqorGroupPilot = new();
     private readonly SealRockGroupPilot sealRockGroupPilot = new();
+    private readonly ShatterGroupPilot shatterGroupPilot = new();
     private readonly BehaviorEngine behaviorEngine = new();
     private readonly VNavmeshAdapter vnav;
     private readonly NavigationController navigation;
@@ -110,7 +111,7 @@ public sealed class Plugin : IDalamudPlugin
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
         diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath,
-            () => combat.LastAction, () => $"Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}",
+            () => combat.LastAction, () => $"Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}; Shatter: {shatterGroupPilot.Status}",
             StopNavigationFromUi, OnDiagnosticsClosed)
         {
             IsOpen = config.ShowDiagnostics,
@@ -195,6 +196,9 @@ public sealed class Plugin : IDalamudPlugin
         if (!config.SealRockGroupNavigationEnabled &&
             navigation.ManualSnapshot.DestinationId == sealRockGroupPilot.CommittedDestinationId)
             navigation.StopManualNavigation("Seal Rock group navigation was turned off.");
+        if (!config.ShatterGroupNavigationEnabled &&
+            navigation.ManualSnapshot.DestinationId == shatterGroupPilot.CommittedDestinationId)
+            navigation.StopManualNavigation("Shatter group navigation was turned off.");
         var groupPlan = worqorGroupPilot.Update(
             game, battlefieldState, clusters, navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.WorqorGroupNavigationEnabled,
@@ -220,6 +224,20 @@ public sealed class Plugin : IDalamudPlugin
                 sealRockPlan.Position, sealRockPlan.ApproachAnchors);
         }
         foreach (var groupEvent in sealRockGroupPilot.DrainEvents())
+            battlefield.RecordNavigationEvent(groupEvent);
+        var shatterPlan = shatterGroupPilot.Update(
+            game, battlefieldState, clusters, navigation.ManualSnapshot,
+            config.Enabled && config.NavigationEnabled && config.AllowFieldsOfGlory &&
+            config.ShatterGroupNavigationEnabled,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            vnav.IsReady);
+        if (shatterPlan is not null)
+        {
+            navigation.SetManualNavigationArmed(true);
+            navigation.RequestManualDestination(shatterPlan.DestinationId, shatterPlan.DestinationName,
+                shatterPlan.Position, shatterPlan.ApproachAnchors);
+        }
+        foreach (var groupEvent in shatterGroupPilot.DrainEvents())
             battlefield.RecordNavigationEvent(groupEvent);
         var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, battlefieldState, config);
         foreach (var navigationEvent in navigation.DrainManualEvents())
@@ -292,6 +310,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         config.WorqorGroupNavigationEnabled = false;
         config.SealRockGroupNavigationEnabled = false;
+        config.ShatterGroupNavigationEnabled = false;
         config.Save();
         navigation.StopManualNavigation();
     }
@@ -306,6 +325,7 @@ public sealed class Plugin : IDalamudPlugin
         config.ObjectiveNavigationEnabled = false;
         config.WorqorGroupNavigationEnabled = false;
         config.SealRockGroupNavigationEnabled = false;
+        config.ShatterGroupNavigationEnabled = false;
         config.QueueAutomationEnabled = false;
         config.CombatProvider = CombatProvider.Off;
         config.Save();

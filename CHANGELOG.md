@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1.9 — Shatter supervised group-navigation pilot
+
+- Add a separate default-off Shatter match pilot. Choose only a fresh, verified active ice marker or a near-term activating marker (25 seconds or less) with nearby allied support and no large local enemy advantage. Reject depleted, stale, or unconfirmed ice. Prefer a supported large tomelith when choices are otherwise similar. If no supported ice exists, make a bounded leg to a visible allied field group.
+- Keep each route committed until arrival or death, including through active Reborn combat. Manual destinations take priority, STOP disables the mode, and bounded route failure pauses it. Require ready vnavmesh, reliable team classification, active Reborn autorotation, and an active Shatter match. Add policy tests for state, stale/unsupported/depleted markers, combat commitment, death/respawn, manual priority, failure, and results.
+- Extend the bounded one-time AgentMap marker bootstrap to Shatter when no named ice marker appears with the map closed. Record the action in match events and close only the map opened by Sentinel. This requires live validation; generic all-map strategy and queue/requeue remain disabled.
+
 ## 0.3.1.8 — Seal Rock supervised group-navigation pilot
 
 - Correlated the complete Seal Rock match: 15 manual destination requests, four arrivals, three detected stalls with completed recovery stages, no path or sensor failures, eight explicit STOPs and three death cancellations. There were no new requests after the 01:11 UTC arrival despite two later deaths; that match did not exercise automatic Seal Rock selection.

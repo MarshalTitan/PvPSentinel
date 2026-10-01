@@ -293,7 +293,7 @@ internal sealed class BattlefieldService
                     Record("worqor_marker_source_changed", now, new { source = capture.Source, count = value.Count });
             }
             if (capture.BootstrapAction.Length > 0)
-                Record("worqor_marker_bootstrap", now, new { action = capture.BootstrapAction, source = capture.Source, count = value.Count });
+                Record("map_marker_bootstrap", now, new { map = game.FrontlineMap.ToString(), action = capture.BootstrapAction, source = capture.Source, count = value.Count });
             var identities = string.Join(", ", value
                 .Select(marker => $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}")
                 .Distinct(StringComparer.Ordinal)

@@ -716,6 +716,75 @@ Check("Seal Rock stops at results", true,
         { Lifecycle = FrontlineMatchLifecycle.Results } }, [sealGroup],
         followingSeal, true, true, true) is null && sealPilot.CommittedDestinationId is null);
 
+var iceNow = sealNow.AddHours(1);
+var iceGame = sealGame with { CapturedAtUtc = iceNow, FrontlineMap = FrontlineMap.FieldsOfGlory };
+var activeIce = neutralTomelith with
+{
+    LogicalId = "A1", DisplayName = "Icebound Tomelith A1", Kind = "LARGE",
+    StateId = 60902, Owner = ObjectiveOwner.Unresolved, StrengthPercent = 85,
+    FirstSeenUtc = iceNow, LastSeenUtc = iceNow,
+};
+var iceBattle = sealBattle with { Objectives = [activeIce] };
+var icePilot = new ShatterGroupPilot();
+Check("Shatter waits for Reborn", true,
+    icePilot.Update(iceGame, iceBattle, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, false, true) is null);
+Check("Shatter chooses supported active ice", "A1",
+    icePilot.Update(iceGame, iceBattle, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var preactiveIce = activeIce with
+    { LogicalId = "B7", Kind = "SMALL", State = ObjectiveLifecycle.Preactivating,
+      StateId = 60990, ActivationEtaSeconds = 20, StrengthPercent = null };
+var preactivePilot = new ShatterGroupPilot();
+Check("Shatter chooses soon-activating ice near allies", "B7",
+    preactivePilot.Update(iceGame, iceBattle with { Objectives = [preactiveIce] },
+        [sealGroup], ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var lateIcePilot = new ShatterGroupPilot();
+Check("Shatter skips distant activation and follows field group", "SHATTER-REGROUP",
+    lateIcePilot.Update(iceGame, iceBattle with { Objectives = [preactiveIce with
+        { ActivationEtaSeconds = 90 }] }, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var depletedIcePilot = new ShatterGroupPilot();
+Check("Shatter never selects depleted ice", "SHATTER-REGROUP",
+    depletedIcePilot.Update(iceGame, iceBattle with { Objectives = [activeIce with
+        { StrengthPercent = 0 }] }, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var staleIcePilot = new ShatterGroupPilot();
+Check("Shatter never selects a stale marker", "SHATTER-REGROUP",
+    staleIcePilot.Update(iceGame, iceBattle with { Objectives = [activeIce with
+        { LastSeenUtc = iceNow.AddSeconds(-5) }] }, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var unsupportedIcePilot = new ShatterGroupPilot();
+Check("Shatter waits without allied field evidence", true,
+    unsupportedIcePilot.Update(iceGame, iceBattle, [],
+        ManualNavigationSnapshot.Disarmed, true, true, true) is null);
+var followingIce = followingSeal with { DestinationId = "A1" };
+Check("Shatter holds destination through marker change", true,
+    icePilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(1) },
+        iceBattle with { Objectives = [] }, [sealGroup], followingIce,
+        true, true, true) is null && icePilot.CommittedDestinationId == "A1");
+icePilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(2),
+    LocalPlayer = new TestPilotPlayer(Vector3.Zero, true), IsClassificationReliable = false },
+    iceBattle, [sealGroup], followingIce, true, false, false);
+Check("Shatter retires commitment on death despite lost readiness", true,
+    icePilot.CommittedDestinationId is null);
+Check("Shatter selects allied group after respawn", "SHATTER-REGROUP",
+    icePilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(7) },
+        iceBattle with { Objectives = [] }, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+Check("Shatter pauses after route failure", true,
+    icePilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(8) },
+        iceBattle, [sealGroup], failedSeal with { DestinationId = "SHATTER-REGROUP" },
+        true, true, true) is null && icePilot.Status.Contains("Paused", StringComparison.Ordinal));
+var manualIcePilot = new ShatterGroupPilot();
+Check("Shatter respects manual destination", true,
+    manualIcePilot.Update(iceGame, iceBattle, [sealGroup],
+        manuallyFollowing, true, true, true) is null);
+Check("Shatter stops at results", true,
+    icePilot.Update(iceGame, iceBattle with { Match = iceBattle.Match with
+        { Lifecycle = FrontlineMatchLifecycle.Results } }, [sealGroup],
+        followingIce, true, true, true) is null && icePilot.CommittedDestinationId is null);
+
 var thirdTraceWorqor = new WorqorChirtehAdapter();
 thirdTraceWorqor.Reset(trackingNow);
 var baseWest = securePosition + new Vector3(70f, 0f, 0f);

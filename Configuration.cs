@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 14;
+    public int Version { get; set; } = 15;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
@@ -56,6 +56,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool ContinueManualTravelDuringRebornCombat { get; set; } = true;
     public bool WorqorGroupNavigationEnabled { get; set; }
     public bool SealRockGroupNavigationEnabled { get; set; }
+    public bool ShatterGroupNavigationEnabled { get; set; }
     public float NativeRecuperateHpPercent { get; set; } = 75f;
     public float NativeGuardHpPercent { get; set; } = 35f;
     public float NativeGuardMaximumHpPercent { get; set; } = 65f;
@@ -122,7 +123,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 14)
+        if (Version >= 15)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -260,7 +261,10 @@ public sealed class Configuration : IPluginConfiguration
         if (Version < 14)
             SealRockGroupNavigationEnabled = false;
 
-        Version = 14;
+        if (Version < 15)
+            ShatterGroupNavigationEnabled = false;
+
+        Version = 15;
         Save();
     }
 
