@@ -341,7 +341,7 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Selected destination", $"{manual.DestinationId} — {manual.DestinationName}");
         KeyValue("Route state", manual.State.ToString());
         KeyValue("Manual navigation armed", YesNo(manual.Armed));
-        KeyValue("Worqor group navigation", groupPilotStatus());
+        KeyValue("Group navigation pilots", groupPilotStatus());
 
         var objectives = state.Battlefield.Objectives.ToArray();
         if (objectives.Length > 0)
