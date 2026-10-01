@@ -39,6 +39,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly TargetSelector targetSelector;
     private readonly ObjectiveStrategyService objectiveStrategy;
     private readonly WorqorGroupPilot worqorGroupPilot = new();
+    private readonly SealRockGroupPilot sealRockGroupPilot = new();
     private readonly BehaviorEngine behaviorEngine = new();
     private readonly VNavmeshAdapter vnav;
     private readonly NavigationController navigation;
@@ -109,7 +110,8 @@ public sealed class Plugin : IDalamudPlugin
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
         diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath,
-            () => combat.LastAction, () => worqorGroupPilot.Status, StopNavigationFromUi, OnDiagnosticsClosed)
+            () => combat.LastAction, () => $"Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}",
+            StopNavigationFromUi, OnDiagnosticsClosed)
         {
             IsOpen = config.ShowDiagnostics,
         };
@@ -190,6 +192,9 @@ public sealed class Plugin : IDalamudPlugin
         if (!config.WorqorGroupNavigationEnabled &&
             navigation.ManualSnapshot.DestinationId == worqorGroupPilot.CommittedDestinationId)
             navigation.StopManualNavigation("Worqor group navigation was turned off.");
+        if (!config.SealRockGroupNavigationEnabled &&
+            navigation.ManualSnapshot.DestinationId == sealRockGroupPilot.CommittedDestinationId)
+            navigation.StopManualNavigation("Seal Rock group navigation was turned off.");
         var groupPlan = worqorGroupPilot.Update(
             game, battlefieldState, clusters, navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.WorqorGroupNavigationEnabled,
@@ -201,6 +206,20 @@ public sealed class Plugin : IDalamudPlugin
                 groupPlan.Position, groupPlan.ApproachAnchors);
         }
         foreach (var groupEvent in worqorGroupPilot.DrainEvents())
+            battlefield.RecordNavigationEvent(groupEvent);
+        var sealRockPlan = sealRockGroupPilot.Update(
+            game, battlefieldState, clusters, navigation.ManualSnapshot,
+            config.Enabled && config.NavigationEnabled && config.AllowSealRock &&
+            config.SealRockGroupNavigationEnabled,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            vnav.IsReady);
+        if (sealRockPlan is not null)
+        {
+            navigation.SetManualNavigationArmed(true);
+            navigation.RequestManualDestination(sealRockPlan.DestinationId, sealRockPlan.DestinationName,
+                sealRockPlan.Position, sealRockPlan.ApproachAnchors);
+        }
+        foreach (var groupEvent in sealRockGroupPilot.DrainEvents())
             battlefield.RecordNavigationEvent(groupEvent);
         var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, battlefieldState, config);
         foreach (var navigationEvent in navigation.DrainManualEvents())
@@ -272,6 +291,7 @@ public sealed class Plugin : IDalamudPlugin
     private void StopNavigationFromUi()
     {
         config.WorqorGroupNavigationEnabled = false;
+        config.SealRockGroupNavigationEnabled = false;
         config.Save();
         navigation.StopManualNavigation();
     }
@@ -285,6 +305,7 @@ public sealed class Plugin : IDalamudPlugin
         config.MountingEnabled = false;
         config.ObjectiveNavigationEnabled = false;
         config.WorqorGroupNavigationEnabled = false;
+        config.SealRockGroupNavigationEnabled = false;
         config.QueueAutomationEnabled = false;
         config.CombatProvider = CombatProvider.Off;
         config.Save();

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1.8 — Seal Rock supervised group-navigation pilot
+
+- Correlated the complete Seal Rock match: 15 manual destination requests, four arrivals, three detected stalls with completed recovery stages, no path or sensor failures, eight explicit STOPs and three death cancellations. There were no new requests after the 01:11 UTC arrival despite two later deaths; that match did not exercise automatic Seal Rock selection.
+- Add an opt-in Seal Rock match pilot using fresh active neutral tomelith markers near a visible allied group. Captured nodes with unresolved team ownership are never automatically selected. Without a supported neutral node, make a bounded leg to a visible allied field group, including after respawn. Each leg stays committed through Reborn combat until arrival or death; manual clicks take priority, STOP disables the pilot, and a bounded failure pauses it for the match.
+- Require active RotationSolverReborn autorotation, ready vnavmesh, reliable team classification, and active Seal Rock match before choosing a route. The new option defaults off, including on existing installations. Add pilot decision tests. Generic all-map strategy and queue/requeue stay disabled pending field validation.
+
 ## 0.3.1.7 — Worqor reconnect and respawn regroup
 
 - Correlated two abrupt session endings and the complete sixth Worqor match. The full run had 24 navigation requests, 16 arrivals, six deaths, zero path failures, zero stuck events, and zero sensor errors. The two earlier files end without a managed exception or crash dump, so the disconnect cause is not established. The direct event-framework marker probe returned zero named markers in all reconnect sessions; remove that unproductive native call and initialize the map agent once in a safe window after five seconds in Worqor, including pre-match.

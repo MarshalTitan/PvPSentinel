@@ -641,6 +641,81 @@ var postDeathPlan = pilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSe
 Check("after death with no supported Triumph pilot commits to field group", "WOR-REGROUP",
     postDeathPlan?.DestinationId ?? "NONE");
 
+var sealNow = pilotNow.AddHours(1);
+var sealGame = new GameStateSnapshot(sealNow, FrontlineMap.SealRock,
+    new TestPilotPlayer(Vector3.Zero, false), true);
+var neutralTomelith = new MapObjectiveState("SR-02", "Allagan Tomelith SR-02", "TOMELITH",
+    ObjectiveLifecycle.Active, "B", ObjectiveOwner.Neutral, "NEUTRAL",
+    new Vector3(100, 0, 0), [], null, null, 60585, "AgentMap.EventMarkers",
+    SensorConfidence.LiveVerifiedMapping, sealNow, sealNow, null, 4, 1, "test");
+var sealBattle = activeWorqor with { Objectives = [neutralTomelith] };
+var sealGroup = new FriendlyCluster(new Vector3(95, 0, 0), new Vector3(2, 0, 0), 5);
+var sealPilot = new SealRockGroupPilot();
+Check("Seal Rock pilot waits for mesh", true,
+    sealPilot.Update(sealGame, sealBattle, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, false) is null);
+var sealPlan = sealPilot.Update(sealGame, sealBattle, [sealGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, true);
+Check("Seal Rock selects fresh allied-supported neutral tomelith", "SR-02",
+    sealPlan?.DestinationId ?? "NONE");
+var claimedSeal = sealBattle with
+{
+    Objectives = [neutralTomelith with { Owner = ObjectiveOwner.Unresolved,
+        ObservedGrandCompany = "FLAMES" }],
+};
+var claimedPilot = new SealRockGroupPilot();
+Check("Seal Rock never selects captured tomelith with unresolved team", "SR-REGROUP",
+    claimedPilot.Update(sealGame, claimedSeal, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var unsupportedPilot = new SealRockGroupPilot();
+Check("Seal Rock ignores unsupported neutral tomelith and empty field", true,
+    unsupportedPilot.Update(sealGame, sealBattle with
+        { Objectives = [neutralTomelith with { NearbyAllies = 0, NearbyEnemies = 5 }] }, [],
+        ManualNavigationSnapshot.Disarmed, true, true, true) is null);
+var stalePilot = new SealRockGroupPilot();
+Check("Seal Rock never follows a stale marker", "SR-REGROUP",
+    stalePilot.Update(sealGame, sealBattle with
+        { Objectives = [neutralTomelith with { LastSeenUtc = sealNow.AddSeconds(-5) }] },
+        [sealGroup], ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var followingSeal = ManualNavigationSnapshot.Disarmed with
+    { Armed = true, DestinationId = "SR-02", State = ManualRouteState.Following };
+Check("Seal Rock holds a destination through changing markers", true,
+    sealPilot.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(1) },
+        claimedSeal, [sealGroup], followingSeal, true, true, true) is null);
+sealPilot.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(2),
+    LocalPlayer = new TestPilotPlayer(Vector3.Zero, true), IsClassificationReliable = false },
+    sealBattle, [sealGroup], followingSeal, true, false, false);
+Check("Seal Rock clears commitment on death despite lost readiness", true,
+    sealPilot.CommittedDestinationId is null);
+Check("Seal Rock selects a field group after respawn", "SR-REGROUP",
+    sealPilot.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(7) },
+        claimedSeal, [sealGroup], ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var failedSeal = ManualNavigationSnapshot.Disarmed with
+    { Armed = true, DestinationId = "SR-REGROUP", State = ManualRouteState.Failed };
+Check("Seal Rock pauses after bounded route failure", true,
+    sealPilot.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(8) },
+        sealBattle, [sealGroup], failedSeal, true, true, true) is null &&
+    sealPilot.Status.Contains("Paused", StringComparison.Ordinal));
+sealPilot.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(9) },
+    sealBattle, [sealGroup], ManualNavigationSnapshot.Disarmed, false, true, true);
+Check("Seal Rock toggle resets failure pause", "SR-02",
+    sealPilot.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(10) },
+        sealBattle with { Objectives = [neutralTomelith with { LastSeenUtc = sealNow.AddSeconds(10) }] },
+        [sealGroup], ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var manualSeal = new SealRockGroupPilot();
+var manuallyFollowing = followingSeal with { DestinationId = "SR-11" };
+Check("Seal Rock leaves a manual click in control", true,
+    manualSeal.Update(sealGame, sealBattle, [sealGroup],
+        manuallyFollowing, true, true, true) is null);
+Check("Seal Rock holds after the manual route completes", true,
+    manualSeal.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(1) },
+        sealBattle, [sealGroup], manuallyFollowing with { State = ManualRouteState.Arrived },
+        true, true, true) is null);
+Check("Seal Rock stops at results", true,
+    sealPilot.Update(sealGame, sealBattle with { Match = sealBattle.Match with
+        { Lifecycle = FrontlineMatchLifecycle.Results } }, [sealGroup],
+        followingSeal, true, true, true) is null && sealPilot.CommittedDestinationId is null);
+
 var thirdTraceWorqor = new WorqorChirtehAdapter();
 thirdTraceWorqor.Reset(trackingNow);
 var baseWest = securePosition + new Vector3(70f, 0f, 0f);
