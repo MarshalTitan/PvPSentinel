@@ -26,8 +26,8 @@ internal sealed record PvPThreatSnapshot(
     public int TargeterCount => Targeters.Count;
 
     // Guard tuning in v0.2.0.1 was live-validated against targeters within 30y.
-    // The HUD still reports every currently observed hard target, while defense
-    // consumes this distance-filtered view from the same shared observation.
+    // Defense consumes this distance-filtered view from the same shared
+    // observation used by engagement coordination and diagnostics.
     public int CombatRelevantTargeterCount => Targeters.Count(targeter => targeter.Distance <= 30f);
 
     public static PvPThreatSnapshot Unavailable(DateTime capturedAtUtc, string explanation) =>

@@ -13,6 +13,24 @@ using PvPSentinel.Strategy;
 
 var failures = new List<string>();
 
+var priorCounterConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
+    {"Version":15,"Enabled":true,"NavigationEnabled":true,
+     "CombatProvider":3,"ShatterGroupNavigationEnabled":true,
+     "TargetCounterEnabled":true,"TargetCounterOnlyInPvp":true,
+     "TargetCounterHideAtZero":false,"TargetCounterShowJobs":true,
+     "TargetCounterLocked":true,"TargetCounterNumberSize":96,
+     "TargetCounterJobSize":24}
+    """)!;
+var configStore = new Dalamud.Plugin.TestPluginInterface();
+priorCounterConfig.Initialize(configStore);
+Check("old counter config upgrades without losing navigation and provider choices", true,
+    priorCounterConfig.Version == 16 && priorCounterConfig.Enabled &&
+    priorCounterConfig.NavigationEnabled && priorCounterConfig.ShatterGroupNavigationEnabled &&
+    priorCounterConfig.CombatProvider == CombatProvider.RotationSolverReborn);
+Check("old counter fields disappear from re-saved config", true,
+    configStore.LastSavedJson is { } savedConfig &&
+    !savedConfig.Contains("TargetCounter", StringComparison.Ordinal));
+
 Check("existing Native provider configuration value is preserved", 2, (int)CombatProvider.NativePvPSentinel);
 Check("Reborn provider uses a new configuration value", 3, (int)CombatProvider.RotationSolverReborn);
 

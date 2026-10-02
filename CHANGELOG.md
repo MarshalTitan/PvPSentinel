@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1.11 — Remove the Targeting-Me display
+
+- Remove the Target Counter window, its window-manager registration and per-frame draw, dedicated 128 px digit font handle/atlas, font disposal, positioning/locking and job-text rendering. Remove the Configuration section and all seven display-only fields and their obsolete version-5 migration. Existing version-15 and earlier configurations ignore the old JSON keys and are re-saved as version 16 without them.
+- Preserve `PvPThreatTracker` evaluation every update, Reborn targeting-us engagement and navigation arbitration, battlefield combat context, Native Guard/defense, diagnostic threat rows, and threat-change logging. No SentinelHUD dependency is introduced. Navigation, map adapters, pilots, mounting, and combat providers retain their behavior.
+- Add compatibility tests for a prior config containing counter fields and for continued threat/engagement behavior. The standalone user-facing counter now belongs to SentinelHUD.
+
 ## 0.3.1.10 — Shatter ice approaches and expired target recovery
 
 - Correlated the first supervised Shatter match: map bootstrap populated 36 markers, but A4 routes repeatedly stalled roughly 4–5 yalms from the crystal center and entered bounded failure pause. The post-reconnect log has no stack trace for the earlier game crash, so its cause remains unconfirmed.
