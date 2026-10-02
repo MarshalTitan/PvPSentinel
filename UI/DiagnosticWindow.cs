@@ -365,11 +365,19 @@ internal sealed class DiagnosticWindow : Window
                     ? $"{objective.LogicalId} [{discoveryPosition.X:F0},{discoveryPosition.Z:F0}]"
                     : objective.LogicalId;
                 if (ImGui.Button($"{buttonLabel}##m2-{objective.LogicalId}"))
+                {
+                    var shatterIce = state.Battlefield.Map == FrontlineMap.FieldsOfGlory;
                     navigation.RequestManualDestination(
                         objective.LogicalId,
                         objective.DisplayName,
                         objective.ReferencePosition!.Value,
-                        objective.ValidatedApproachAnchors.Select(anchor => anchor.Position).ToArray());
+                        shatterIce
+                            ? ShatterApproachPolicy.Anchors(objective.ReferencePosition.Value,
+                                state.Game.LocalPlayer?.Position ?? objective.ReferencePosition.Value, objective.Kind)
+                            : objective.ValidatedApproachAnchors.Select(anchor => anchor.Position).ToArray(),
+                        includeReferencePosition: !shatterIce,
+                        minimumApproachClearance: shatterIce ? ShatterApproachPolicy.MinimumClearance(objective.Kind) : 0f);
+                }
                 ImGui.EndDisabled();
                 if ((index + 1) % 6 != 0 && index + 1 < objectives.Length)
                     ImGui.SameLine();

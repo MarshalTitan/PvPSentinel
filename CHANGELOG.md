@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1.10 — Shatter ice approaches and expired target recovery
+
+- Correlated the first supervised Shatter match: map bootstrap populated 36 markers, but A4 routes repeatedly stalled roughly 4–5 yalms from the crystal center and entered bounded failure pause. The post-reconnect log has no stack trace for the earlier game crash, so its cause remains unconfirmed.
+- Route Shatter ice selections and manual ice buttons to several offset approaches outside the large or small crystal. Exclude the physical center and generic inner fallback candidates, including after combat repathing; reject mesh snaps that violate the crystal clearance. Other map destinations keep their prior candidate policy.
+- Retire a committed ice route after a confirmed inactive/depleted marker, or a sustained stale marker, then choose another supported destination after a short hold. A brief marker flicker does not cancel the route. Route failures still pause the supervised pilot.
+- State the active Reborn autorotation requirement in the waiting status and settings. The provided screenshot showed Reborn installed but inactive after respawn; Sentinel does not activate its PvP controls. Add regression tests for both crystal sizes, center exclusion, marker transition, and selection after retirement.
+
 ## 0.3.1.9 — Shatter supervised group-navigation pilot
 
 - Add a separate default-off Shatter match pilot. Choose only a fresh, verified active ice marker or a near-term activating marker (25 seconds or less) with nearby allied support and no large local enemy advantage. Reject depleted, stale, or unconfirmed ice. Prefer a supported large tomelith when choices are otherwise similar. If no supported ice exists, make a bounded leg to a visible allied field group.
