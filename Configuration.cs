@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 15;
+    public int Version { get; set; } = 16;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
@@ -24,13 +24,6 @@ public sealed class Configuration : IPluginConfiguration
     public bool QueueAutomationEnabled { get; set; }
     public bool ShowDiagnostics { get; set; } = true;
     public bool VerboseLogging { get; set; }
-    public bool TargetCounterEnabled { get; set; } = true;
-    public bool TargetCounterOnlyInPvp { get; set; } = true;
-    public bool TargetCounterHideAtZero { get; set; } = true;
-    public bool TargetCounterShowJobs { get; set; }
-    public bool TargetCounterLocked { get; set; }
-    public float TargetCounterNumberSize { get; set; } = 64f;
-    public float TargetCounterJobSize { get; set; } = 16f;
 
     public bool AllowBorderlandRuins { get; set; } = true;
     public bool AllowSealRock { get; set; } = true;
@@ -123,7 +116,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 15)
+        if (Version >= 16)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -164,20 +157,6 @@ public sealed class Configuration : IPluginConfiguration
             NativeMarksmanHighHpMinimumFocus = 3;
             NativeMarksmanFocusAllowance = 3000;
             NativeMarksmanMaximumEffectiveHp = 56000;
-        }
-
-        if (Version < 5)
-        {
-            // The targeting-me counter is observational only and does not widen
-            // any combat or navigation permission. Existing users receive the
-            // compact PvP-only display with zero-count hiding and no job row.
-            TargetCounterEnabled = true;
-            TargetCounterOnlyInPvp = true;
-            TargetCounterHideAtZero = true;
-            TargetCounterShowJobs = false;
-            TargetCounterLocked = false;
-            TargetCounterNumberSize = 64f;
-            TargetCounterJobSize = 16f;
         }
 
         if (Version < 6)
@@ -264,7 +243,10 @@ public sealed class Configuration : IPluginConfiguration
         if (Version < 15)
             ShatterGroupNavigationEnabled = false;
 
-        Version = 15;
+        // Re-save older configurations without the removed display-only counter
+        // properties. Unknown JSON fields from prior releases are ignored when
+        // the configuration is loaded; all safety and navigation settings remain.
+        Version = 16;
         Save();
     }
 

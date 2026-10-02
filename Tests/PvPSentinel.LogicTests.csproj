@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Configuration.cs" Link="Configuration.cs" />
     <Compile Include="../Combat/ExternalCombatYieldTracker.cs" Link="Combat/ExternalCombatYieldTracker.cs" />
     <Compile Include="../Combat/RotationSolverEngagementTracker.cs" Link="Combat/RotationSolverEngagementTracker.cs" />
     <Compile Include="../Combat/Native/NativeCombatPolicy.cs" Link="Combat/Native/NativeCombatPolicy.cs" />
