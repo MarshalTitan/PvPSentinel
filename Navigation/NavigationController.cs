@@ -80,7 +80,9 @@ internal sealed class NavigationController(
         string destinationId,
         string destinationName,
         Vector3 referencePosition,
-        IReadOnlyList<Vector3>? validatedApproachAnchors = null)
+        IReadOnlyList<Vector3>? validatedApproachAnchors = null,
+        bool includeReferencePosition = true,
+        float minimumApproachClearance = 0f)
     {
         if (!manualArmed)
             return false;
@@ -89,7 +91,9 @@ internal sealed class NavigationController(
             destinationName,
             referencePosition,
             validatedApproachAnchors ?? [],
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            includeReferencePosition,
+            minimumApproachClearance);
         manualCombatTravelReported = false;
 
         if (manualYieldedToCombat && activeManual is { } interrupted)
@@ -121,7 +125,7 @@ internal sealed class NavigationController(
         {
             manualRequest = replacement;
         }
-        Emit("navigation_request", $"destination={destinationId}; reference={FormatVector(referencePosition)}");
+        Emit("navigation_request", $"destination={destinationId}; reference={FormatVector(referencePosition)}; approaches={replacement.ApproachAnchors.Count}; center_allowed={includeReferencePosition}; clearance={minimumApproachClearance:F1}");
         return true;
     }
 
@@ -424,11 +428,7 @@ internal sealed class NavigationController(
             StopOwnedPath(clearDestination: true);
             activeManual = request;
             manualRequest = null;
-            manualCandidates = request.ApproachAnchors
-                .Concat([request.ReferencePosition])
-                .Concat(RouteComparison.AlternateAnchors(request.ReferencePosition))
-                .DistinctBy(point => $"{point.X:F1}|{point.Y:F1}|{point.Z:F1}")
-                .ToList();
+            manualCandidates = request.Candidates().ToList();
             manualCandidateIndex = 0;
             ResetManualRecovery();
             manualSnapped = null;
@@ -689,6 +689,13 @@ internal sealed class NavigationController(
             {
                 manualPathFailureCount++;
                 AdvanceManualCandidate($"{CurrentCandidateLabel()} had no reachable mesh point.");
+                return UpdateManual(game, battlefield, config, combatTravelActive);
+            }
+            if (activeManual is { MinimumApproachClearance: > 0f } guarded &&
+                HorizontalDistance(manualSnapped.Value, guarded.ReferencePosition) < guarded.MinimumApproachClearance)
+            {
+                manualPathFailureCount++;
+                AdvanceManualCandidate($"{CurrentCandidateLabel()} snapped inside the objective clearance.");
                 return UpdateManual(game, battlefield, config, combatTravelActive);
             }
             if (manualRecoveryPhase == ManualRecoveryPhase.DepartureStage &&
@@ -1005,11 +1012,7 @@ internal sealed class NavigationController(
         var request = manualRequest ?? activeManual;
         if (request is not null)
         {
-            manualCandidates = request.ApproachAnchors
-                .Concat([request.ReferencePosition])
-                .Concat(RouteComparison.AlternateAnchors(request.ReferencePosition))
-                .DistinctBy(point => $"{point.X:F1}|{point.Y:F1}|{point.Z:F1}")
-                .ToList();
+            manualCandidates = request.Candidates().ToList();
         }
         manualCandidateIndex = 0;
         ResetManualRecovery();

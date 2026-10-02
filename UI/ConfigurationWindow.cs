@@ -90,7 +90,7 @@ internal sealed class ConfigurationWindow : Window
             ImGui.TextWrapped("Supervised match pilot. Requires navigation, ready vnavmesh, and active Reborn autorotation. Commits to a fresh neutral tomelith supported by allies, or makes one trip to a visible allied field group. Holds through combat until arrival or death. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it. Captured tomelith ownership is not used.");
             DrawCheckbox("Shatter group navigation (opt-in)", config.ShatterGroupNavigationEnabled,
                 value => config.ShatterGroupNavigationEnabled = value);
-            ImGui.TextWrapped("Supervised Shatter match pilot. Commits to fresh active or soon-activating ice with nearby allies, or makes one bounded trip to a visible allied field group. Requires navigation, ready vnavmesh, reliable team classification, and active Reborn autorotation. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it.");
+            ImGui.TextWrapped("Supervised Shatter match pilot. Routes to an approach outside supported ice or makes one bounded trip to a visible allied field group. An inactive or depleted ice retires the route after confirmation. Requires navigation, ready vnavmesh, reliable team classification, and active Reborn autorotation. If Reborn is inactive after reconnect or death, enable its autorotation to resume travel. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it.");
             ImGui.TextDisabled("Other-map autonomous strategy, queue/requeue: disabled");
             ImGui.Unindent();
         }

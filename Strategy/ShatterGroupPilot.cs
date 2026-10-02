@@ -6,7 +6,8 @@ using PvPSentinel.Navigation;
 namespace PvPSentinel.Strategy;
 
 internal sealed record ShatterGroupPlan(string DestinationId, string DestinationName,
-    Vector3 Position, IReadOnlyList<Vector3> ApproachAnchors);
+    Vector3 Position, IReadOnlyList<Vector3> ApproachAnchors,
+    bool IncludeReferencePosition = true, float MinimumApproachClearance = 0f);
 
 /// <summary>
 /// Supervised, opt-in Shatter pilot. It commits to one fresh active or soon-activating ice
@@ -19,6 +20,9 @@ internal sealed class ShatterGroupPilot
     private string? committedId;
     private string? lastArrivedId;
     private DateTime lastArrivalUtc = DateTime.MinValue;
+    private string? lastRetiredId;
+    private DateTime lastRetiredUtc = DateTime.MinValue;
+    private DateTime? invalidSinceUtc;
     private DateTime selectAfterUtc = DateTime.MinValue;
     private bool manualOverride;
     private bool pausedAfterFailure;
@@ -27,6 +31,7 @@ internal sealed class ShatterGroupPilot
 
     public string Status { get; private set; } = "Off";
     public string? CommittedDestinationId => committedId;
+    public string? RetiredDestinationId { get; private set; }
 
     public IReadOnlyList<ManualNavigationEvent> DrainEvents()
     {
@@ -40,6 +45,7 @@ internal sealed class ShatterGroupPilot
         bool enabled, bool rebornReady, bool meshReady)
     {
         var now = game.CapturedAtUtc;
+        RetiredDestinationId = null;
         if (game.FrontlineMap != FrontlineMap.FieldsOfGlory ||
             battlefield.Match.Lifecycle is FrontlineMatchLifecycle.Outside or FrontlineMatchLifecycle.Results)
         {
@@ -56,6 +62,7 @@ internal sealed class ShatterGroupPilot
         if (game.LocalPlayer?.IsDead == true)
         {
             committedId = null;
+            invalidSinceUtc = null;
             manualOverride = false;
             selectAfterUtc = now.AddSeconds(4);
             Status = "Dead; will choose a supported icebound tomelith or field group after respawn";
@@ -71,9 +78,41 @@ internal sealed class ShatterGroupPilot
             WaitFor($"Waiting for reliable team: {game.ClassificationReliabilityExplanation}", now);
             return null;
         }
+        // A destroyed/expired ice is no longer a useful destination. Require a
+        // stable marker transition so a single missing/flickering frame cannot
+        // interrupt a committed route. A stale unseen marker needs a longer hold.
+        if (committedId is { } iceId && iceId != "SHATTER-REGROUP" &&
+            route.DestinationId == iceId && RouteInProgress(route))
+        {
+            var objective = battlefield.Objectives.FirstOrDefault(item => item.LogicalId == iceId);
+            var fresh = objective?.LastSeenUtc is { } seen && now - seen <= TimeSpan.FromSeconds(3);
+            var expired = fresh && (objective!.State is ObjectiveLifecycle.Inactive or ObjectiveLifecycle.Deactivated ||
+                                    objective.StrengthPercent is 0 ||
+                                    objective.PhysicalConfirmation is { CurrentHp: 0 });
+            var stale = objective?.LastSeenUtc is { } lastSeen && now - lastSeen > TimeSpan.FromSeconds(8);
+            if (expired || stale)
+            {
+                invalidSinceUtc ??= now;
+                if (now - invalidSinceUtc.Value >= TimeSpan.FromSeconds(expired ? 2 : 3))
+                {
+                    RetiredDestinationId = iceId;
+                    committedId = null;
+                    invalidSinceUtc = null;
+                    lastRetiredId = iceId;
+                    lastRetiredUtc = now;
+                    selectAfterUtc = now.AddSeconds(2);
+                    Event("shatter_group_objective_retired",
+                        $"destination={iceId}; reason={(expired ? "inactive-or-depleted" : "marker-stale")}; hold=2s", now);
+                    Status = "Ice ended; choosing another supported destination shortly";
+                    return null;
+                }
+            }
+            else invalidSinceUtc = null;
+        }
+        else invalidSinceUtc = null;
         if (!rebornReady || !meshReady)
         {
-            WaitFor(!rebornReady ? "Waiting for Reborn autorotation" : "Waiting for vnavmesh", now);
+            WaitFor(!rebornReady ? "Reborn autorotation inactive; enable it to resume Shatter travel" : "Waiting for vnavmesh", now);
             return null;
         }
 
@@ -82,6 +121,7 @@ internal sealed class ShatterGroupPilot
             if (route.DestinationId != current && RouteInProgress(route))
             {
                 committedId = null;
+                invalidSinceUtc = null;
                 manualOverride = true;
                 Status = "Manual destination has priority";
                 return null;
@@ -89,6 +129,7 @@ internal sealed class ShatterGroupPilot
             if (route.DestinationId == current && route.State == ManualRouteState.Arrived)
             {
                 committedId = null;
+                invalidSinceUtc = null;
                 lastArrivedId = current;
                 lastArrivalUtc = now;
                 selectAfterUtc = now.AddSeconds(8);
@@ -136,6 +177,7 @@ internal sealed class ShatterGroupPilot
                 ShatterIceCandidate(objective) &&
                 objective.LastSeenUtc is { } seen && now - seen <= TimeSpan.FromSeconds(3) &&
                 (objective.LogicalId != lastArrivedId || now - lastArrivalUtc >= TimeSpan.FromSeconds(60)) &&
+                (objective.LogicalId != lastRetiredId || now - lastRetiredUtc >= TimeSpan.FromSeconds(20)) &&
                 objective.NearbyEnemies <= objective.NearbyAllies + 2)
             .Select(objective =>
             {
@@ -167,7 +209,8 @@ internal sealed class ShatterGroupPilot
             Status = $"Committed to {committedId} until arrival or death";
             return new ShatterGroupPlan(committedId, objective.DisplayName,
                 objective.ReferencePosition!.Value,
-                objective.ValidatedApproachAnchors.Select(anchor => anchor.Position).ToArray());
+                ShatterApproachPolicy.Anchors(objective.ReferencePosition.Value, localPosition, objective.Kind),
+                false, ShatterApproachPolicy.MinimumClearance(objective.Kind));
         }
 
         // Group travel is a bounded leg to its current position, not pursuit of
@@ -211,6 +254,10 @@ internal sealed class ShatterGroupPilot
         committedId = null;
         lastArrivedId = null;
         lastArrivalUtc = DateTime.MinValue;
+        lastRetiredId = null;
+        lastRetiredUtc = DateTime.MinValue;
+        invalidSinceUtc = null;
+        RetiredDestinationId = null;
         selectAfterUtc = DateTime.MinValue;
         manualOverride = false;
         pausedAfterFailure = false;

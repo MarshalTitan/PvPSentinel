@@ -231,11 +231,15 @@ public sealed class Plugin : IDalamudPlugin
             config.ShatterGroupNavigationEnabled,
             config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
             vnav.IsReady);
+        if (shatterGroupPilot.RetiredDestinationId is { } retiredId &&
+            navigation.ManualSnapshot.DestinationId == retiredId)
+            navigation.StopManualNavigation("Shatter ice became inactive or depleted; selecting another destination.");
         if (shatterPlan is not null)
         {
             navigation.SetManualNavigationArmed(true);
             navigation.RequestManualDestination(shatterPlan.DestinationId, shatterPlan.DestinationName,
-                shatterPlan.Position, shatterPlan.ApproachAnchors);
+                shatterPlan.Position, shatterPlan.ApproachAnchors,
+                shatterPlan.IncludeReferencePosition, shatterPlan.MinimumApproachClearance);
         }
         foreach (var groupEvent in shatterGroupPilot.DrainEvents())
             battlefield.RecordNavigationEvent(groupEvent);

@@ -30,7 +30,17 @@ internal sealed record ManualNavigationRequest(
     string DestinationName,
     Vector3 ReferencePosition,
     IReadOnlyList<Vector3> ApproachAnchors,
-    DateTime RequestedAtUtc);
+    DateTime RequestedAtUtc,
+    bool IncludeReferencePosition = true,
+    float MinimumApproachClearance = 0f)
+{
+    public IReadOnlyList<Vector3> Candidates() => ApproachAnchors
+        .Concat(IncludeReferencePosition
+            ? new[] { ReferencePosition }.Concat(RouteComparison.AlternateAnchors(ReferencePosition))
+            : Enumerable.Empty<Vector3>())
+        .DistinctBy(point => $"{point.X:F1}|{point.Y:F1}|{point.Z:F1}")
+        .ToArray();
+}
 
 internal sealed record ManualNavigationSnapshot(
     bool Armed,

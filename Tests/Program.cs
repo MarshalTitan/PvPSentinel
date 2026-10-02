@@ -725,6 +725,25 @@ var activeIce = neutralTomelith with
     FirstSeenUtc = iceNow, LastSeenUtc = iceNow,
 };
 var iceBattle = sealBattle with { Objectives = [activeIce] };
+var largeApproaches = ShatterApproachPolicy.Anchors(activeIce.ReferencePosition!.Value,
+    activeIce.ReferencePosition.Value + new Vector3(30f, 0f, 0f), "LARGE");
+Check("Shatter large approaches stay outside the crystal", true,
+    largeApproaches.Count >= 4 && largeApproaches.All(point =>
+        Vector2.Distance(new Vector2(point.X, point.Z),
+            new Vector2(activeIce.ReferencePosition.Value.X, activeIce.ReferencePosition.Value.Z)) >= 11.9f));
+Check("Shatter small approaches also avoid the center", true,
+    ShatterApproachPolicy.Anchors(activeIce.ReferencePosition.Value, Vector3.Zero, "SMALL")
+        .All(point => Vector2.Distance(new Vector2(point.X, point.Z),
+            new Vector2(activeIce.ReferencePosition.Value.X, activeIce.ReferencePosition.Value.Z)) >= 8.9f));
+var iceRequest = new ManualNavigationRequest("A1", "Ice", activeIce.ReferencePosition.Value,
+    largeApproaches, iceNow, false, ShatterApproachPolicy.MinimumClearance("LARGE"));
+Check("Shatter candidate list excludes center and generic inner anchors", true,
+    iceRequest.Candidates().Count == largeApproaches.Count &&
+    iceRequest.Candidates().All(point => Vector2.Distance(new Vector2(point.X, point.Z),
+        new Vector2(iceRequest.ReferencePosition.X, iceRequest.ReferencePosition.Z)) >= 11.9f));
+Check("Other manual destinations retain their center fallback", true,
+    new ManualNavigationRequest("SR-01", "Rock", Vector3.Zero, [], iceNow)
+        .Candidates().Contains(Vector3.Zero));
 var icePilot = new ShatterGroupPilot();
 Check("Shatter waits for Reborn", true,
     icePilot.Update(iceGame, iceBattle, [sealGroup],
@@ -763,6 +782,28 @@ Check("Shatter holds destination through marker change", true,
     icePilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(1) },
         iceBattle with { Objectives = [] }, [sealGroup], followingIce,
         true, true, true) is null && icePilot.CommittedDestinationId == "A1");
+var retiringPilot = new ShatterGroupPilot();
+var selectedIce = retiringPilot.Update(iceGame, iceBattle, [sealGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, true);
+Check("Shatter pilot excludes center for selected ice", true,
+    selectedIce is { IncludeReferencePosition: false, MinimumApproachClearance: 8f } &&
+    selectedIce.ApproachAnchors.Count > 0);
+var inactiveIce = activeIce with { State = ObjectiveLifecycle.Inactive,
+    StateId = 60901, LastSeenUtc = iceNow.AddSeconds(1) };
+Check("Shatter ignores one transient inactive frame", true,
+    retiringPilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(1) },
+        iceBattle with { Objectives = [inactiveIce] }, [sealGroup], followingIce,
+        true, true, true) is null && retiringPilot.RetiredDestinationId is null);
+Check("Shatter retires destroyed ice without pausing", "A1",
+    (retiringPilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(3) },
+        iceBattle with { Objectives = [inactiveIce with { LastSeenUtc = iceNow.AddSeconds(3) }] },
+        [sealGroup], followingIce, true, true, true),
+        retiringPilot.RetiredDestinationId).Item2 ?? "NONE");
+Check("Shatter selects another destination after destroyed ice", "SHATTER-REGROUP",
+    retiringPilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(6) },
+        iceBattle with { Objectives = [inactiveIce with { LastSeenUtc = iceNow.AddSeconds(6) }] },
+        [sealGroup], followingIce with { State = ManualRouteState.Cancelled },
+        true, true, true)?.DestinationId ?? "NONE");
 icePilot.Update(iceGame with { CapturedAtUtc = iceNow.AddSeconds(2),
     LocalPlayer = new TestPilotPlayer(Vector3.Zero, true), IsClassificationReliable = false },
     iceBattle, [sealGroup], followingIce, true, false, false);
