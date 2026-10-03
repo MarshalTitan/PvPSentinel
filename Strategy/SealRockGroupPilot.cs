@@ -86,10 +86,10 @@ internal sealed class SealRockGroupPilot
             route.DestinationId == objectiveId && RouteInProgress(route))
         {
             var selected = battlefield.Objectives.FirstOrDefault(item => item.LogicalId == objectiveId);
-            var supported = selected?.ReferencePosition is { } position &&
+            var supportedNearby = selected?.ReferencePosition is { } position &&
                 clusters.Any(cluster => cluster.PlayerCount >= 3 && Distance(cluster.Center, position) <= 65f);
             var valid = selected?.LastSeenUtc is { } seen && now - seen <= TimeSpan.FromSeconds(3) &&
-                selected.State == ObjectiveLifecycle.Active && selected.Owner == ObjectiveOwner.Neutral && supported;
+                selected.State == ObjectiveLifecycle.Active && selected.Owner == ObjectiveOwner.Neutral && supportedNearby;
             invalidSinceUtc = valid ? null : invalidSinceUtc ?? now;
             if (invalidSinceUtc is { } invalidSince && now - invalidSince >= TimeSpan.FromSeconds(3))
             {
