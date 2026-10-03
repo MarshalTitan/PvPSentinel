@@ -77,7 +77,9 @@ internal sealed class FrontlineDynamicFollowController(Func<int>? newSeed = null
         if (pausedAfterFailure)
             return Decision(null, false, "Paused after bounded route failure; restart navigation to retry");
         if (owns && route.DestinationId == Id(currentMap) &&
-            route.State is (ManualRouteState.Failed or ManualRouteState.Cancelled))
+            (route.State == ManualRouteState.Failed ||
+             route.State == ManualRouteState.Cancelled &&
+             !route.Explanation.StartsWith("Automatic route paused:", StringComparison.Ordinal)))
         {
             pausedAfterFailure = true;
             return Decision(null, false, "Paused after bounded route failure; restart navigation to retry");

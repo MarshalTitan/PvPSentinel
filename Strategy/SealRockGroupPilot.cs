@@ -78,6 +78,12 @@ internal sealed class SealRockGroupPilot
         }
         if (!rebornReady || !meshReady)
         {
+            if (committedId is { } unsafeDestination)
+            {
+                CancelDestinationId = unsafeDestination;
+                committedId = null;
+                selectAfterUtc = now.AddSeconds(4);
+            }
             WaitFor(!rebornReady ? "Waiting for combat provider readiness" : "Waiting for vnavmesh", now);
             return null;
         }

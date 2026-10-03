@@ -262,6 +262,19 @@ var late = slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(4), true
     ManualNavigationSnapshot.Disarmed with { DestinationId = a.DestinationId,
         State = ManualRouteState.RequestingPath }, a.DestinationId, Vector3.Zero, slotChoice);
 Check("readiness loss rejects pending dynamic path", true, late.CancelOwned && late.Plan is null);
+var resumed = slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(5), true, true, false, false, false,
+    ManualNavigationSnapshot.Disarmed with { DestinationId = a.DestinationId,
+        State = ManualRouteState.Cancelled, Explanation = "Automatic route paused: provider not ready." },
+    null, Vector3.Zero, slotChoice);
+Check("provider recovery reacquires group after safe cancellation", true, resumed.Plan is not null);
+var failedFollower = new FrontlineDynamicFollowController(() => 0x123);
+failedFollower.Update(FrontlineMap.WorqorChirteh, fieldNow, true, true, false, false, false,
+    ManualNavigationSnapshot.Disarmed, null, Vector3.Zero, slotChoice);
+Check("bounded dynamic route failure pauses automatic retry", true,
+    failedFollower.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(1), true, true, false, false, false,
+        ManualNavigationSnapshot.Disarmed with { DestinationId = a.DestinationId,
+            State = ManualRouteState.Failed }, null, Vector3.Zero, slotChoice).Plan is null &&
+    failedFollower.Status.Contains("bounded route failure"));
 var deadFollow = slotB.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(1), true, true, true, false, false,
     ManualNavigationSnapshot.Disarmed with { DestinationId = b.DestinationId }, b.DestinationId,
     Vector3.Zero, slotChoice);

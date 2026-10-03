@@ -31,6 +31,7 @@ internal sealed class ShatterGroupPilot
 
     public string Status { get; private set; } = "Off";
     public string? CommittedDestinationId => committedId;
+    public string? CancelDestinationId { get; private set; }
     public bool HoldingAfterArrival(DateTime now) => lastArrivedId is not null && now < selectAfterUtc;
     public string? RetiredDestinationId { get; private set; }
 
@@ -48,6 +49,7 @@ internal sealed class ShatterGroupPilot
     {
         var now = game.CapturedAtUtc;
         RetiredDestinationId = null;
+        CancelDestinationId = null;
         if (game.FrontlineMap != FrontlineMap.FieldsOfGlory ||
             battlefield.Match.Lifecycle is FrontlineMatchLifecycle.Outside or FrontlineMatchLifecycle.Results)
         {
@@ -114,6 +116,12 @@ internal sealed class ShatterGroupPilot
         else invalidSinceUtc = null;
         if (!rebornReady || !meshReady)
         {
+            if (committedId is { } unsafeDestination)
+            {
+                CancelDestinationId = unsafeDestination;
+                committedId = null;
+                selectAfterUtc = now.AddSeconds(4);
+            }
             WaitFor(!rebornReady ? "Waiting for combat provider readiness" : "Waiting for vnavmesh", now);
             return null;
         }
