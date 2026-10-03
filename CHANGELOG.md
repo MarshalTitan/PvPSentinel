@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1.16 — Native Frontline marker crash fix
+
+- The 17:47 Worqor crash dump identifies a `System.AccessViolationException` in `Utf8String.ToString()` while decoding `AgentMap.EventMarkers` in PvPSentinel. Copy and validate bounded marker vector, records, and UTF-8 text through `ReadProcessMemory`; unreadable or inconsistent snapshots are ignored without dereferencing freed native text. Keep named Triumph and other map marker evidence available when valid.
+- Wait two additional stable seconds after entering a Frontline before marker research and sample at most four times per second. Keep the existing map bootstrap, native entry trace, objective policy, and match lifecycle unchanged. The supplied screenshot captured the genuine 45-second entry countdown and Reborn autorotation inactive, so its `PreMatch` and provider blockers were expected.
+
 ## 0.3.1.15 — Worqor first-life field-group fallback
 
 - Keep supported allied Triumph selection first; if no candidate qualifies, use the shared spawn-filtered, smoothed and briefly predicted allied field group on the first life as well as after respawn. Commit one route leg, hold six seconds after arrival, and then re-evaluate the objective before another group leg. No raw-player chase or per-frame destination rewrite.

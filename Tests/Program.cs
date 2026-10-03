@@ -7,11 +7,59 @@ using PvPSentinel.Combat.Threat;
 using PvPSentinel.FrontlineCore;
 using PvPSentinel.FrontlineCore.Diagnostics;
 using PvPSentinel.FrontlineCore.Maps;
+using PvPSentinel.FrontlineCore.Sensors;
+using System.Buffers.Binary;
+using System.Text;
 using PvPSentinel.Models;
 using PvPSentinel.Navigation;
 using PvPSentinel.Strategy;
 
 var failures = new List<string>();
+
+var nativeHeader = new byte[0x22];
+var nativeText = Encoding.UTF8.GetBytes("Triumph 11 Rank S Activating in: 0:29\0");
+BinaryPrimitives.WriteInt64LittleEndian(nativeHeader.AsSpan(0, 8), 0x1022);
+BinaryPrimitives.WriteInt64LittleEndian(nativeHeader.AsSpan(8, 8), 64);
+BinaryPrimitives.WriteInt64LittleEndian(nativeHeader.AsSpan(0x10, 8), nativeText.Length);
+BinaryPrimitives.WriteInt64LittleEndian(nativeHeader.AsSpan(0x18, 8), nativeText.Length - 1);
+nativeHeader[0x21] = 1;
+bool ReadNative(nint address, byte[] destination)
+{
+    var source = address == 0x1000 ? nativeHeader : address == 0x1022 ? nativeText : null;
+    if (source is null || source.Length < destination.Length)
+        return false;
+    source.AsSpan(0, destination.Length).CopyTo(destination);
+    return true;
+}
+Check("bounded copied marker tooltip preserves Triumph interpretation",
+    "Triumph 11 Rank S Activating in: 0:29", NativeUtf8Reader.Read(0x1000, ReadNative));
+Check("unreadable marker text fails closed", string.Empty,
+    NativeUtf8Reader.Read(0x1000, (address, destination) =>
+        address != 0x1022 && ReadNative(address, destination)));
+BinaryPrimitives.WriteInt64LittleEndian(nativeHeader.AsSpan(0x18, 8), 1000000);
+Check("corrupt native string length is rejected before any text read", string.Empty,
+    NativeUtf8Reader.Read(0x1000, ReadNative));
+var nativeVector = new byte[24];
+BinaryPrimitives.WriteUInt64LittleEndian(nativeVector.AsSpan(0, 8), 0x2000);
+BinaryPrimitives.WriteUInt64LittleEndian(nativeVector.AsSpan(8, 8), 0x2010);
+BinaryPrimitives.WriteUInt64LittleEndian(nativeVector.AsSpan(16, 8), 0x2010);
+var nativePointers = new byte[16];
+BinaryPrimitives.WriteUInt64LittleEndian(nativePointers.AsSpan(0, 8), 0x3010);
+BinaryPrimitives.WriteUInt64LittleEndian(nativePointers.AsSpan(8, 8), 0x3020);
+bool ReadVector(nint address, byte[] destination)
+{
+    var source = address == 0x1100 ? nativeVector : address == 0x2000 ? nativePointers : null;
+    if (source is null || source.Length < destination.Length)
+        return false;
+    source.AsSpan(0, destination.Length).CopyTo(destination);
+    return true;
+}
+Check("bounded vector snapshot preserves marker pointers", true,
+    NativeMemorySnapshot.TryReadPointerList(0x1100, 512, ReadVector, out var copiedPointers) &&
+    copiedPointers.SequenceEqual(new nint[] { 0x3010, 0x3020 }));
+BinaryPrimitives.WriteUInt64LittleEndian(nativeVector.AsSpan(8, 8), 0x5000);
+Check("oversized native marker vector is rejected", false,
+    NativeMemorySnapshot.TryReadPointerList(0x1100, 512, ReadVector, out _));
 
 var priorCounterConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
     {"Version":15,"Enabled":true,"NavigationEnabled":true,
