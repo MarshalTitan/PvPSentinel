@@ -33,7 +33,9 @@ internal sealed class FrontlineDynamicFollowController(Func<int>? newSeed = null
         Vector3? localPosition, FieldGroupChoice? group)
     {
         var owns = Owns(currentMap, pendingDestinationId) || Owns(currentMap, route.DestinationId);
-        if (currentMap != map || !enabled || results)
+        if (currentMap != map)
+            Reset(currentMap);
+        if (!enabled || results)
         {
             Reset(currentMap);
             return Decision(null, owns, results ? "Results: movement stopped" : "Navigation disabled or map changed");
