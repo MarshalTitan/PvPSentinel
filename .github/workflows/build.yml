@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Remove PvPSentinel's Targeting-Me Counter window, settings, and dedicated digit font atlas. Existing configurations migrate safely to version 16. Shared PvPThreatTracker sensing remains active for Reborn engagement/navigation, battlefield combat context, Native Guard and defense, diagnostics, and logging. The user-facing counter belongs to SentinelHUD independently. Shatter crystal approaches and expired-target retirement from v0.3.1.10 remain. Validate clean loading with an existing configuration and normal supervised navigation/combat behavior."
+            --notes "Add default-off Onsal Hakair and Secure supervised allied-field-group pilots. Both require active Reborn autorotation, reliable team classification, ready vnavmesh, and active match; manual selection, STOP, death, results, and bounded failure retain priority. Onsal Ovoo and Secure objective states remain unresolved: ONS-xx and SEC-xx/SEC-CENTER are manual destinations, never automatic objective targets. Bounded Onsal evidence events correlate raw marker IDs, tooltips, EventObj state, allied/enemy counts, and _WideText for future mapping. Configuration version 17 defaults both new modes off. Validate a supervised Onsal group run and upload events.jsonl, summary.json, dalamud.log, and videos of any stalls. Generic all-map strategy and queue/requeue remain disabled."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1.12 — Onsal and Secure supervised group pilots
+
+- Add separate default-off Onsal Hakair and Borderland Ruins (Secure) pilot toggles. Both use a small shared field-group policy: choose a visible allied cluster of at least three away from the local position and observed spawn, commit one bounded vnavmesh leg, hold after arrival, and reselect after death/respawn. Manual navigation and STOP take priority. Reborn autorotation, reliable team classification, vnavmesh, master/navigation enable, map allowance, and active match are required. Bounded failure pauses until toggled or the next match.
+- Keep objective selection disabled for both maps. ONS-xx, SEC-xx and SEC-CENTER remain manual discovery destinations; Onsal Ovoo lifecycle and ownership, including the 446/448 stability normalization, remain unresolved. Add bounded pilot events for readiness, rejected unresolved candidates, group selection, combat retention, arrival, death/respawn, failure, and disable.
+- Add bounded Onsal research events correlating each recently seen ONS location with its raw IconId/DataId/ObjectiveId/EventState/tooltip/end timestamp, nearby EventObj state, ally/enemy counts, and recent `_WideText`. These observations assign no tactical state. Existing raw-only moving/base marker filters remain intact.
+- Configuration version 17 defaults both new pilots off on existing installations; previous pilot settings and the internal threat tracker remain intact. Add group-pilot and migration tests. The three existing map pilots and all manual routes retain their policies.
+
 ## 0.3.1.11 — Remove the Targeting-Me display
 
 - Remove the Target Counter window, its window-manager registration and per-frame draw, dedicated 128 px digit font handle/atlas, font disposal, positioning/locking and job-text rendering. Remove the Configuration section and all seven display-only fields and their obsolete version-5 migration. Existing version-15 and earlier configurations ignore the old JSON keys and are re-saved as version 16 without them.

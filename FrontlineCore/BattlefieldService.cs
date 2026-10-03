@@ -1,4 +1,5 @@
 using Dalamud.Plugin.Services;
+using System.Numerics;
 using System.Globalization;
 using PvPSentinel.Combat.Threat;
 using PvPSentinel.Diagnostics;
@@ -38,6 +39,9 @@ internal sealed class BattlefieldService
     private DateTime lastTeamProbeEventUtc = DateTime.MinValue;
     private DateTime lastThreatEventUtc = DateTime.MinValue;
     private DateTime lastClusterEventUtc = DateTime.MinValue;
+    private readonly Dictionary<string, (string Signature, DateTime AtUtc)> onsalEvidence = new(StringComparer.Ordinal);
+    private string lastWideText = string.Empty;
+    private DateTime lastWideTextUtc = DateTime.MinValue;
 
     public BattlefieldService(
         IGameGui gameGui,
@@ -121,6 +125,8 @@ internal sealed class BattlefieldService
             diffs.ShouldEmit("wide-text", ui.WideTextAnnouncement, game.CapturedAtUtc))
         {
             var announcement = PrivacySanitizer.Sanitize(ui.WideTextAnnouncement);
+            lastWideText = announcement;
+            lastWideTextUtc = game.CapturedAtUtc;
             Record("frontline_wide_text", game.CapturedAtUtc, new
             {
                 text = announcement,
@@ -156,6 +162,8 @@ internal sealed class BattlefieldService
         }
 
         var objectives = adapter.Objectives;
+        if (game.FrontlineMap == FrontlineMap.OnsalHakair)
+            EmitOnsalEvidence(game.CapturedAtUtc, objectives, markers, game.ObjectiveObservations);
         var localPosition = game.LocalPlayer?.Position ?? System.Numerics.Vector3.Zero;
         var alliedClusters = BattlefieldClusterer.Build(players, BattlefieldRelationship.AllyConfirmed,
             localPosition, 20f, objectives);
@@ -231,6 +239,9 @@ internal sealed class BattlefieldService
         lastTeamProbeEventUtc = DateTime.MinValue;
         lastThreatEventUtc = DateTime.MinValue;
         lastClusterEventUtc = DateTime.MinValue;
+        onsalEvidence.Clear();
+        lastWideText = string.Empty;
+        lastWideTextUtc = DateTime.MinValue;
         diffs.Reset();
         foreach (var sensor in sensorHealth.Values)
             sensor.Reset();
@@ -403,6 +414,75 @@ internal sealed class BattlefieldService
                 ? "zero-based Dalamud Battalion team is authoritative in recognized Frontline content"
                 : "UNRESOLVED: Battalion source is unavailable/invalid or observed values failed validation",
         });
+    }
+
+    private void EmitOnsalEvidence(DateTime now, IReadOnlyList<MapObjectiveState> objectives,
+        IReadOnlyList<FrontlineMapMarkerObservation> markers,
+        IReadOnlyList<ObjectiveObservation> physical)
+    {
+        // Research correlation only. Neither raw marker IDs nor the proximity of
+        // an EventObj establishes Ovoo state or ownership.
+        foreach (var objective in objectives.Take(DiscoveryMarkerAggregator.MaximumPromotedLocations))
+        {
+            if (objective.ReferencePosition is not { } position ||
+                objective.LastSeenUtc is not { } seen || now - seen > TimeSpan.FromSeconds(10))
+                continue;
+            var observedMarkers = markers
+                .Where(marker => Vector2.Distance(new Vector2(marker.Position.X, marker.Position.Z),
+                                      new Vector2(position.X, position.Z)) <= 5f &&
+                                 Math.Abs(marker.Position.Y - position.Y) <= 5f)
+                .OrderBy(marker => marker.IconId).ThenBy(marker => marker.DataId)
+                .Take(12).ToArray();
+            var nearbyPhysical = physical
+                .Where(item => item.ObjectKind == "EventObj" &&
+                               Vector2.Distance(new Vector2(item.Position.X, item.Position.Z),
+                                   new Vector2(position.X, position.Z)) <= 15f)
+                .OrderBy(item => Vector2.Distance(new Vector2(item.Position.X, item.Position.Z),
+                    new Vector2(position.X, position.Z)))
+                .Take(4).ToArray();
+            var wide = now - lastWideTextUtc <= TimeSpan.FromSeconds(15) ? lastWideText : string.Empty;
+            var signature = string.Join('|', observedMarkers.Select(marker =>
+                $"{marker.IconId}/{marker.DataId}/{marker.ObjectiveId}/{marker.EventState}/{marker.EndTimestamp}/{marker.Tooltip}")) +
+                ":" + string.Join('|', nearbyPhysical.Select(item =>
+                    $"{item.GameObjectId}/{item.BaseId}/{item.IsTargetable}/{item.CurrentHp}/{item.MaxHp}")) +
+                ":" + wide;
+            if (onsalEvidence.TryGetValue(objective.LogicalId, out var prior) &&
+                (now - prior.AtUtc < TimeSpan.FromSeconds(10) ||
+                 (prior.Signature == signature && now - prior.AtUtc < TimeSpan.FromSeconds(30))))
+                continue;
+            onsalEvidence[objective.LogicalId] = (signature, now);
+            Record("onsal_ovoo_evidence", now, new
+            {
+                objective = objective.LogicalId,
+                position = new[] { position.X, position.Y, position.Z },
+                marker_seen_at = seen,
+                state = "UNRESOLVED",
+                owner = "UNRESOLVED",
+                allies_30y = objective.NearbyAllies,
+                enemies_30y = objective.NearbyEnemies,
+                wide_text = wide,
+                markers = observedMarkers.Select(marker => new
+                {
+                    icon_id = marker.IconId,
+                    data_id = marker.DataId,
+                    objective_id = marker.ObjectiveId,
+                    event_state = marker.EventState,
+                    end_timestamp = marker.EndTimestamp,
+                    tooltip = PrivacySanitizer.Sanitize(marker.Tooltip),
+                    source = marker.Source,
+                }).ToArray(),
+                event_objects = nearbyPhysical.Select(item => new
+                {
+                    object_id = item.GameObjectId,
+                    base_id = item.BaseId,
+                    position = new[] { item.Position.X, item.Position.Y, item.Position.Z },
+                    targetable = item.IsTargetable,
+                    dead = item.IsDead,
+                    hp = item.CurrentHp,
+                    max_hp = item.MaxHp,
+                }).ToArray(),
+            });
+        }
     }
 
     private void EmitThreatChanges(PvPThreatSnapshot threat, DateTime now)

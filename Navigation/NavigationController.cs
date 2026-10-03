@@ -54,6 +54,7 @@ internal sealed class NavigationController(
     private ManualNavigationSnapshot manualSnapshot = ManualNavigationSnapshot.Disarmed;
 
     public ManualNavigationSnapshot ManualSnapshot => manualSnapshot;
+    public string? CurrentManualDestinationId => manualRequest?.DestinationId ?? activeManual?.DestinationId;
     public bool IsMountTransitionPending(DateTime now) => mount.IsTransitionPending(now);
 
     public void SetManualNavigationArmed(bool armed)

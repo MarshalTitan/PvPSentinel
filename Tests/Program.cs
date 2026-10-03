@@ -24,12 +24,23 @@ var priorCounterConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("
 var configStore = new Dalamud.Plugin.TestPluginInterface();
 priorCounterConfig.Initialize(configStore);
 Check("old counter config upgrades without losing navigation and provider choices", true,
-    priorCounterConfig.Version == 16 && priorCounterConfig.Enabled &&
+    priorCounterConfig.Version == 17 && priorCounterConfig.Enabled &&
     priorCounterConfig.NavigationEnabled && priorCounterConfig.ShatterGroupNavigationEnabled &&
-    priorCounterConfig.CombatProvider == CombatProvider.RotationSolverReborn);
+    priorCounterConfig.CombatProvider == CombatProvider.RotationSolverReborn &&
+    !priorCounterConfig.OnsalGroupNavigationEnabled && !priorCounterConfig.SecureGroupNavigationEnabled);
 Check("old counter fields disappear from re-saved config", true,
     configStore.LastSavedJson is { } savedConfig &&
     !savedConfig.Contains("TargetCounter", StringComparison.Ordinal));
+var priorPilotConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
+    {"Version":16,"WorqorGroupNavigationEnabled":true,"SealRockGroupNavigationEnabled":true,
+     "ShatterGroupNavigationEnabled":true,"OnsalGroupNavigationEnabled":true,
+     "SecureGroupNavigationEnabled":true}
+    """)!;
+priorPilotConfig.Initialize(new Dalamud.Plugin.TestPluginInterface());
+Check("new map pilots default off without altering old pilot choices", true,
+    priorPilotConfig.Version == 17 && priorPilotConfig.WorqorGroupNavigationEnabled &&
+    priorPilotConfig.SealRockGroupNavigationEnabled && priorPilotConfig.ShatterGroupNavigationEnabled &&
+    !priorPilotConfig.OnsalGroupNavigationEnabled && !priorPilotConfig.SecureGroupNavigationEnabled);
 
 Check("existing Native provider configuration value is preserved", 2, (int)CombatProvider.NativePvPSentinel);
 Check("Reborn provider uses a new configuration value", 3, (int)CombatProvider.RotationSolverReborn);
@@ -843,6 +854,99 @@ Check("Shatter stops at results", true,
     icePilot.Update(iceGame, iceBattle with { Match = iceBattle.Match with
         { Lifecycle = FrontlineMatchLifecycle.Results } }, [sealGroup],
         followingIce, true, true, true) is null && icePilot.CommittedDestinationId is null);
+
+var onsalNow = iceNow.AddHours(1);
+var onsalGame = iceGame with { CapturedAtUtc = onsalNow, FrontlineMap = FrontlineMap.OnsalHakair };
+var unknownOvoo = activeIce with
+{
+    LogicalId = "ONS-01", DisplayName = "ONS-01", Kind = "UNRESOLVED",
+    State = ObjectiveLifecycle.Unknown, Owner = ObjectiveOwner.Unresolved,
+    Confidence = SensorConfidence.RuntimeDiscovery, StateId = 446,
+    FirstSeenUtc = onsalNow, LastSeenUtc = onsalNow,
+};
+var onsalBattle = iceBattle with { Objectives = [unknownOvoo] };
+var onsalPilot = new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP");
+Check("Onsal waits for confirmed Reborn", true,
+    onsalPilot.Update(onsalGame, onsalBattle, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, false, true) is null);
+Check("Onsal waits for ready vnavmesh", true,
+    onsalPilot.Update(onsalGame, onsalBattle, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, false) is null);
+Check("Onsal refuses unreliable classification", true,
+    onsalPilot.Update(onsalGame with { IsClassificationReliable = false }, onsalBattle,
+        [sealGroup], ManualNavigationSnapshot.Disarmed, true, true, true) is null);
+var onsalPlan = onsalPilot.Update(onsalGame, onsalBattle,
+    [new FriendlyCluster(new Vector3(10, 0, 0), Vector3.Zero, 12), sealGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, true);
+Check("Onsal follows field allies instead of unresolved Ovoo", "ONS-REGROUP",
+    onsalPlan?.DestinationId ?? "NONE");
+var onsalSelectionEvents = onsalPilot.DrainEvents();
+Check("Onsal records unresolved objective rejection and group commitment", true,
+    onsalSelectionEvents.Any(item => item.Name == "onsal_group_objective_rejected") &&
+    onsalSelectionEvents.Any(item => item.Name == "onsal_group_destination_committed"));
+var onsalRoute = followingIce with { DestinationId = "ONS-REGROUP" };
+onsalPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(1) },
+    onsalBattle, [sealGroup], onsalRoute, true, true, true, combatActive: true);
+Check("Onsal retains its destination through combat", true,
+    onsalPilot.CommittedDestinationId == "ONS-REGROUP" &&
+    onsalPilot.DrainEvents().Any(item => item.Name == "onsal_group_retained_during_combat"));
+Check("Onsal safety gate cancels owned route on mesh loss", true,
+    onsalPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(2) },
+        onsalBattle, [sealGroup], onsalRoute, true, true, false) is null &&
+    onsalPilot.CancelDestinationId == "ONS-REGROUP");
+var manualOnsal = new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP");
+Check("Onsal gives manual destination priority", true,
+    manualOnsal.Update(onsalGame, onsalBattle, [sealGroup],
+        onsalRoute with { DestinationId = "ONS-01" }, true, true, true) is null);
+Check("Onsal respects a pending manual click before route snapshot updates", true,
+    new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP")
+        .Update(onsalGame, onsalBattle, [sealGroup], ManualNavigationSnapshot.Disarmed,
+            true, true, true, currentManualDestinationId: "ONS-01") is null);
+var deathPilot = new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP");
+deathPilot.Update(onsalGame, onsalBattle, [sealGroup], ManualNavigationSnapshot.Disarmed,
+    true, true, true);
+deathPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(1),
+    LocalPlayer = new TestPilotPlayer(Vector3.Zero, true), IsClassificationReliable = false },
+    onsalBattle, [sealGroup], onsalRoute, true, false, false);
+Check("Onsal clears destination on death despite lost readiness", true,
+    deathPilot.CommittedDestinationId is null);
+Check("Onsal holds briefly on respawn", true,
+    deathPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(7) },
+        onsalBattle, [sealGroup], ManualNavigationSnapshot.Disarmed,
+        true, true, true) is null);
+Check("Onsal reselection after respawn uses field allies", "ONS-REGROUP",
+    deathPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(12) },
+        onsalBattle, [sealGroup], ManualNavigationSnapshot.Disarmed,
+        true, true, true)?.DestinationId ?? "NONE");
+Check("Onsal route failure pauses until toggled", true,
+    deathPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(13) },
+        onsalBattle, [sealGroup], onsalRoute with { State = ManualRouteState.Failed },
+        true, true, true) is null && deathPilot.Status.Contains("Paused", StringComparison.Ordinal));
+deathPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(14) },
+    onsalBattle, [sealGroup], ManualNavigationSnapshot.Disarmed, false, true, true);
+Check("Onsal toggle restores pilot after failure", "ONS-REGROUP",
+    deathPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(15) },
+        onsalBattle, [sealGroup], ManualNavigationSnapshot.Disarmed,
+        true, true, true)?.DestinationId ?? "NONE");
+Check("Onsal arrival holds before choosing again", true,
+    deathPilot.Update(onsalGame with { CapturedAtUtc = onsalNow.AddSeconds(16),
+        LocalPlayer = new TestPilotPlayer(sealGroup.Center, false) },
+        onsalBattle, [sealGroup], onsalRoute with { State = ManualRouteState.Arrived },
+        true, true, true) is null && deathPilot.Status.Contains("Holding", StringComparison.Ordinal));
+Check("Onsal stops at results", true,
+    deathPilot.Update(onsalGame, onsalBattle with { Match = onsalBattle.Match with
+        { Lifecycle = FrontlineMatchLifecycle.Results } }, [sealGroup],
+        onsalRoute, true, true, true) is null && deathPilot.CommittedDestinationId is null);
+var securePilot = new FieldGroupPilot(FrontlineMap.BorderlandRuins, "secure", "SEC-REGROUP");
+var secureGame = onsalGame with { FrontlineMap = FrontlineMap.BorderlandRuins };
+Check("Secure group pilot never selects unresolved SEC-CENTER", "SEC-REGROUP",
+    securePilot.Update(secureGame, onsalBattle with { Objectives =
+        [unknownOvoo with { LogicalId = "SEC-CENTER" }] }, [sealGroup],
+        ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
+var noFieldPilot = new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP");
+Check("Onsal does not chase Ovoo without field allies", true,
+    noFieldPilot.Update(onsalGame, onsalBattle, [],
+        ManualNavigationSnapshot.Disarmed, true, true, true) is null);
 
 var thirdTraceWorqor = new WorqorChirtehAdapter();
 thirdTraceWorqor.Reset(trackingNow);

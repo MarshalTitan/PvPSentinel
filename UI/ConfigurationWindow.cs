@@ -91,6 +91,12 @@ internal sealed class ConfigurationWindow : Window
             DrawCheckbox("Shatter group navigation (opt-in)", config.ShatterGroupNavigationEnabled,
                 value => config.ShatterGroupNavigationEnabled = value);
             ImGui.TextWrapped("Supervised Shatter match pilot. Routes to an approach outside supported ice or makes one bounded trip to a visible allied field group. An inactive or depleted ice retires the route after confirmation. Requires navigation, ready vnavmesh, reliable team classification, and active Reborn autorotation. If Reborn is inactive after reconnect or death, enable its autorotation to resume travel. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it.");
+            DrawCheckbox("Onsal Hakair group navigation (opt-in)", config.OnsalGroupNavigationEnabled,
+                value => config.OnsalGroupNavigationEnabled = value);
+            ImGui.TextWrapped("Supervised allied-field-group travel only. Ovoo state and ownership are unresolved, so ONS-xx locations remain manual destinations and are never chosen by this pilot. Requires active Reborn autorotation, reliable team classification, and ready vnavmesh. STOP disables the mode; a bounded route failure pauses it.");
+            DrawCheckbox("Secure group navigation (opt-in)", config.SecureGroupNavigationEnabled,
+                value => config.SecureGroupNavigationEnabled = value);
+            ImGui.TextWrapped("Supervised allied-field-group travel only. Secure objective selection remains disabled and unresolved; SEC-CENTER and discovered SEC-xx locations remain available for manual testing. Requires active Reborn autorotation, reliable team classification, and ready vnavmesh.");
             ImGui.TextDisabled("Other-map autonomous strategy, queue/requeue: disabled");
             ImGui.Unindent();
         }
