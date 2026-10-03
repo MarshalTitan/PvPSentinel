@@ -692,14 +692,6 @@ for (var scan = 0; scan < DiscoveryMarkerAggregator.PhysicalEvidenceStableScans 
 Check("Worqor team-two spawn marker 60599/210 never becomes a destination", 0,
     baseOnlyWorqor.Objectives.Count);
 
-var regroupChoice = WorqorRegroupPolicy.Choose(Vector3.Zero,
-    [new(new Vector3(5, 0, 5), 9), new(new Vector3(100, 0, 0), 3),
-     new(new Vector3(450, 0, 0), 12)]);
-Check("post-death regroup ignores spawn and out-of-range clusters", new Vector3(100, 0, 0),
-    regroupChoice?.Position ?? Vector3.Zero);
-Check("post-death regroup waits without field allies", true,
-    WorqorRegroupPolicy.Choose(Vector3.Zero, [new(new Vector3(10, 0, 0), 3)]) is null);
-
 var pilotNow = trackingNow.AddHours(1);
 var pilot = new WorqorGroupPilot();
 var activeWorqor = BattlefieldState.Unavailable(pilotNow, "test") with
@@ -714,16 +706,86 @@ var activeWorqor = BattlefieldState.Unavailable(pilotNow, "test") with
 var pilotGame = new GameStateSnapshot(pilotNow, FrontlineMap.WorqorChirteh,
     new TestPilotPlayer(Vector3.Zero, false), true);
 var fieldGroup = new FriendlyCluster(new Vector3(92, 0, 0), new Vector3(2, 0, 0), 4);
+var trackedWorqor = new FieldGroupChoice(fieldGroup, new Vector3(96, 0, 3));
 var firstPilotPlan = pilot.Update(pilotGame, activeWorqor, [fieldGroup],
-    ManualNavigationSnapshot.Disarmed, true, true);
+    ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
 Check("Worqor pilot chooses supported Triumph", "WOR-02", firstPilotPlan?.DestinationId ?? "NONE");
+var emptyWorqor = activeWorqor with { Objectives = [] };
+var firstLifeGroupPilot = new WorqorGroupPilot();
+var firstLifeGroupLeg = firstLifeGroupPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
+Check("first-life Worqor fallback commits the tracked field group", "WOR-REGROUP",
+    firstLifeGroupLeg?.DestinationId ?? "NONE");
+Check("Worqor fallback uses the shared smoothed/predicted destination", trackedWorqor.Destination,
+    firstLifeGroupLeg?.Position ?? Vector3.Zero);
+var noFieldPilot = new WorqorGroupPilot();
+Check("no Triumph and no valid tracked field group waits safely", true,
+    noFieldPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
+        ManualNavigationSnapshot.Disarmed, true, true) is null &&
+    noFieldPilot.CommittedDestinationId is null);
+var followingWorqorGroup = ManualNavigationSnapshot.Disarmed with
+    { Armed = true, DestinationId = "WOR-REGROUP", State = ManualRouteState.Following };
+Check("new Triumph does not churn a committed group leg", true,
+    firstLifeGroupPilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(1) },
+        activeWorqor, [fieldGroup], followingWorqorGroup, true, true, trackedWorqor) is null &&
+    firstLifeGroupPilot.CommittedDestinationId == "WOR-REGROUP");
+Check("active Reborn combat does not cancel the committed group route", true,
+    !ManualCombatYieldPolicy.ShouldPause(true, true, true) &&
+    firstLifeGroupPilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(2) },
+        activeWorqor, [fieldGroup], followingWorqorGroup, true, true, trackedWorqor) is null &&
+    firstLifeGroupPilot.CommittedDestinationId == "WOR-REGROUP");
+Check("group arrival begins a bounded hold", true,
+    firstLifeGroupPilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(3) },
+        emptyWorqor, [fieldGroup], followingWorqorGroup with { State = ManualRouteState.Arrived },
+        true, true, trackedWorqor) is null && firstLifeGroupPilot.CommittedDestinationId is null);
+Check("after hold a fresh supported Triumph takes priority", "WOR-02",
+    firstLifeGroupPilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(10) },
+        activeWorqor with { Objectives = activeWorqor.Objectives.Select(x => x with
+            { LastSeenUtc = pilotNow.AddSeconds(10) }).ToArray() },
+        [fieldGroup], followingWorqorGroup with { State = ManualRouteState.Arrived },
+        true, true, trackedWorqor)?.DestinationId ?? "NONE");
+var repeatedGroupPilot = new WorqorGroupPilot();
+repeatedGroupPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
+repeatedGroupPilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(1) }, emptyWorqor,
+    [fieldGroup], followingWorqorGroup with { State = ManualRouteState.Arrived }, true, true, trackedWorqor);
+Check("after hold a moving field group permits another bounded leg", "WOR-REGROUP",
+    repeatedGroupPilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(8) }, emptyWorqor,
+        [fieldGroup], followingWorqorGroup with { State = ManualRouteState.Arrived },
+        true, true, trackedWorqor with { Destination = new Vector3(125, 0, 12) })?.DestinationId ?? "NONE");
+var safetyPilot = new WorqorGroupPilot();
+safetyPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
+Check("lost provider/mesh readiness requests cancellation of owned route", true,
+    safetyPilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(1) }, emptyWorqor,
+        [fieldGroup], followingWorqorGroup, true, false, trackedWorqor) is null &&
+    safetyPilot.CancelDestinationId == "WOR-REGROUP" && safetyPilot.CommittedDestinationId is null);
+Check("readiness failure does not instantly reissue a route", true,
+    safetyPilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(2) }, emptyWorqor,
+        [fieldGroup], followingWorqorGroup with { State = ManualRouteState.Cancelled },
+        true, true, trackedWorqor) is null);
+var stoppedWorqorPilot = new WorqorGroupPilot();
+stoppedWorqorPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
+Check("STOP disables and clears the Worqor pilot", true,
+    stoppedWorqorPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
+        followingWorqorGroup, false, true, trackedWorqor) is null &&
+    stoppedWorqorPilot.CommittedDestinationId is null);
+var resultsWorqorPilot = new WorqorGroupPilot();
+resultsWorqorPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
+Check("Results terminates the Worqor pilot", true,
+    resultsWorqorPilot.Update(pilotGame, emptyWorqor with
+        { Match = emptyWorqor.Match with { Lifecycle = FrontlineMatchLifecycle.Results } },
+        [fieldGroup], followingWorqorGroup, true, true, trackedWorqor) is null &&
+    resultsWorqorPilot.CommittedDestinationId is null);
 pilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(1),
     LocalPlayer = new TestPilotPlayer(Vector3.Zero, true), IsClassificationReliable = false },
     activeWorqor, [fieldGroup], ManualNavigationSnapshot.Disarmed, true, false);
 Check("death clears pilot commitment even when team and Reborn are unavailable", true,
     pilot.CommittedDestinationId is null);
 var postDeathPlan = pilot.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(6) },
-    activeWorqor with { Objectives = [] }, [fieldGroup], ManualNavigationSnapshot.Disarmed, true, true);
+    emptyWorqor, [fieldGroup], ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
 Check("after death with no supported Triumph pilot commits to field group", "WOR-REGROUP",
     postDeathPlan?.DestinationId ?? "NONE");
 

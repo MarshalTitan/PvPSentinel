@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1.15 — Worqor first-life field-group fallback
+
+- Keep supported allied Triumph selection first; if no candidate qualifies, use the shared spawn-filtered, smoothed and briefly predicted allied field group on the first life as well as after respawn. Commit one route leg, hold six seconds after arrival, and then re-evaluate the objective before another group leg. No raw-player chase or per-frame destination rewrite.
+- Cancel a Worqor pilot-owned route if lifecycle, team, mesh or provider readiness fails mid-leg. Keep manual destination priority, STOP, death, Results, bounded failure, and Reborn combat travel behavior.
+- Analyze four independently supplied APSG brain traces only as behavior evidence; no upstream source or tables were copied. Queue/requeue, LB and movement diversity remain deferred.
+
+
 ## 0.3.1.14 — Frontline entry lifecycle and crash instrumentation
 
 - Keep a confirmed active match active through a temporarily unreadable header/duty flag; recognize a late Worqor entry from a visible Frontline header and a current claimed Triumph. Genuine pre-match and terminal Results retain their gates. Show duty-start, header, parsed timer, results, and corroboration separately.
