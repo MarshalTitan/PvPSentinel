@@ -34,6 +34,7 @@
     <Compile Include="../Strategy/WorqorGroupPilot.cs" Link="Strategy/WorqorGroupPilot.cs" />
     <Compile Include="../Strategy/SealRockGroupPilot.cs" Link="Strategy/SealRockGroupPilot.cs" />
     <Compile Include="../Strategy/ShatterGroupPilot.cs" Link="Strategy/ShatterGroupPilot.cs" />
+    <Compile Include="../Strategy/FieldGroupPilot.cs" Link="Strategy/FieldGroupPilot.cs" />
     <Compile Include="../FrontlineCore/BattlefieldModels.cs" Link="FrontlineCore/BattlefieldModels.cs" />
     <Compile Include="../FrontlineCore/TeamClassifier.cs" Link="FrontlineCore/TeamClassifier.cs" />
     <Compile Include="../FrontlineCore/PlayerTrackingPolicy.cs" Link="FrontlineCore/PlayerTrackingPolicy.cs" />

@@ -40,6 +40,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WorqorGroupPilot worqorGroupPilot = new();
     private readonly SealRockGroupPilot sealRockGroupPilot = new();
     private readonly ShatterGroupPilot shatterGroupPilot = new();
+    private readonly FieldGroupPilot onsalGroupPilot = new(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP");
+    private readonly FieldGroupPilot secureGroupPilot = new(FrontlineMap.BorderlandRuins, "secure", "SEC-REGROUP");
     private readonly BehaviorEngine behaviorEngine = new();
     private readonly VNavmeshAdapter vnav;
     private readonly NavigationController navigation;
@@ -108,7 +110,7 @@ public sealed class Plugin : IDalamudPlugin
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
         diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath,
-            () => combat.LastAction, () => $"Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}; Shatter: {shatterGroupPilot.Status}",
+            () => combat.LastAction, () => $"Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}; Shatter: {shatterGroupPilot.Status}; Onsal: {onsalGroupPilot.Status}; Secure: {secureGroupPilot.Status}",
             StopNavigationFromUi, OnDiagnosticsClosed)
         {
             IsOpen = config.ShowDiagnostics,
@@ -190,6 +192,14 @@ public sealed class Plugin : IDalamudPlugin
         if (!config.ShatterGroupNavigationEnabled &&
             navigation.ManualSnapshot.DestinationId == shatterGroupPilot.CommittedDestinationId)
             navigation.StopManualNavigation("Shatter group navigation was turned off.");
+        if ((!config.OnsalGroupNavigationEnabled || !config.AllowOnsalHakair) &&
+            onsalGroupPilot.CommittedDestinationId is { } onsalDestination &&
+            navigation.CurrentManualDestinationId == onsalDestination)
+            navigation.StopManualNavigation("Onsal group navigation was turned off.");
+        if ((!config.SecureGroupNavigationEnabled || !config.AllowBorderlandRuins) &&
+            secureGroupPilot.CommittedDestinationId is { } secureDestination &&
+            navigation.CurrentManualDestinationId == secureDestination)
+            navigation.StopManualNavigation("Secure group navigation was turned off.");
         var groupPlan = worqorGroupPilot.Update(
             game, battlefieldState, clusters, navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.WorqorGroupNavigationEnabled,
@@ -233,6 +243,40 @@ public sealed class Plugin : IDalamudPlugin
                 shatterPlan.IncludeReferencePosition, shatterPlan.MinimumApproachClearance);
         }
         foreach (var groupEvent in shatterGroupPilot.DrainEvents())
+            battlefield.RecordNavigationEvent(groupEvent);
+        var onsalPlan = onsalGroupPilot.Update(game, battlefieldState, clusters,
+            navigation.ManualSnapshot,
+            config.Enabled && config.NavigationEnabled && config.AllowOnsalHakair &&
+            config.OnsalGroupNavigationEnabled,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId);
+        if (onsalGroupPilot.CancelDestinationId is { } unsafeOnsal &&
+            navigation.CurrentManualDestinationId == unsafeOnsal)
+            navigation.StopManualNavigation("Onsal pilot safety gate became unavailable.");
+        if (onsalPlan is not null)
+        {
+            navigation.SetManualNavigationArmed(true);
+            navigation.RequestManualDestination(onsalPlan.DestinationId, onsalPlan.DestinationName,
+                onsalPlan.Position);
+        }
+        foreach (var groupEvent in onsalGroupPilot.DrainEvents())
+            battlefield.RecordNavigationEvent(groupEvent);
+        var securePlan = secureGroupPilot.Update(game, battlefieldState, clusters,
+            navigation.ManualSnapshot,
+            config.Enabled && config.NavigationEnabled && config.AllowBorderlandRuins &&
+            config.SecureGroupNavigationEnabled,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId);
+        if (secureGroupPilot.CancelDestinationId is { } unsafeSecure &&
+            navigation.CurrentManualDestinationId == unsafeSecure)
+            navigation.StopManualNavigation("Secure pilot safety gate became unavailable.");
+        if (securePlan is not null)
+        {
+            navigation.SetManualNavigationArmed(true);
+            navigation.RequestManualDestination(securePlan.DestinationId, securePlan.DestinationName,
+                securePlan.Position);
+        }
+        foreach (var groupEvent in secureGroupPilot.DrainEvents())
             battlefield.RecordNavigationEvent(groupEvent);
         var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, battlefieldState, config);
         foreach (var navigationEvent in navigation.DrainManualEvents())
@@ -306,6 +350,8 @@ public sealed class Plugin : IDalamudPlugin
         config.WorqorGroupNavigationEnabled = false;
         config.SealRockGroupNavigationEnabled = false;
         config.ShatterGroupNavigationEnabled = false;
+        config.OnsalGroupNavigationEnabled = false;
+        config.SecureGroupNavigationEnabled = false;
         config.Save();
         navigation.StopManualNavigation();
     }
@@ -321,6 +367,8 @@ public sealed class Plugin : IDalamudPlugin
         config.WorqorGroupNavigationEnabled = false;
         config.SealRockGroupNavigationEnabled = false;
         config.ShatterGroupNavigationEnabled = false;
+        config.OnsalGroupNavigationEnabled = false;
+        config.SecureGroupNavigationEnabled = false;
         config.QueueAutomationEnabled = false;
         config.CombatProvider = CombatProvider.Off;
         config.Save();
