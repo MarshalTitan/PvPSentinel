@@ -61,8 +61,9 @@ internal sealed class FieldGroupPilot(FrontlineMap map, string eventPrefix, stri
             enabledLastFrame = true;
             Event("enabled", "mode=allied-field-group-only; objectives=unresolved", now);
         }
+        // An opt-in can be enabled mid-match; that position is not evidence of the base.
         if (spawnPosition is null && game.LocalPlayer is { IsDead: false } atSpawn &&
-            battlefield.Match.Lifecycle is FrontlineMatchLifecycle.PreMatch or FrontlineMatchLifecycle.MatchActive)
+            battlefield.Match.Lifecycle == FrontlineMatchLifecycle.PreMatch)
             spawnPosition = atSpawn.Position;
 
         if (game.LocalPlayer?.IsDead == true)
