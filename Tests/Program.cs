@@ -86,6 +86,63 @@ for (var index = 0; index < 14; index++)
 looping.Add(destination);
 CheckPath("implausibly long path is rejected", false, looping, origin, destination);
 
+Check("mesh still building fails closed despite reported ready", false,
+    NavmeshReadiness.CanRequestPath(true, 0.35f));
+Check("missing readiness IPC fails closed", false, NavmeshReadiness.CanRequestPath(false, -1f));
+Check("idle ready mesh accepts path requests", true, NavmeshReadiness.CanRequestPath(true, -1f));
+var pathGate = new PathRequestGate();
+var firstTicket = pathGate.Begin();
+pathGate.Invalidate(); // STOP, death, results, or owner handoff before the task completes.
+Check("late path cannot resume after STOP/death/results", false, pathGate.IsCurrent(firstTicket));
+var nextTicket = pathGate.Begin();
+Check("replacement path owns the new generation", true, pathGate.IsCurrent(nextTicket));
+Check("old path cannot replace a newer destination", false, pathGate.IsCurrent(firstTicket));
+var straightRoute = new[] { Vector3.Zero, new Vector3(5, 0, 0),
+    new Vector3(10, 0, 0), new Vector3(15, 0, 0), new Vector3(20, 0, 0) };
+var shortened = PathPrefixTrimmer.Reconcile(straightRoute, Vector3.Zero,
+    new Vector3(11, 0, 0), TimeSpan.FromSeconds(2));
+Check("passed path prefix trimmed", true, !shortened.RepathFromCurrentPosition &&
+    shortened.RemovedPoints >= 2 && shortened.Route[0].X == 11f &&
+    shortened.Route[1].X >= 15f);
+Check("trimmed route remains valid from new origin", true,
+    PathValidator.Validate(shortened.Route, new Vector3(11, 0, 0),
+        new Vector3(20, 0, 0), 2.5f).IsValid);
+var delayedStairRoute = new[] { Vector3.Zero, new Vector3(10, 0, 0),
+    new Vector3(10, 4, 0), new Vector3(20, 4, 0) };
+Check("delayed route repaths rather than skipping protected elevation", true,
+    PathPrefixTrimmer.Reconcile(delayedStairRoute, Vector3.Zero, new Vector3(10, 4, 0),
+        TimeSpan.FromSeconds(3)).RepathFromCurrentPosition);
+Check("player off route triggers fresh path rather than backward travel", true,
+    PathPrefixTrimmer.Reconcile(straightRoute, Vector3.Zero, new Vector3(11, 0, 8),
+        TimeSpan.FromSeconds(2)).RepathFromCurrentPosition);
+
+var fieldNow = new DateTime(2026, 10, 3, 0, 0, 0, DateTimeKind.Utc);
+var sharedField = new FieldGroupTracker();
+sharedField.Update(FrontlineMap.OnsalHakair, false, true, true,
+    Vector3.Zero, false, [], fieldNow);
+var spawnCrowd = new FriendlyCluster(new Vector3(5, 0, 0), Vector3.Zero, 14);
+var smallerField = new FriendlyCluster(new Vector3(90, 0, 0), Vector3.Zero, 5);
+var largerField = new FriendlyCluster(new Vector3(150, 0, 0), Vector3.Zero, 10);
+var playerAwayFromBase = new Vector3(200, 0, 0);
+var initialField = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
+    playerAwayFromBase, false, [spawnCrowd, smallerField], fieldNow.AddSeconds(1));
+Check("known spawn cluster rejected even when much larger", 5, initialField.Cluster?.PlayerCount ?? 0);
+var transient = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
+    playerAwayFromBase, false, [spawnCrowd, smallerField, largerField], fieldNow.AddSeconds(2));
+Check("larger field group does not trigger immediate switch", 5, transient.Cluster?.PlayerCount ?? 0);
+var confirmed = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
+    playerAwayFromBase, false, [spawnCrowd, smallerField, largerField], fieldNow.AddSeconds(6));
+Check("sustained stronger field group can replace incumbent", 10, confirmed.Cluster?.PlayerCount ?? 0);
+var movingField = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
+    playerAwayFromBase, false, [new FriendlyCluster(new Vector3(154, 0, 0),
+        new Vector3(4, 0, 0), 10)], fieldNow.AddSeconds(7));
+Check("moving field position is smoothed and briefly led", true,
+    sharedField.SmoothedCenter is { } smooth &&
+    movingField.Destination.X > smooth.X && movingField.Destination.X < 154f);
+Check("unreliable classification yields no field destination", true,
+    sharedField.Update(FrontlineMap.OnsalHakair, true, false, false,
+        playerAwayFromBase, false, [largerField], fieldNow.AddSeconds(8)).Cluster is null);
+
 var yieldTracker = new ExternalCombatYieldTracker();
 var yieldStart = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 Check("combat starts external yield", true,
@@ -947,6 +1004,18 @@ var noFieldPilot = new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-R
 Check("Onsal does not chase Ovoo without field allies", true,
     noFieldPilot.Update(onsalGame, onsalBattle, [],
         ManualNavigationSnapshot.Disarmed, true, true, true) is null);
+Check("tracked field rejection prevents raw base-cluster fallback", true,
+    new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP")
+        .Update(onsalGame, onsalBattle,
+            [new FriendlyCluster(new Vector3(90, 0, 0), Vector3.Zero, 12)],
+            ManualNavigationSnapshot.Disarmed, true, true, true,
+            trackedFieldGroup: default(FieldGroupChoice)) is null);
+Check("Onsal uses smoothed led group destination at commitment", new Vector3(99, 0, 0),
+    new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP")
+        .Update(onsalGame, onsalBattle, [sealGroup],
+            ManualNavigationSnapshot.Disarmed, true, true, true,
+            trackedFieldGroup: new FieldGroupChoice(sealGroup, new Vector3(99, 0, 0)))?.Position
+        ?? Vector3.Zero);
 
 var thirdTraceWorqor = new WorqorChirtehAdapter();
 thirdTraceWorqor.Reset(trackingNow);

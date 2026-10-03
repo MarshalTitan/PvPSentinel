@@ -19,6 +19,9 @@
     <Compile Include="../Models/PlayerClassification.cs" Link="Models/PlayerClassification.cs" />
     <Compile Include="../Models/ObjectiveObservation.cs" Link="Models/ObjectiveObservation.cs" />
     <Compile Include="../Navigation/PathValidator.cs" Link="Navigation/PathValidator.cs" />
+    <Compile Include="../Navigation/PathPrefixTrimmer.cs" Link="Navigation/PathPrefixTrimmer.cs" />
+    <Compile Include="../Navigation/PathRequestGate.cs" Link="Navigation/PathRequestGate.cs" />
+    <Compile Include="../Navigation/NavmeshReadiness.cs" Link="Navigation/NavmeshReadiness.cs" />
     <Compile Include="../Navigation/IVNavmeshAdapter.cs" Link="Navigation/IVNavmeshAdapter.cs" />
     <Compile Include="../Navigation/ManualNavigationModels.cs" Link="Navigation/ManualNavigationModels.cs" />
     <Compile Include="../Navigation/ShatterApproachPolicy.cs" Link="Navigation/ShatterApproachPolicy.cs" />
@@ -35,6 +38,7 @@
     <Compile Include="../Strategy/SealRockGroupPilot.cs" Link="Strategy/SealRockGroupPilot.cs" />
     <Compile Include="../Strategy/ShatterGroupPilot.cs" Link="Strategy/ShatterGroupPilot.cs" />
     <Compile Include="../Strategy/FieldGroupPilot.cs" Link="Strategy/FieldGroupPilot.cs" />
+    <Compile Include="../Strategy/FieldGroupTracker.cs" Link="Strategy/FieldGroupTracker.cs" />
     <Compile Include="../FrontlineCore/BattlefieldModels.cs" Link="FrontlineCore/BattlefieldModels.cs" />
     <Compile Include="../FrontlineCore/TeamClassifier.cs" Link="FrontlineCore/TeamClassifier.cs" />
     <Compile Include="../FrontlineCore/PlayerTrackingPolicy.cs" Link="FrontlineCore/PlayerTrackingPolicy.cs" />

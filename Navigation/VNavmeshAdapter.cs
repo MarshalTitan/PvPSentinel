@@ -36,7 +36,8 @@ internal sealed class VNavmeshAdapter : IVNavmeshAdapter
         stop = pi.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
     }
 
-    public bool IsReady => SafeInvoke("nav-ready-ipc", navReady, false);
+    public bool IsReady => NavmeshReadiness.CanRequestPath(
+        SafeInvoke("nav-ready-ipc", navReady, false), BuildProgress);
     public float BuildProgress => SafeInvoke("nav-build-progress-ipc", buildProgress, -1f);
     public bool IsPathRunning => SafeInvoke("nav-running-ipc", pathRunning, false);
     public bool IsPathfindInProgress => SafeInvoke("nav-pathfind-ipc", pathfindRunning, false);

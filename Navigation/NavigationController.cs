@@ -15,6 +15,9 @@ internal sealed class NavigationController(
     private DateTime committedAtUtc = DateTime.MinValue;
     private Task<IReadOnlyList<Vector3>>? pendingPath;
     private Vector3? pendingDestination;
+    private Vector3 pendingOrigin;
+    private readonly PathRequestGate strategicPathGate = new();
+    private long strategicPathTicket;
     private DateTime pathRequestedAtUtc = DateTime.MinValue;
     private DateTime retryAfterUtc = DateTime.MinValue;
     private Vector3? lastProgressPosition;
@@ -33,6 +36,9 @@ internal sealed class NavigationController(
     private ManualRecoveryPhase manualRecoveryPhase;
     private Vector3? manualSnapped;
     private Task<IReadOnlyList<Vector3>>? manualPendingPath;
+    private Vector3 manualPathOrigin;
+    private readonly PathRequestGate manualPathGate = new();
+    private long manualPathTicket;
     private IReadOnlyList<Vector3> manualRoute = [];
     private IReadOnlyList<Vector3> failedManualCorridor = [];
     private RouteExecutionPlan? manualPlan;
@@ -87,6 +93,7 @@ internal sealed class NavigationController(
     {
         if (!manualArmed)
             return false;
+        manualPathGate.Invalidate();
         var replacement = new ManualNavigationRequest(
             destinationId,
             destinationName,
@@ -106,6 +113,7 @@ internal sealed class NavigationController(
             ResetManualRecovery();
             manualSnapped = null;
             manualPendingPath = null;
+            manualPathGate.Invalidate();
             manualRoute = [];
             failedManualCorridor = [];
             manualPlan = null;
@@ -390,7 +398,9 @@ internal sealed class NavigationController(
         }
 
         pendingDestination = destination;
+        pendingOrigin = game.LocalPlayer.Position;
         pathRequestedAtUtc = now;
+        strategicPathTicket = strategicPathGate.Begin();
         pendingPath = vnav.FindPathAsync(game.LocalPlayer.Position, destination, 2.5f);
         developmentLog.Changed("nav-path-state", "requesting",
             $"Requested a generated ground path from {FormatVector(game.LocalPlayer.Position)} to {FormatVector(destination)}. Movement will not start until validation succeeds.");
@@ -707,6 +717,8 @@ internal sealed class NavigationController(
                 return UpdateManual(game, battlefield, config, combatTravelActive);
             }
             manualPathRequestedUtc = now;
+            manualPathOrigin = local.Position;
+            manualPathTicket = manualPathGate.Begin();
             manualPendingPath = vnav.FindPathAsync(local.Position, manualSnapped.Value, 2.5f);
             manualSnapshot = BuildManualSnapshot(MovementOwner.SentinelTestNav, ManualRouteState.RequestingPath,
                 $"Snapped approach to {FormatVector(manualSnapped.Value)} and requested a generated route.", local.Position);
@@ -722,6 +734,8 @@ internal sealed class NavigationController(
     {
         var task = manualPendingPath!;
         manualPendingPath = null;
+        if (!manualPathGate.IsCurrent(manualPathTicket) || activeManual is null)
+            return;
         IReadOnlyList<Vector3> route;
         try { route = task.GetAwaiter().GetResult(); }
         catch (Exception ex)
@@ -731,7 +745,7 @@ internal sealed class NavigationController(
             AdvanceManualCandidate($"Path generation faulted: {ex.GetType().Name}.", manualReplacementAttempt);
             return;
         }
-        var validation = PathValidator.Validate(route, origin, manualSnapped!.Value, 2.5f);
+        var validation = PathValidator.Validate(route, manualPathOrigin, manualSnapped!.Value, 2.5f);
         if (!validation.IsValid)
         {
             consecutiveFailures++;
@@ -745,6 +759,23 @@ internal sealed class NavigationController(
             Emit("navigation_route_rejected",
                 $"destination={activeManual?.DestinationId}; candidate={CurrentCandidateLabel()}; reason=repeated failed corridor; failed={FormatRoute(failedManualCorridor)}; replacement={FormatRoute(route)}");
             AdvanceManualCandidate("Replacement path repeated the failed corridor geometry.", true);
+            return;
+        }
+
+        var rawRoute = route;
+        var reconciled = PathPrefixTrimmer.Reconcile(route, manualPathOrigin, origin,
+            now - manualPathRequestedUtc);
+        if (reconciled.RepathFromCurrentPosition)
+        {
+            Emit("navigation_path_stale_origin",
+                $"destination={activeManual.DestinationId}; reason=player-moved-off-safe-prefix; action=repath-from-current");
+            return;
+        }
+        route = reconciled.Route;
+        if (!PathValidator.Validate(route, origin, manualSnapped.Value, 2.5f).IsValid)
+        {
+            Emit("navigation_path_stale_origin",
+                $"destination={activeManual.DestinationId}; reason=trimmed-route-invalid; action=repath-from-current");
             return;
         }
 
@@ -775,7 +806,7 @@ internal sealed class NavigationController(
             ResetManualRecovery();
         lastReportedManualWaypointCount = -1;
         Emit("navigation_path_ready",
-            $"destination={activeManual?.DestinationId}; route={manualRouteId}; attempt={manualRouteAttempt}; candidate={CurrentCandidateLabel(acceptedRecoveryPhase)}; recovery={recoveryResult}; origin={FormatVector(origin)}; endpoint={FormatVector(manualSnapped!.Value)}; raw_waypoints={route.Count}; execution_waypoints={manualPlan.Waypoints.Count}; length={manualPlan.Length:F1}; raw_geometry={FormatRoute(route, 128)}; execution_geometry={manualPlan.FormatGeometry()}");
+            $"destination={activeManual?.DestinationId}; route={manualRouteId}; attempt={manualRouteAttempt}; candidate={CurrentCandidateLabel(acceptedRecoveryPhase)}; recovery={recoveryResult}; origin={FormatVector(origin)}; endpoint={FormatVector(manualSnapped!.Value)}; raw_waypoints={rawRoute.Count}; trimmed_prefix={reconciled.RemovedPoints}; execution_waypoints={manualPlan.Waypoints.Count}; length={manualPlan.Length:F1}; raw_geometry={FormatRoute(rawRoute, 128)}; execution_geometry={manualPlan.FormatGeometry()}");
     }
 
     private bool StartManualStage(Vector3 currentPosition, DateTime now)
@@ -799,6 +830,7 @@ internal sealed class NavigationController(
 
     private void AdvanceManualCandidate(string reason, bool preserveFailureComparison = false)
     {
+        manualPathGate.Invalidate();
         Emit("navigation_path_failed",
             $"destination={activeManual?.DestinationId ?? manualSnapshot.DestinationId}; candidate={CurrentCandidateLabel()}; reason={reason}");
         if (manualRecoveryPhase == ManualRecoveryPhase.DepartureStage)
@@ -873,6 +905,7 @@ internal sealed class NavigationController(
 
     private void CancelManual(string reason, ManualRouteState state, string eventName)
     {
+        manualPathGate.Invalidate();
         var id = activeManual?.DestinationId ?? manualRequest?.DestinationId ?? manualSnapshot.DestinationId;
         if (ownsPath)
             vnav.Stop();
@@ -975,6 +1008,7 @@ internal sealed class NavigationController(
                 vnav.Stop();
             ownsPath = false;
             manualPendingPath = null;
+            manualPathGate.Invalidate();
             manualSnapped = null;
             manualRoute = [];
             failedManualCorridor = [];
@@ -1009,6 +1043,7 @@ internal sealed class NavigationController(
 
     private void ResumeManualAfterCombat(Vector3? localPosition)
     {
+        manualPathGate.Invalidate();
         manualYieldedToCombat = false;
         var request = manualRequest ?? activeManual;
         if (request is not null)
@@ -1041,7 +1076,8 @@ internal sealed class NavigationController(
         pendingPath = null;
         pendingDestination = null;
 
-        if (requested is null || HorizontalDistance(requested.Value, destination) > 1f)
+        if (!strategicPathGate.IsCurrent(strategicPathTicket) ||
+            requested is null || HorizontalDistance(requested.Value, destination) > 1f)
         {
             developmentLog.Changed("nav-path-state", "stale", "Discarded a completed path because the committed destination changed.");
             return;
@@ -1058,12 +1094,22 @@ internal sealed class NavigationController(
             return;
         }
 
-        var validation = PathValidator.Validate(path, origin, destination, 2.5f);
+        var validation = PathValidator.Validate(path, pendingOrigin, destination, 2.5f);
         if (!validation.IsValid)
         {
             RegisterFailure(now, $"Generated path rejected: {validation.Explanation}");
             return;
         }
+
+        var reconciled = PathPrefixTrimmer.Reconcile(path, pendingOrigin, origin, now - pathRequestedAtUtc);
+        if (reconciled.RepathFromCurrentPosition ||
+            !PathValidator.Validate(reconciled.Route, origin, destination, 2.5f).IsValid)
+        {
+            developmentLog.Changed("nav-path-state", "stale-origin",
+                "Player moved beyond the safe generated prefix; requesting a route from the current position.");
+            return;
+        }
+        path = reconciled.Route;
 
         if (!vnav.StartPath(path, 2.5f))
         {
@@ -1109,6 +1155,7 @@ internal sealed class NavigationController(
 
     private void StopOwnedPath(bool clearDestination)
     {
+        strategicPathGate.Invalidate();
         pendingPath = null;
         pendingDestination = null;
         pathRequestedAtUtc = DateTime.MinValue;

@@ -41,7 +41,7 @@ internal sealed class FieldGroupPilot(FrontlineMap map, string eventPrefix, stri
     public FieldGroupPlan? Update(GameStateSnapshot game, BattlefieldState battlefield,
         IReadOnlyList<FriendlyCluster> clusters, ManualNavigationSnapshot route,
         bool enabled, bool rebornReady, bool meshReady, bool combatActive = false,
-        string? currentManualDestinationId = null)
+        string? currentManualDestinationId = null, FieldGroupChoice? trackedFieldGroup = null)
     {
         var now = game.CapturedAtUtc;
         CancelDestinationId = null;
@@ -179,10 +179,14 @@ internal sealed class FieldGroupPilot(FrontlineMap map, string eventPrefix, stri
             Event("respawn_reselection", "evaluating visible allied field groups", now);
         }
         var local = game.LocalPlayer.Position;
-        var eligible = clusters
+        IReadOnlyList<FriendlyCluster> candidateGroups = trackedFieldGroup.HasValue
+            ? trackedFieldGroup.Value.Cluster is { } tracked ? new[] { tracked } : Array.Empty<FriendlyCluster>()
+            : clusters;
+        var eligible = candidateGroups
             .Select(group => new { Group = group, Distance = Distance(local, group.Center) })
             .Where(item => item.Group.PlayerCount >= 3 && item.Distance is >= 35f and <= 400f &&
-                           (spawnPosition is null || Distance(spawnPosition.Value, item.Group.Center) >= 45f))
+                           (trackedFieldGroup.HasValue || spawnPosition is null ||
+                            Distance(spawnPosition.Value, item.Group.Center) >= 45f))
             .OrderByDescending(item => item.Group.PlayerCount * 8f - item.Distance * 0.15f)
             .ThenBy(item => item.Distance)
             .ToArray();
@@ -201,13 +205,14 @@ internal sealed class FieldGroupPilot(FrontlineMap map, string eventPrefix, stri
             return null;
         }
         var chosen = eligible[0];
+        var groupPosition = trackedFieldGroup?.Destination ?? chosen.Group.Center;
         committedId = destinationId;
         Event("allied_cluster_fallback",
             $"group={chosen.Group.PlayerCount}; distance={chosen.Distance:F1}; objective_selection=disabled", now);
         Event("destination_committed",
-            $"destination={committedId}; group={chosen.Group.PlayerCount}; position=({chosen.Group.Center.X:F1},{chosen.Group.Center.Y:F1},{chosen.Group.Center.Z:F1}); commitment=arrival-or-death", now);
+            $"destination={committedId}; group={chosen.Group.PlayerCount}; position=({groupPosition.X:F1},{groupPosition.Y:F1},{groupPosition.Z:F1}); commitment=arrival-or-death", now);
         Status = "Committed to allied field group until arrival or death";
-        return new FieldGroupPlan(destinationId, "Allied field group", chosen.Group.Center);
+        return new FieldGroupPlan(destinationId, "Allied field group", groupPosition);
     }
 
     private static bool RouteInProgress(ManualNavigationSnapshot route) =>
