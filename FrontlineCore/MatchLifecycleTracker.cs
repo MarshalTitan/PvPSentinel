@@ -7,7 +7,8 @@ internal sealed class MatchLifecycleTracker
     public FrontlineMatchState Update(
         bool isFrontline,
         bool dutyStarted,
-        FrontlineUiObservation ui)
+        FrontlineUiObservation ui,
+        bool objectiveClaimCorroborated = false)
     {
         if (!isFrontline)
         {
@@ -16,9 +17,13 @@ internal sealed class MatchLifecycleTracker
                 "UNAVAILABLE / OPTIONAL", "Outside a recognized Frontline duty.");
         }
 
+        // A reconnect can miss the duty-start edge. Once active, a transient
+        // unreadable header must not put the match back into PreMatch.
         if (lifecycle == FrontlineMatchLifecycle.Results || ui.ResultsVisible)
             lifecycle = FrontlineMatchLifecycle.Results;
-        else if (dutyStarted || ui.TimeRemaining is { TotalMinutes: > 2 })
+        else if (lifecycle == FrontlineMatchLifecycle.MatchActive || dutyStarted ||
+                 ui.TimeRemaining is { TotalMinutes: > 2 } ||
+                 (ui.HeaderVisible && objectiveClaimCorroborated))
             lifecycle = FrontlineMatchLifecycle.MatchActive;
         else
             lifecycle = FrontlineMatchLifecycle.PreMatch;
@@ -30,7 +35,14 @@ internal sealed class MatchLifecycleTracker
             ui.GrandCompanies,
             lifecycle == FrontlineMatchLifecycle.Results,
             "UNAVAILABLE / OPTIONAL",
-            ui.Evidence);
+            $"DutyStarted={dutyStarted}; HeaderVisible={ui.HeaderVisible}; " +
+            $"ParsedTimer={(ui.TimeRemaining is { } time ? time.ToString(@"mm\:ss") : "UNRESOLVED")}; " +
+            $"Results={ui.ResultsVisible}; Active corroboration={(objectiveClaimCorroborated ? "current claimed Triumph" : "none")}; {ui.Evidence}")
+        {
+            DutyStarted = dutyStarted,
+            HeaderVisible = ui.HeaderVisible,
+            ActiveCorroboration = objectiveClaimCorroborated ? "Current claimed Triumph" : "None",
+        };
     }
 
     public void Reset() => lifecycle = FrontlineMatchLifecycle.Outside;

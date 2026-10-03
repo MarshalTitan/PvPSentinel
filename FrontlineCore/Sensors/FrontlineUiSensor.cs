@@ -26,7 +26,7 @@ internal sealed partial class FrontlineUiSensor(IGameGui gameGui)
         var evidence = resultsVisible
             ? "FrontlineRecord is visible."
             : headerVisible
-                ? $"PvPFrontlineHeader is visible; timer={(time is null ? "UNRESOLVED" : time.Value.ToString("mm\\:ss"))}."
+                ? $"PvPFrontlineHeader is visible; AtkValuesCount={header->AtkValuesCount}; string-values={strings.Count}; timer={(time is null ? "UNRESOLVED" : time.Value.ToString("mm\\:ss"))}."
                 : "Frontline header/results addons are not visible.";
         if (!string.IsNullOrEmpty(announcement))
             evidence += " _WideText contains a Frontline objective lifecycle announcement.";
@@ -45,7 +45,7 @@ internal sealed partial class FrontlineUiSensor(IGameGui gameGui)
         if (addon is null || addon->AtkValues is null)
             return [];
         var result = new List<string>();
-        var count = Math.Min((int)addon->AtkValuesCount, maximum);
+        var count = Math.Clamp((int)addon->AtkValuesCount, 0, maximum);
         for (var index = 0; index < count; index++)
         {
             var value = addon->AtkValues[index];

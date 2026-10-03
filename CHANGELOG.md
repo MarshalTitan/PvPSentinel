@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1.14 — Frontline entry lifecycle and crash instrumentation
+
+- Keep a confirmed active match active through a temporarily unreadable header/duty flag; recognize a late Worqor entry from a visible Frontline header and a current claimed Triumph. Genuine pre-match and terminal Results retain their gates. Show duty-start, header, parsed timer, results, and corroboration separately.
+- Show every pilot prerequisite together. Reborn installation, load, IPC and autorotation are distinct; external ACR remains fail-closed until it has a verifiable activity signal.
+- Delay Frontline native research until the local player and territory have settled, and stagger UI versus object/marker research across entry scans. Retain a sparse, flushed `frontline-entry-stages.log` in plugin configuration for investigation of hard process exits. No native crash cause is asserted from the current logs.
+
+
 ## 0.3.1.13 — field-group tracking and delayed-path safety
 
 - Add independent shared field-group tracking for all five supervised pilots' fallback/regroup choices. Require a visible group of at least three, exclude observed pre-match/respawn base groups, confirm a stronger challenger, smooth its center, and lead its motion briefly. Objective selection and one-leg destination commitment remain map-specific.
