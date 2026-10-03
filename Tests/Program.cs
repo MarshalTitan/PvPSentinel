@@ -107,10 +107,10 @@ Check("passed path prefix trimmed", true, !shortened.RepathFromCurrentPosition &
 Check("trimmed route remains valid from new origin", true,
     PathValidator.Validate(shortened.Route, new Vector3(11, 0, 0),
         new Vector3(20, 0, 0), 2.5f).IsValid);
-var stairRoute = new[] { Vector3.Zero, new Vector3(10, 0, 0),
+var delayedStairRoute = new[] { Vector3.Zero, new Vector3(10, 0, 0),
     new Vector3(10, 4, 0), new Vector3(20, 4, 0) };
 Check("delayed route repaths rather than skipping protected elevation", true,
-    PathPrefixTrimmer.Reconcile(stairRoute, Vector3.Zero, new Vector3(10, 4, 0),
+    PathPrefixTrimmer.Reconcile(delayedStairRoute, Vector3.Zero, new Vector3(10, 4, 0),
         TimeSpan.FromSeconds(3)).RepathFromCurrentPosition);
 Check("player off route triggers fresh path rather than backward travel", true,
     PathPrefixTrimmer.Reconcile(straightRoute, Vector3.Zero, new Vector3(11, 0, 8),
