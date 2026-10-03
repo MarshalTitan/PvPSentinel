@@ -852,6 +852,18 @@ var firstPilotPlan = pilot.Update(pilotGame, activeWorqor, [fieldGroup],
     ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
 Check("Worqor pilot chooses supported Triumph", "WOR-02", firstPilotPlan?.DestinationId ?? "NONE");
 var emptyWorqor = activeWorqor with { Objectives = [] };
+var retiringWorqor = new WorqorGroupPilot();
+retiringWorqor.Update(pilotGame, activeWorqor, [fieldGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor, allowGroupFallback: false);
+var followingTriumph = ManualNavigationSnapshot.Disarmed with
+    { Armed = true, DestinationId = "WOR-02", State = ManualRouteState.Following };
+retiringWorqor.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(1) },
+    emptyWorqor, [fieldGroup], followingTriumph, true, true, trackedWorqor,
+    allowGroupFallback: false);
+Check("stale Worqor objective retires after confirmation for dynamic fallback", "WOR-02",
+    (retiringWorqor.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(4) },
+        emptyWorqor, [fieldGroup], followingTriumph, true, true, trackedWorqor,
+        allowGroupFallback: false), retiringWorqor.CancelDestinationId).Item2 ?? "NONE");
 var firstLifeGroupPilot = new WorqorGroupPilot();
 var firstLifeGroupLeg = firstLifeGroupPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
     ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
@@ -968,6 +980,16 @@ Check("Seal Rock never follows a stale marker", "SR-REGROUP",
         [sealGroup], ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
 var followingSeal = ManualNavigationSnapshot.Disarmed with
     { Armed = true, DestinationId = "SR-02", State = ManualRouteState.Following };
+var retiringSeal = new SealRockGroupPilot();
+retiringSeal.Update(sealGame, sealBattle, [sealGroup], ManualNavigationSnapshot.Disarmed,
+    true, true, true, allowGroupFallback: false);
+retiringSeal.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(1) },
+    sealBattle with { Objectives = [] }, [sealGroup], followingSeal,
+    true, true, true, allowGroupFallback: false);
+Check("stale Seal Rock objective retires for dynamic fallback", "SR-02",
+    (retiringSeal.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(4) },
+        sealBattle with { Objectives = [] }, [sealGroup], followingSeal,
+        true, true, true, allowGroupFallback: false), retiringSeal.CancelDestinationId).Item2 ?? "NONE");
 Check("Seal Rock holds a destination through changing markers", true,
     sealPilot.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(1) },
         claimedSeal, [sealGroup], followingSeal, true, true, true) is null);
