@@ -24,7 +24,7 @@ internal sealed class GameStateService(
 {
     private readonly Dictionary<uint, string> statusNames = new();
     private readonly FrontlineEntryGate entryGate = new();
-    private bool completedStableScan;
+    private int completedStableScans;
 
     public unsafe GameStateSnapshot Capture()
     {
@@ -55,7 +55,7 @@ internal sealed class GameStateService(
             var mayScan = entryGate.MayScan(isFrontline, clientState.TerritoryType,
                 clientState.IsLoggedIn, isBetweenAreas, localObject is not null, now);
             if (!mayScan)
-                completedStableScan = false;
+                completedStableScans = 0;
             var safeNative = clientState.IsLoggedIn && !isBetweenAreas && localObject is not null &&
                 (!isFrontline || mayScan);
             // These singleton pointers and all object/native research reads are
@@ -164,10 +164,11 @@ internal sealed class GameStateService(
             friendlies.Add(local);
             var teamStatus = AddTeamProbeExplanation(roster.Status, local, observedPlayers);
             entryTrace.Stage("object-research", "START", DateTime.UtcNow);
-            var objectiveObservations = isFrontline && completedStableScan
+            var objectiveObservations = isFrontline && completedStableScans >= 2
                 ? CaptureObjectiveObservations(local.Position)
                 : [];
-            completedStableScan = mayScan;
+            if (mayScan)
+                completedStableScans = Math.Min(2, completedStableScans + 1);
             entryTrace.Stage("object-research", "OK", DateTime.UtcNow);
 
             developmentLog.Changed(
