@@ -718,11 +718,11 @@ Check("first-life Worqor fallback commits the tracked field group", "WOR-REGROUP
     firstLifeGroupLeg?.DestinationId ?? "NONE");
 Check("Worqor fallback uses the shared smoothed/predicted destination", trackedWorqor.Destination,
     firstLifeGroupLeg?.Position ?? Vector3.Zero);
-var noFieldPilot = new WorqorGroupPilot();
+var worqorNoFieldPilot = new WorqorGroupPilot();
 Check("no Triumph and no valid tracked field group waits safely", true,
-    noFieldPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
+    worqorNoFieldPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
         ManualNavigationSnapshot.Disarmed, true, true) is null &&
-    noFieldPilot.CommittedDestinationId is null);
+    worqorNoFieldPilot.CommittedDestinationId is null);
 var followingWorqorGroup = ManualNavigationSnapshot.Disarmed with
     { Armed = true, DestinationId = "WOR-REGROUP", State = ManualRouteState.Following };
 Check("new Triumph does not churn a committed group leg", true,
