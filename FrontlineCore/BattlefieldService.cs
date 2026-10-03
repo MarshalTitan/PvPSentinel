@@ -28,6 +28,7 @@ internal sealed class BattlefieldService
     private readonly Dictionary<uint, BattlefieldRelationship> priorRelationships = [];
     private readonly EventDiffLimiter diffs = new(TimeSpan.FromSeconds(10));
     private readonly FrontlineEventRecorder recorder;
+    private readonly FrontlineEntryTrace entryTrace;
     private IFrontlineMapAdapter? activeAdapter;
     private RetainedMatchSummaryBuilder? summaryBuilder;
     private RetainedMatchSummary? retainedSummary;
@@ -41,6 +42,7 @@ internal sealed class BattlefieldService
     private DateTime lastClusterEventUtc = DateTime.MinValue;
     private readonly Dictionary<string, (string Signature, DateTime AtUtc)> onsalEvidence = new(StringComparer.Ordinal);
     private string lastWideText = string.Empty;
+    private bool initialUiScanCompleted;
     private DateTime lastWideTextUtc = DateTime.MinValue;
 
     public BattlefieldService(
@@ -48,11 +50,13 @@ internal sealed class BattlefieldService
         IDutyState dutyState,
         string configDirectory,
         DevelopmentLogger developmentLog,
-        IPluginLog log)
+        IPluginLog log,
+        FrontlineEntryTrace entryTrace)
     {
         this.dutyState = dutyState;
         this.developmentLog = developmentLog;
         this.log = log;
+        this.entryTrace = entryTrace;
         uiSensor = new FrontlineUiSensor(gameGui);
         recorder = new FrontlineEventRecorder(configDirectory, log);
         adapters = new Dictionary<FrontlineMap, IFrontlineMapAdapter>
@@ -74,6 +78,14 @@ internal sealed class BattlefieldService
 
     public BattlefieldState Update(GameStateSnapshot game, PvPThreatSnapshot threat)
     {
+        if (game.IsFrontline && (game.LocalPlayer is null || game.IsBetweenAreas || !game.IsLoggedIn))
+        {
+            entryTrace.Stage("battlefield", "HOLD unstable client structures", game.CapturedAtUtc);
+            entryTrace.EndFrame(game.CapturedAtUtc);
+            Current = BattlefieldState.Unavailable(game.CapturedAtUtc,
+                "Frontline entry is stabilizing; native research sensors are paused.");
+            return Current;
+        }
         IFrontlineMapAdapter? desiredAdapter = null;
         if (game.IsFrontline)
         {
@@ -98,6 +110,7 @@ internal sealed class BattlefieldService
             EnterMap(desiredAdapter, game);
         var adapter = activeAdapter!;
 
+        entryTrace.Stage("player-tracker", "START", game.CapturedAtUtc);
         var allObservations = game.LocalPlayer is null
             ? game.ObservedPlayers
             : game.ObservedPlayers.Prepend(game.LocalPlayer).ToArray();
@@ -118,9 +131,15 @@ internal sealed class BattlefieldService
             players = Current.TrackedPlayers;
         }
         EmitTeamProbe(game);
+        entryTrace.Stage("player-tracker", "OK", game.CapturedAtUtc);
 
-        var markers = CaptureMarkers(game);
+        entryTrace.Stage("marker-sensor", "START", game.CapturedAtUtc);
+        var markers = initialUiScanCompleted ? CaptureMarkers(game) : [];
+        entryTrace.Stage("marker-sensor", "OK", game.CapturedAtUtc);
+        entryTrace.Stage("ui-sensor", "START", game.CapturedAtUtc);
         var ui = CaptureUi(game.CapturedAtUtc);
+        initialUiScanCompleted = true;
+        entryTrace.Stage("ui-sensor", "OK", game.CapturedAtUtc);
         if (!string.IsNullOrWhiteSpace(ui.WideTextAnnouncement) &&
             diffs.ShouldEmit("wide-text", ui.WideTextAnnouncement, game.CapturedAtUtc))
         {
@@ -139,6 +158,7 @@ internal sealed class BattlefieldService
                 $"_WideText Frontline evidence: {announcement}");
         }
         IReadOnlyList<ObjectiveChange> changes;
+        entryTrace.Stage("adapter-update", "START", game.CapturedAtUtc);
         try
         {
             changes = adapter.Update(game.CapturedAtUtc, markers, game.ObjectiveObservations, players);
@@ -160,16 +180,27 @@ internal sealed class BattlefieldService
                 sanitized,
                 $"{change.EventName}: {change.LogicalId}; {sanitized}");
         }
+        entryTrace.Stage("adapter-update", "OK", game.CapturedAtUtc);
 
         var objectives = adapter.Objectives;
         if (game.FrontlineMap == FrontlineMap.OnsalHakair)
             EmitOnsalEvidence(game.CapturedAtUtc, objectives, markers, game.ObjectiveObservations);
         var localPosition = game.LocalPlayer?.Position ?? System.Numerics.Vector3.Zero;
+        entryTrace.Stage("clusters", "START", game.CapturedAtUtc);
         var alliedClusters = BattlefieldClusterer.Build(players, BattlefieldRelationship.AllyConfirmed,
             localPosition, 20f, objectives);
         var enemyClusters = BattlefieldClusterer.Build(players, BattlefieldRelationship.EnemyConfirmed,
             localPosition, 20f, objectives);
-        var match = lifecycleTracker.Update(game.IsFrontline, dutyState.IsDutyStarted, ui);
+        entryTrace.Stage("clusters", "OK", game.CapturedAtUtc);
+        entryTrace.Stage("lifecycle", "START", game.CapturedAtUtc);
+        // A current claimed Triumph is impossible during the genuine countdown.
+        // This corroborates a running Worqor match even when the duty-start
+        // edge was missed and the header timer AtkValue is unresolved.
+        var claim = game.FrontlineMap == FrontlineMap.WorqorChirteh &&
+            game.IsClassificationReliable &&
+            markers.Any(marker => WorqorTriumphSignals.Parse(marker.Tooltip)?.Phase == WorqorTriumphPhase.Claimed);
+        var match = lifecycleTracker.Update(game.IsFrontline, dutyState.IsDutyStarted, ui, claim);
+        entryTrace.Stage("lifecycle", "OK", game.CapturedAtUtc);
         var death = deathTracker.Update(game.LocalPlayer is not null, game.LocalPlayer?.IsDead == true, game.CapturedAtUtc);
         var combat = combatTracker.Update(game, players, objectives, threat.TargeterCount, threat.NearbyEnemyCount);
         var fresh = players.Where(player => player.IsFresh).ToArray();
@@ -206,6 +237,7 @@ internal sealed class BattlefieldService
         EmitThreatChanges(threat, game.CapturedAtUtc);
         EmitStateChanges(Current);
         summaryBuilder?.Observe(Current);
+        entryTrace.EndFrame(game.CapturedAtUtc);
         return Current;
     }
 
@@ -241,6 +273,7 @@ internal sealed class BattlefieldService
         lastClusterEventUtc = DateTime.MinValue;
         onsalEvidence.Clear();
         lastWideText = string.Empty;
+        initialUiScanCompleted = false;
         lastWideTextUtc = DateTime.MinValue;
         diffs.Reset();
         foreach (var sensor in sensorHealth.Values)
@@ -283,6 +316,7 @@ internal sealed class BattlefieldService
         priorRelationships.Clear();
         markerSensor.Reset();
         lastSuccessfulMarkers = [];
+        initialUiScanCompleted = false;
         lastMarkerSource = string.Empty;
         lastTeamProbeEventUtc = DateTime.MinValue;
         lastThreatEventUtc = DateTime.MinValue;
@@ -519,7 +553,7 @@ internal sealed class BattlefieldService
         var now = state.CapturedAtUtc;
         if (priorLifecycle != state.Match.Lifecycle)
         {
-            Record("match_lifecycle_changed", now, new { from = priorLifecycle.ToString(), to = state.Match.Lifecycle.ToString() });
+            Record("match_lifecycle_changed", now, new { from = priorLifecycle.ToString(), to = state.Match.Lifecycle.ToString(), evidence = state.Match.Evidence });
             priorLifecycle = state.Match.Lifecycle;
         }
         if (priorDeathState != state.DeathRespawn.State)

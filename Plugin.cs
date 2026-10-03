@@ -10,6 +10,7 @@ using PvPSentinel.Combat.Threat;
 using PvPSentinel.Diagnostics;
 using PvPSentinel.GameState;
 using PvPSentinel.FrontlineCore;
+using PvPSentinel.FrontlineCore.Diagnostics;
 using PvPSentinel.Integrations;
 using PvPSentinel.Intelligence;
 using PvPSentinel.Models;
@@ -51,6 +52,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PvPThreatTracker threatTracker;
     private readonly QueueLifecycleController queueLifecycle;
     private readonly BattlefieldService battlefield;
+    private readonly FrontlineEntryTrace entryTrace;
     private readonly WrathAdapter wrath = new();
     private readonly DiagnosticWindow diagnostics;
     private readonly ConfigurationWindow configurationWindow;
@@ -58,6 +60,7 @@ public sealed class Plugin : IDalamudPlugin
     private DateTime nextUpdateUtc = DateTime.MinValue;
     private BehaviorState lastLoggedBehavior = BehaviorState.Idle;
     private TacticalSnapshot current = EmptySnapshot();
+    private FrontlinePilotReadiness? pilotReadiness;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -95,7 +98,8 @@ public sealed class Plugin : IDalamudPlugin
         targetSelector = new TargetSelector(developmentLog);
         objectiveStrategy = new ObjectiveStrategyService(developmentLog);
 
-        gameState = new GameStateService(clientState, condition, objectTable, partyList, dataManager, log, developmentLog);
+        entryTrace = new FrontlineEntryTrace(pi.ConfigDirectory.FullName, log);
+        gameState = new GameStateService(clientState, condition, objectTable, partyList, dataManager, log, developmentLog, entryTrace);
         vnav = new VNavmeshAdapter(pi, developmentLog);
         var mountCatalog = new PreferredMountCatalog(dataManager, unlockState);
         var mount = new NativeMountController(mountCatalog, developmentLog);
@@ -106,12 +110,13 @@ public sealed class Plugin : IDalamudPlugin
         rotationSolverReborn = new RotationSolverRebornAdapter(pi, dataManager, developmentLog);
         combat = new CombatProviderCoordinator(nativeCombat, rotationSolverReborn, developmentLog);
         threatTracker = new PvPThreatTracker(developmentLog);
-        battlefield = new BattlefieldService(gameGui, dutyState, pi.ConfigDirectory.FullName, developmentLog, log);
+        battlefield = new BattlefieldService(gameGui, dutyState, pi.ConfigDirectory.FullName, developmentLog, log, entryTrace);
         var queueAdapter = new FrontlineQueueAdapter(gameGui, dataManager, developmentLog);
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
         diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath,
             () => combat.LastAction, () => $"Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}; Shatter: {shatterGroupPilot.Status}; Onsal: {onsalGroupPilot.Status}; Secure: {secureGroupPilot.Status}",
+            () => pilotReadiness,
             StopNavigationFromUi, OnDiagnosticsClosed)
         {
             IsOpen = config.ShowDiagnostics,
@@ -189,6 +194,28 @@ public sealed class Plugin : IDalamudPlugin
             config,
             threat,
             navigation.IsMountTransitionPending(game.CapturedAtUtc));
+        var reborn = rotationSolverReborn.GetStatus(game.CapturedAtUtc);
+        var selectedPilotEnabled = game.FrontlineMap switch
+        {
+            FrontlineMap.WorqorChirteh => config.WorqorGroupNavigationEnabled,
+            FrontlineMap.SealRock => config.SealRockGroupNavigationEnabled && config.AllowSealRock,
+            FrontlineMap.FieldsOfGlory => config.ShatterGroupNavigationEnabled && config.AllowFieldsOfGlory,
+            FrontlineMap.OnsalHakair => config.OnsalGroupNavigationEnabled && config.AllowOnsalHakair,
+            FrontlineMap.BorderlandRuins => config.SecureGroupNavigationEnabled && config.AllowBorderlandRuins,
+            _ => false,
+        };
+        pilotReadiness = new FrontlinePilotReadiness(
+            config.Enabled && config.NavigationEnabled && selectedPilotEnabled,
+            battlefieldState.Match.Lifecycle, game.IsClassificationReliable, vnav.IsReady,
+            config.CombatProvider,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.Installed,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.Loaded,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.IpcAvailable,
+            config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.AutorotationActive && combatDecision.ControllerActive);
+        // External ACR has no verified activity IPC yet; retain a fail-closed
+        // slot for it rather than treating observed local actions as readiness.
+        developmentLog.Changed("pilot-readiness", string.Join('|', pilotReadiness.Lines),
+            $"{game.FrontlineMap} pilot {(pilotReadiness.CanTravel ? "READY" : "BLOCKED")}: {string.Join("; ", pilotReadiness.Lines)}");
         if (!config.WorqorGroupNavigationEnabled &&
             navigation.ManualSnapshot.DestinationId == worqorGroupPilot.CommittedDestinationId)
             navigation.StopManualNavigation("Worqor group navigation was turned off.");
@@ -209,7 +236,7 @@ public sealed class Plugin : IDalamudPlugin
         var groupPlan = worqorGroupPilot.Update(
             game, battlefieldState, clusters, navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.WorqorGroupNavigationEnabled,
-            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            pilotReadiness.CanTravel,
             trackedFieldGroup);
         if (groupPlan is not null)
         {
@@ -223,7 +250,7 @@ public sealed class Plugin : IDalamudPlugin
             game, battlefieldState, clusters, navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.AllowSealRock &&
             config.SealRockGroupNavigationEnabled,
-            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            pilotReadiness.CanTravel,
             vnav.IsReady, trackedFieldGroup);
         if (sealRockPlan is not null)
         {
@@ -237,7 +264,7 @@ public sealed class Plugin : IDalamudPlugin
             game, battlefieldState, clusters, navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.AllowFieldsOfGlory &&
             config.ShatterGroupNavigationEnabled,
-            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            pilotReadiness.CanTravel,
             vnav.IsReady, trackedFieldGroup);
         if (shatterGroupPilot.RetiredDestinationId is { } retiredId &&
             navigation.ManualSnapshot.DestinationId == retiredId)
@@ -255,7 +282,7 @@ public sealed class Plugin : IDalamudPlugin
             navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.AllowOnsalHakair &&
             config.OnsalGroupNavigationEnabled,
-            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            pilotReadiness.CanTravel,
             vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId,
             trackedFieldGroup);
         if (onsalGroupPilot.CancelDestinationId is { } unsafeOnsal &&
@@ -273,7 +300,7 @@ public sealed class Plugin : IDalamudPlugin
             navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.AllowBorderlandRuins &&
             config.SecureGroupNavigationEnabled,
-            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            pilotReadiness.CanTravel,
             vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId,
             trackedFieldGroup);
         if (secureGroupPilot.CancelDestinationId is { } unsafeSecure &&

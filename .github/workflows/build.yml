@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Improve supervised field-group fallback on all five Frontline maps: reject observed spawn groups, confirm stronger challengers, smooth and briefly lead moving groups while retaining committed routes and map-specific objectives. Require idle vnavmesh build state, invalidate stale path requests, and trim only safely passed route prefixes without skipping turns or elevation. Preserve staged route recovery, Reborn, mount and threat safety. Queue/requeue and CC remain disabled. Concept-only AGPL reference audits are in docs/FRONTLINE_UPSTREAM_AUDIT.md and docs/CC_ARCHITECTURE_REFERENCE.md; no upstream code or tables were copied. Upload events.jsonl, summary.json, dalamud.log, and video of any stall, base-group choice, or backward travel."
+            --notes "Fix delayed Frontline activation after reconnect with current claimed Triumph corroboration and sticky active lifecycle; preserve pre-match and Results. Show all pilot blockers, including Reborn loaded versus autorotation active. Gate and stagger entry native research, and save sparse crash-stage breadcrumbs to frontline-entry-stages.log. Crash root cause is not proven. Preserve five map pilots, objective logic, Reborn combat safety, mounting, threat sensing, and route recovery. Queue/requeue and LB remain disabled. Upload events.jsonl, summary.json, dalamud.log and frontline-entry-stages.log after supervised testing."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

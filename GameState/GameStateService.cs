@@ -19,14 +19,18 @@ internal sealed class GameStateService(
     IPartyList partyList,
     IDataManager data,
     IPluginLog log,
-    DevelopmentLogger developmentLog)
+    DevelopmentLogger developmentLog,
+    FrontlineCore.Diagnostics.FrontlineEntryTrace entryTrace)
 {
     private readonly Dictionary<uint, string> statusNames = new();
+    private readonly FrontlineEntryGate entryGate = new();
+    private bool completedStableScan;
 
     public unsafe GameStateSnapshot Capture()
     {
         try
         {
+            var now = DateTime.UtcNow;
             var localObject = objects.LocalPlayer;
             var territory = ResolveTerritory(clientState.TerritoryType);
             var territoryName = territory.RowId == 0 ? $"Territory {clientState.TerritoryType}" : territory.PlaceName.Value.Name.ToString();
@@ -37,22 +41,39 @@ internal sealed class GameStateService(
                                 condition[ConditionFlag.BoundByDuty56] ||
                                 condition[ConditionFlag.BoundByDuty95];
             var isFrontline = FrontlineDetector.IsFrontline(isPvP, isBoundByDuty, territory);
+            if (isFrontline)
+            {
+                entryTrace.Begin(clientState.TerritoryType, now);
+                entryTrace.Stage("game-state", "START", now);
+            }
+            else
+                entryTrace.Reset();
             var frontlineMap = FrontlineMapCatalog.Identify(content.RowId, clientState.TerritoryType);
             var isInCombat = condition[ConditionFlag.InCombat];
             var isCasting = condition[ConditionFlag.Casting] || condition[ConditionFlag.Casting87] || localObject?.IsCasting == true;
-            var actionManager = ActionManager.Instance();
+            var isBetweenAreas = condition[ConditionFlag.BetweenAreas] || condition[ConditionFlag.BetweenAreas51];
+            var mayScan = entryGate.MayScan(isFrontline, clientState.TerritoryType,
+                clientState.IsLoggedIn, isBetweenAreas, localObject is not null, now);
+            if (!mayScan)
+                completedStableScan = false;
+            var safeNative = clientState.IsLoggedIn && !isBetweenAreas && localObject is not null &&
+                (!isFrontline || mayScan);
+            // These singleton pointers and all object/native research reads are
+            // skipped while zoning or before a stable local player exists.
+            var actionManager = safeNative ? ActionManager.Instance() : null;
             var isActionQueued = actionManager is not null && actionManager->ActionQueued;
             var animationLockSeconds = actionManager is null ? 0f : Math.Max(0f, actionManager->AnimationLock);
             var isMounted = condition[ConditionFlag.Mounted] || condition[ConditionFlag.RidingPillion];
             var isMounting = condition[ConditionFlag.Mounting] || condition[ConditionFlag.MountOrOrnamentTransition];
-            var isBetweenAreas = condition[ConditionFlag.BetweenAreas] || condition[ConditionFlag.BetweenAreas51];
-            var limitBreak = LimitBreakController.Instance();
+            var limitBreak = safeNative ? LimitBreakController.Instance() : null;
             var limitCurrent = limitBreak is null ? (ushort)0 : limitBreak->CurrentUnits;
             var limitBarUnits = limitBreak is null ? (ushort)0 : limitBreak->BarUnits;
             var limitBarCount = limitBreak is null ? (byte)0 : limitBreak->BarCount;
 
-            if (!clientState.IsLoggedIn || localObject is null)
+            if (!clientState.IsLoggedIn || localObject is null || (isFrontline && !mayScan))
             {
+                if (isFrontline)
+                    entryTrace.Stage("entry-gate", "HOLD", DateTime.UtcNow);
                 return new GameStateSnapshot(
                     DateTime.UtcNow,
                     clientState.IsLoggedIn,
@@ -82,12 +103,16 @@ internal sealed class GameStateService(
                     [],
                     [],
                     new FrontlineTeamStatus(false, 0, 0, 0, false, "Local player is unavailable."),
-                    "Local player is unavailable.");
+                    isFrontline && localObject is not null ? "Frontline territory is stabilizing." : "Local player is unavailable.");
             }
 
+            if (isFrontline)
+                entryTrace.Stage("entry-gate", "OK", DateTime.UtcNow);
+            entryTrace.Stage("team-tracker", "START", DateTime.UtcNow);
             var localPvpTeam = ReadPvPTeam(localObject);
             var roster = CaptureTeamRoster(localObject, isFrontline, localPvpTeam);
             var local = Convert(localObject, PlayerClassification.Friendly, isRosterMember: true, localPvpTeam);
+            entryTrace.Stage("team-tracker", "OK", DateTime.UtcNow);
             var friendlies = new List<PlayerSnapshot>();
             var enemies = new List<PlayerSnapshot>();
             var unknownPlayers = new List<PlayerSnapshot>();
@@ -138,9 +163,12 @@ internal sealed class GameStateService(
             // visible ally a meaningful two-person group.
             friendlies.Add(local);
             var teamStatus = AddTeamProbeExplanation(roster.Status, local, observedPlayers);
-            var objectiveObservations = isFrontline
+            entryTrace.Stage("object-research", "START", DateTime.UtcNow);
+            var objectiveObservations = isFrontline && completedStableScan
                 ? CaptureObjectiveObservations(local.Position)
                 : [];
+            completedStableScan = mayScan;
+            entryTrace.Stage("object-research", "OK", DateTime.UtcNow);
 
             developmentLog.Changed(
                 "classification-roster",
@@ -150,6 +178,7 @@ internal sealed class GameStateService(
                 "classification-summary",
                 $"Observed {observedPlayers.Count}: {friendlies.Count} friendly (including self), {enemies.Count} enemy, {unknownPlayers.Count} unknown.");
 
+            entryTrace.Stage("game-state", "OK", DateTime.UtcNow);
             return new GameStateSnapshot(
                 DateTime.UtcNow,
                 clientState.IsLoggedIn,

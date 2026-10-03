@@ -86,7 +86,7 @@ internal sealed unsafe class FrontlineMapMarkerSensor
         if (agent is null)
             return [];
         var result = new List<FrontlineMapMarkerObservation>();
-        var count = Math.Min(agent->EventMarkersPtrs.Count, 512);
+        var count = Math.Clamp(agent->EventMarkersPtrs.Count, 0, 512);
         for (var index = 0; index < count; index++)
         {
             var marker = agent->EventMarkersPtrs[index].Value;

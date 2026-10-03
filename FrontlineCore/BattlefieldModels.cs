@@ -182,7 +182,12 @@ internal sealed record FrontlineMatchState(
     IReadOnlyList<string> GrandCompanies,
     bool ResultsDetected,
     string TeamScores,
-    string Evidence);
+    string Evidence)
+{
+    public bool DutyStarted { get; init; }
+    public bool HeaderVisible { get; init; }
+    public string ActiveCorroboration { get; init; } = "None";
+}
 
 internal sealed record DeathRespawnSnapshot(
     DeathRespawnState State,

@@ -1057,6 +1057,25 @@ Check("all five current Frontline maps have explicit adapters", 5,
 var lifecycleTracker = new MatchLifecycleTracker();
 var uiActive = new FrontlineUiObservation(true, false, TimeSpan.FromMinutes(19), 1400, [], "", "header");
 var uiResults = new FrontlineUiObservation(true, true, TimeSpan.FromMinutes(1), 1400, [], "", "results");
+var uiUnparsed = new FrontlineUiObservation(true, false, null, null, [], "", "header timer unresolved");
+var countdown = new MatchLifecycleTracker();
+Check("ordinary Frontline countdown remains PreMatch", FrontlineMatchLifecycle.PreMatch,
+    countdown.Update(true, false, uiUnparsed).Lifecycle);
+Check("gate opening from duty start becomes active", FrontlineMatchLifecycle.MatchActive,
+    countdown.Update(true, true, uiUnparsed).Lifecycle);
+var lateEntry = new MatchLifecycleTracker();
+Check("reconnect with active objective but unparsed timer becomes active", FrontlineMatchLifecycle.MatchActive,
+    lateEntry.Update(true, false, uiUnparsed, objectiveClaimCorroborated: true).Lifecycle);
+Check("temporary header loss cannot reverse active match", FrontlineMatchLifecycle.MatchActive,
+    lateEntry.Update(true, false, uiUnparsed with { HeaderVisible = false }).Lifecycle);
+Check("claim without visible header does not bypass pre-match gate", FrontlineMatchLifecycle.PreMatch,
+    new MatchLifecycleTracker().Update(true, false,
+        uiUnparsed with { HeaderVisible = false }, objectiveClaimCorroborated: true).Lifecycle);
+Check("late entry with parsed timer starts even when duty event was missed", FrontlineMatchLifecycle.MatchActive,
+    new MatchLifecycleTracker().Update(true, false, uiActive).Lifecycle);
+Check("a live match near the end does not revert to PreMatch", FrontlineMatchLifecycle.MatchActive,
+    lateEntry.Update(true, false,
+        uiActive with { TimeRemaining = TimeSpan.FromSeconds(85) }).Lifecycle);
 Check("Frontline lifecycle enters active match", FrontlineMatchLifecycle.MatchActive,
     lifecycleTracker.Update(true, true, uiActive).Lifecycle);
 Check("Frontline lifecycle detects results", FrontlineMatchLifecycle.Results,
@@ -1065,6 +1084,37 @@ Check("RESULTS is terminal while header remains visible", FrontlineMatchLifecycl
     lifecycleTracker.Update(true, true, uiActive).Lifecycle);
 Check("map exit resets terminal results", FrontlineMatchLifecycle.Outside,
     lifecycleTracker.Update(false, false, uiActive).Lifecycle);
+
+var entryGate = new FrontlineEntryGate();
+var entryNow = DateTime.UtcNow;
+Check("entry without local player blocks native sensors", false,
+    entryGate.MayScan(true, 1313, true, false, false, entryNow));
+Check("first stable territory frame remains gated", false,
+    entryGate.MayScan(true, 1313, true, false, true, entryNow.AddSeconds(1)));
+Check("stable territory allows sensors after short settle", true,
+    entryGate.MayScan(true, 1313, true, false, true, entryNow.AddSeconds(2.5)));
+Check("zoning immediately revokes research access", false,
+    entryGate.MayScan(true, 1313, true, true, true, entryNow.AddSeconds(3)));
+Check("return from zoning must settle again", false,
+    entryGate.MayScan(true, 1313, true, false, true, entryNow.AddSeconds(3.5)));
+foreach (var map in mapCases)
+{
+    var ready = new FrontlinePilotReadiness(true, FrontlineMatchLifecycle.MatchActive,
+        true, true, CombatProvider.RotationSolverReborn, true, true, true, true);
+    Check($"{map.Map} pilot common gates allow travel", true, ready.CanTravel);
+}
+var blocked = new FrontlinePilotReadiness(true, FrontlineMatchLifecycle.PreMatch,
+    true, false, CombatProvider.RotationSolverReborn, true, true, true, false);
+Check("loaded but inactive Reborn does not allow travel", false, blocked.CanTravel);
+Check("all simultaneous blockers are visible", true,
+    blocked.Lines.Any(line => line.Contains("PreMatch [FAIL]")) &&
+    blocked.Lines.Any(line => line.Contains("loading [FAIL]")) &&
+    blocked.Lines.Any(line => line.Contains("loaded: Yes [OK]")) &&
+    blocked.Lines.Any(line => line.Contains("active: No [FAIL]")));
+Check("unobservable External ACR stays fail closed", false,
+    (blocked with { Lifecycle = FrontlineMatchLifecycle.MatchActive, MeshReady = true,
+        Provider = CombatProvider.ExternalAcr, ProviderLoaded = true,
+        ProviderActivityObservable = false, ProviderActive = true }).CanTravel);
 
 Check("enemy-player combat blocks navigation", true,
     CombatContextPolicy.BlocksMovement(CombatContextPolicy.Resolve(true, true, false)));

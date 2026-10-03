@@ -4,6 +4,7 @@ using PvPSentinel.Integrations;
 using PvPSentinel.FrontlineCore;
 using PvPSentinel.Models;
 using PvPSentinel.Navigation;
+using PvPSentinel.Strategy;
 using System.Numerics;
 
 namespace PvPSentinel.UI;
@@ -17,6 +18,7 @@ internal sealed class DiagnosticWindow : Window
     private readonly WrathAdapter wrath;
     private readonly Func<string> lastAction;
     private readonly Func<string> groupPilotStatus;
+    private readonly Func<FrontlinePilotReadiness?> pilotReadiness;
     private readonly Action stopNavigation;
     private readonly Action closed;
 
@@ -28,6 +30,7 @@ internal sealed class DiagnosticWindow : Window
         WrathAdapter wrath,
         Func<string> lastAction,
         Func<string> groupPilotStatus,
+        Func<FrontlinePilotReadiness?> pilotReadiness,
         Action stopNavigation,
         Action closed)
         : base("PvP Sentinel - Development###PvPSentinelDiagnostics")
@@ -39,6 +42,7 @@ internal sealed class DiagnosticWindow : Window
         this.wrath = wrath;
         this.lastAction = lastAction;
         this.groupPilotStatus = groupPilotStatus;
+        this.pilotReadiness = pilotReadiness;
         this.stopNavigation = stopNavigation;
         this.closed = closed;
         Size = new Vector2(680, 760);
@@ -287,6 +291,10 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Adapter", battlefield.ActiveAdapter);
         KeyValue("Map", $"{battlefield.Map.DisplayName()} ({battlefield.TerritoryId})");
         KeyValue("Lifecycle / timer", $"{battlefield.Match.Lifecycle} / {(battlefield.Match.TimeRemaining is { } timer ? timer.ToString("mm\\:ss") : "UNRESOLVED")}");
+        KeyValue("DutyStarted", YesNo(battlefield.Match.DutyStarted));
+        KeyValue("FrontlineHeader visible", YesNo(battlefield.Match.HeaderVisible));
+        KeyValue("Active corroboration", battlefield.Match.ActiveCorroboration);
+        ImGui.TextWrapped(battlefield.Match.Evidence);
         KeyValue("Results terminal", YesNo(battlefield.Match.ResultsDetected));
         KeyValue("Team scores", battlefield.Match.TeamScores);
         KeyValue("Local PvP team", state.Game.TeamStatus.UsesBattalionPvPTeam ? battlefield.LocalPvPTeam.ToString() : "UNRESOLVED");
@@ -342,6 +350,12 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Route state", manual.State.ToString());
         KeyValue("Manual navigation armed", YesNo(manual.Armed));
         KeyValue("Group navigation pilots", groupPilotStatus());
+        if (pilotReadiness() is { } readiness)
+        {
+            ImGui.TextUnformatted($"Current pilot {(readiness.CanTravel ? "READY" : "BLOCKED")}");
+            foreach (var line in readiness.Lines)
+                ImGui.BulletText(line);
+        }
 
         var objectives = state.Battlefield.Objectives.ToArray();
         if (objectives.Length > 0)
