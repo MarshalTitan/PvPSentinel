@@ -43,6 +43,8 @@
     <Compile Include="../FrontlineCore/PlayerTrackingPolicy.cs" Link="FrontlineCore/PlayerTrackingPolicy.cs" />
     <Compile Include="../FrontlineCore/BattlefieldClusterer.cs" Link="FrontlineCore/BattlefieldClusterer.cs" />
     <Compile Include="../FrontlineCore/MatchLifecycleTracker.cs" Link="FrontlineCore/MatchLifecycleTracker.cs" />
+    <Compile Include="../FrontlineCore/Sensors/NativeMemorySnapshot.cs" Link="FrontlineCore/Sensors/NativeMemorySnapshot.cs" />
+    <Compile Include="../FrontlineCore/Sensors/NativeUtf8Reader.cs" Link="FrontlineCore/Sensors/NativeUtf8Reader.cs" />
     <Compile Include="../FrontlineCore/FrontlineEntryGate.cs" Link="FrontlineCore/FrontlineEntryGate.cs" />
     <Compile Include="../Strategy/FrontlinePilotReadiness.cs" Link="Strategy/FrontlinePilotReadiness.cs" />
     <Compile Include="../FrontlineCore/CombatContextPolicy.cs" Link="FrontlineCore/CombatContextPolicy.cs" />

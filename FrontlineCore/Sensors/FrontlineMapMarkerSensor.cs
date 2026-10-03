@@ -16,15 +16,30 @@ internal sealed unsafe class FrontlineMapMarkerSensor
     private DateTime bootstrapOpenedUtc = DateTime.MinValue;
     private bool bootstrapAttempted;
     private bool bootstrapOwned;
+    private DateTime lastReadUtc = DateTime.MinValue;
+    private IReadOnlyList<FrontlineMapMarkerObservation> lastMarkers = [];
     public MarkerCapture Capture(GameStateSnapshot game, FrontlineMatchLifecycle lifecycle)
     {
-        var agent = AgentMap.Instance();
-        var mapMarkers = ReadAgentMarkers(agent);
-        if (game.FrontlineMap is not (FrontlineMap.WorqorChirteh or FrontlineMap.FieldsOfGlory))
-            return new MarkerCapture(mapMarkers, "AgentMap.EventMarkers", string.Empty);
-
         if (firstCaptureUtc == DateTime.MinValue)
             firstCaptureUtc = game.CapturedAtUtc;
+        var settled = game.CapturedAtUtc - firstCaptureUtc >= TimeSpan.FromSeconds(2);
+        var agent = settled ? AgentMap.Instance() : null;
+
+        // The map agent is still rebuilding its vectors at territory entry.
+        // Avoid touching its marker data during those first transition frames.
+        IReadOnlyList<FrontlineMapMarkerObservation> mapMarkers = !settled
+            ? []
+            : game.CapturedAtUtc - lastReadUtc < TimeSpan.FromMilliseconds(250)
+                ? lastMarkers
+                : ReadAgentMarkers(agent);
+        if (settled &&
+            game.CapturedAtUtc - lastReadUtc >= TimeSpan.FromMilliseconds(250))
+        {
+            lastMarkers = mapMarkers;
+            lastReadUtc = game.CapturedAtUtc;
+        }
+        if (game.FrontlineMap is not (FrontlineMap.WorqorChirteh or FrontlineMap.FieldsOfGlory))
+            return new MarkerCapture(mapMarkers, "AgentMap.EventMarkers", string.Empty);
 
         var action = string.Empty;
         if (bootstrapOwned && game.CapturedAtUtc - bootstrapOpenedUtc >= TimeSpan.FromSeconds(1.25))
@@ -72,6 +87,8 @@ internal sealed unsafe class FrontlineMapMarkerSensor
         bootstrapAttempted = false;
         firstCaptureUtc = DateTime.MinValue;
         bootstrapOpenedUtc = DateTime.MinValue;
+        lastReadUtc = DateTime.MinValue;
+        lastMarkers = [];
     }
 
     private static bool HasNamedTriumph(IReadOnlyList<FrontlineMapMarkerObservation> markers) =>
@@ -86,23 +103,24 @@ internal sealed unsafe class FrontlineMapMarkerSensor
         if (agent is null)
             return [];
         var result = new List<FrontlineMapMarkerObservation>();
-        var count = Math.Clamp(agent->EventMarkersPtrs.Count, 0, 512);
-        for (var index = 0; index < count; index++)
+        if (!NativeMemorySnapshot.TryReadPointerList((nint)(&agent->EventMarkersPtrs),
+                512, out var pointers))
+            return result;
+        foreach (var pointer in pointers)
         {
-            var marker = agent->EventMarkersPtrs[index].Value;
-            if (marker is not null)
+            if (NativeMemorySnapshot.TryReadStruct<MapMarkerData>(pointer, out var marker))
                 result.Add(Copy(marker, "AgentMap.EventMarkers"));
         }
         return result;
     }
 
-    private static FrontlineMapMarkerObservation Copy(MapMarkerData* marker, string source) => new(
-        marker->IconId,
-        marker->DataId,
-        marker->ObjectiveId,
-        marker->Position,
-        marker->TooltipString is null ? string.Empty : marker->TooltipString->ToString(),
-        marker->EndTimestamp,
-        marker->EventState,
+    private static FrontlineMapMarkerObservation Copy(MapMarkerData marker, string source) => new(
+        marker.IconId,
+        marker.DataId,
+        marker.ObjectiveId,
+        marker.Position,
+        NativeUtf8Reader.Read((nint)marker.TooltipString),
+        marker.EndTimestamp,
+        marker.EventState,
         source);
 }

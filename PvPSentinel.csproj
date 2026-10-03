@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.3.1.15</Version>
+    <Version>0.3.1.16</Version>
     <Author>MarshalTitan</Author>
     <Name>PvP Sentinel</Name>
     <Punchline>Frontline strategy, safe navigation, lifecycle, and modular combat providers.</Punchline>
