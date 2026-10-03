@@ -123,24 +123,25 @@ sharedField.Update(FrontlineMap.OnsalHakair, false, true, true,
 var spawnCrowd = new FriendlyCluster(new Vector3(5, 0, 0), Vector3.Zero, 14);
 var smallerField = new FriendlyCluster(new Vector3(90, 0, 0), Vector3.Zero, 5);
 var largerField = new FriendlyCluster(new Vector3(150, 0, 0), Vector3.Zero, 10);
+var playerAwayFromBase = new Vector3(200, 0, 0);
 var initialField = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
-    Vector3.Zero, false, [spawnCrowd, smallerField], fieldNow.AddSeconds(1));
+    playerAwayFromBase, false, [spawnCrowd, smallerField], fieldNow.AddSeconds(1));
 Check("known spawn cluster rejected even when much larger", 5, initialField.Cluster?.PlayerCount ?? 0);
 var transient = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
-    Vector3.Zero, false, [spawnCrowd, smallerField, largerField], fieldNow.AddSeconds(2));
+    playerAwayFromBase, false, [spawnCrowd, smallerField, largerField], fieldNow.AddSeconds(2));
 Check("larger field group does not trigger immediate switch", 5, transient.Cluster?.PlayerCount ?? 0);
 var confirmed = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
-    Vector3.Zero, false, [spawnCrowd, smallerField, largerField], fieldNow.AddSeconds(6));
+    playerAwayFromBase, false, [spawnCrowd, smallerField, largerField], fieldNow.AddSeconds(6));
 Check("sustained stronger field group can replace incumbent", 10, confirmed.Cluster?.PlayerCount ?? 0);
 var movingField = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
-    Vector3.Zero, false, [new FriendlyCluster(new Vector3(154, 0, 0),
+    playerAwayFromBase, false, [new FriendlyCluster(new Vector3(154, 0, 0),
         new Vector3(4, 0, 0), 10)], fieldNow.AddSeconds(7));
 Check("moving field position is smoothed and briefly led", true,
     sharedField.SmoothedCenter is { } smooth &&
     movingField.Destination.X > smooth.X && movingField.Destination.X < 154f);
 Check("unreliable classification yields no field destination", true,
     sharedField.Update(FrontlineMap.OnsalHakair, true, false, false,
-        Vector3.Zero, false, [largerField], fieldNow.AddSeconds(8)).Cluster is null);
+        playerAwayFromBase, false, [largerField], fieldNow.AddSeconds(8)).Cluster is null);
 
 var yieldTracker = new ExternalCombatYieldTracker();
 var yieldStart = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -1003,6 +1004,18 @@ var noFieldPilot = new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-R
 Check("Onsal does not chase Ovoo without field allies", true,
     noFieldPilot.Update(onsalGame, onsalBattle, [],
         ManualNavigationSnapshot.Disarmed, true, true, true) is null);
+Check("tracked field rejection prevents raw base-cluster fallback", true,
+    new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP")
+        .Update(onsalGame, onsalBattle,
+            [new FriendlyCluster(new Vector3(90, 0, 0), Vector3.Zero, 12)],
+            ManualNavigationSnapshot.Disarmed, true, true, true,
+            trackedFieldGroup: default(FieldGroupChoice)) is null);
+Check("Onsal uses smoothed led group destination at commitment", new Vector3(99, 0, 0),
+    new FieldGroupPilot(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP")
+        .Update(onsalGame, onsalBattle, [sealGroup],
+            ManualNavigationSnapshot.Disarmed, true, true, true,
+            trackedFieldGroup: new FieldGroupChoice(sealGroup, new Vector3(99, 0, 0)))?.Position
+        ?? Vector3.Zero);
 
 var thirdTraceWorqor = new WorqorChirtehAdapter();
 thirdTraceWorqor.Reset(trackingNow);
