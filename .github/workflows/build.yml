@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Fix delayed Frontline activation after reconnect with current claimed Triumph corroboration and sticky active lifecycle; preserve pre-match and Results. Show all pilot blockers, including Reborn loaded versus autorotation active. Gate and stagger entry native research, and save sparse crash-stage breadcrumbs to frontline-entry-stages.log. Crash root cause is not proven. Preserve five map pilots, objective logic, Reborn combat safety, mounting, threat sensing, and route recovery. Queue/requeue and LB remain disabled. Upload events.jsonl, summary.json, dalamud.log and frontline-entry-stages.log after supervised testing."
+            --notes "Fix Worqor first-life no-destination stall: prefer supported allied Triumphs, otherwise commit one bounded leg to the existing spawn-filtered, smoothed field-group destination. Hold after arrival and re-evaluate; cancel pilot-owned routes when readiness fails. Preserve v0.3.1.14 lifecycle and crash diagnostics, all five pilots, Reborn coexistence, mount, threat, navigation and staged recovery. Queue/requeue, LB and movement diversity remain disabled. Upload events.jsonl, summary.json, dalamud.log and frontline-entry-stages.log after supervised testing."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

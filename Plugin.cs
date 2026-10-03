@@ -238,6 +238,9 @@ public sealed class Plugin : IDalamudPlugin
             config.Enabled && config.NavigationEnabled && config.WorqorGroupNavigationEnabled,
             pilotReadiness.CanTravel,
             trackedFieldGroup);
+        if (worqorGroupPilot.CancelDestinationId is { } unsafeWorqor &&
+            navigation.CurrentManualDestinationId == unsafeWorqor)
+            navigation.StopManualNavigation("Worqor pilot safety gate became unavailable.");
         if (groupPlan is not null)
         {
             navigation.SetManualNavigationArmed(true);

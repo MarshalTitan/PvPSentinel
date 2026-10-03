@@ -13,7 +13,7 @@ internal sealed record WorqorGroupPlan(
     string Reason);
 
 /// <summary>
-/// Opt-in Worqor destination selection. Once a supported Triumph is chosen,
+/// Opt-in Worqor destination selection. Once a supported Triumph or field group is chosen,
 /// the existing bounded manual route owns movement until arrival or death.
 /// No timer, marker flicker, or new cluster can redirect an active route.
 /// </summary>
@@ -34,6 +34,7 @@ internal sealed class WorqorGroupPilot
 
     public string Status { get; private set; } = "Off";
     public string? CommittedDestinationId => committedId;
+    public string? CancelDestinationId { get; private set; }
 
     public IReadOnlyList<ManualNavigationEvent> DrainEvents()
     {
@@ -51,6 +52,7 @@ internal sealed class WorqorGroupPilot
         bool rebornReady, FieldGroupChoice? trackedFieldGroup = null)
     {
         var now = game.CapturedAtUtc;
+        CancelDestinationId = null;
         if (game.FrontlineMap != FrontlineMap.WorqorChirteh ||
             battlefield.Match.Lifecycle == FrontlineMatchLifecycle.Results)
         {
@@ -81,17 +83,17 @@ internal sealed class WorqorGroupPilot
         }
         if (battlefield.Match.Lifecycle != FrontlineMatchLifecycle.MatchActive)
         {
-            WaitFor("Waiting for active match", now);
+            PauseUnsafeRoute("Waiting for active match", now);
             return null;
         }
         if (game.LocalPlayer is null || !game.IsClassificationReliable)
         {
-            WaitFor($"Waiting for reliable team: {game.ClassificationReliabilityExplanation}", now);
+            PauseUnsafeRoute($"Waiting for reliable team: {game.ClassificationReliabilityExplanation}", now);
             return null;
         }
         if (!rebornReady)
         {
-            WaitFor("Reborn autorotation is inactive; enable it after death or reconnect to resume group travel", now);
+            PauseUnsafeRoute("Pilot readiness unavailable; see lifecycle, vnavmesh and combat-provider blockers", now);
             return null;
         }
 
@@ -151,7 +153,7 @@ internal sealed class WorqorGroupPilot
         }
         if (now < selectAfterUtc)
         {
-            Status = "Holding before choosing another group-supported Triumph";
+            Status = "Holding before re-evaluating a supported Triumph or allied field group";
             return null;
         }
 
@@ -189,26 +191,21 @@ internal sealed class WorqorGroupPilot
 
         if (viable.Length == 0)
         {
-            if (postDeathRegroupPending)
+            // The shared tracker has already excluded spawn groups, required a
+            // useful field force, and smoothed/led its position. Use this same
+            // fallback on the first life as after a death; never chase raw PCs.
+            if (trackedFieldGroup?.Cluster is { PlayerCount: >= 3 } fieldGroup)
             {
-                var regroup = trackedFieldGroup.HasValue
-                    ? trackedFieldGroup.Value.Cluster is { } tracked
-                        ? new WorqorRegroupCandidate(trackedFieldGroup.Value.Destination, tracked.PlayerCount)
-                        : null
-                    : WorqorRegroupPolicy.Choose(game.LocalPlayer.Position,
-                        clusters.Select(cluster => new WorqorRegroupCandidate(
-                            cluster.Center, cluster.PlayerCount)));
-                if (regroup is not null)
-                {
-                    committedId = "WOR-REGROUP";
-                    var regroupDetail = $"destination={committedId}; group={regroup.PlayerCount}; distance={HorizontalDistance(game.LocalPlayer.Position, regroup.Position):F1}; reason=no-supported-Triumph-after-death; commitment=arrival-or-death";
-                    Event("worqor_group_regroup_selected", regroupDetail, now);
-                    Status = "Regrouping with allied cluster after death until arrival";
-                    return new WorqorGroupPlan(committedId, "Allied group after respawn",
-                        regroup.Position, [], regroupDetail);
-                }
+                var position = trackedFieldGroup.Value.Destination;
+                committedId = "WOR-REGROUP";
+                var reason = postDeathRegroupPending ? "no-supported-Triumph-after-death" : "no-supported-Triumph";
+                var fallbackDetail = $"destination={committedId}; group={fieldGroup.PlayerCount}; distance={HorizontalDistance(game.LocalPlayer.Position, position):F1}; reason={reason}; source=shared-field-tracker; commitment=arrival-or-death";
+                Event("worqor_group_regroup_selected", fallbackDetail, now);
+                Status = "Committed to allied field group until arrival or death";
+                return new WorqorGroupPlan(committedId, "Allied field group",
+                    position, [], fallbackDetail);
             }
-            WaitFor("Waiting for a fresh Triumph with allied support or a reachable allied group after death", now);
+            WaitFor("Waiting for a supported Triumph or a valid tracked allied field group", now);
             return null;
         }
 
@@ -231,6 +228,7 @@ internal sealed class WorqorGroupPilot
 
     private void Reset(bool clearSpawn)
     {
+        CancelDestinationId = null;
         committedId = null;
         lastArrivedId = null;
         lastArrivalUtc = DateTime.MinValue;
@@ -246,6 +244,18 @@ internal sealed class WorqorGroupPilot
             diedThisMatch = false;
         }
         Status = "Off";
+    }
+
+    private void PauseUnsafeRoute(string reason, DateTime now)
+    {
+        if (committedId is { } unsafeDestination)
+        {
+            CancelDestinationId = unsafeDestination;
+            committedId = null;
+            selectAfterUtc = now.AddSeconds(4);
+            Event("worqor_group_safety_cancel", $"destination={unsafeDestination}; reason={reason}", now);
+        }
+        WaitFor(reason, now);
     }
 
     private void Event(string name, string detail, DateTime now) =>
