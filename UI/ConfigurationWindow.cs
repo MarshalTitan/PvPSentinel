@@ -3,6 +3,7 @@ using Dalamud.Interface.Windowing;
 using PvPSentinel.Models;
 using PvPSentinel.Integrations;
 using PvPSentinel.Navigation;
+using PvPSentinel.Strategy;
 using System.Numerics;
 
 namespace PvPSentinel.UI;
@@ -18,6 +19,8 @@ internal sealed class ConfigurationWindow : Window
     private readonly Func<bool> isEmergencyStopped;
     private readonly Func<RotationSolverRebornStatus> rebornStatus;
     private readonly PreferredMountCatalog mountCatalog;
+    private readonly Func<FrontlinePilotReadiness?> readiness;
+    private readonly Func<FrontlineMap> currentMap;
 
     public ConfigurationWindow(
         Configuration config,
@@ -28,6 +31,7 @@ internal sealed class ConfigurationWindow : Window
         Action resetMatchCounter,
         Func<bool> isEmergencyStopped,
         Func<RotationSolverRebornStatus> rebornStatus,
+        Func<FrontlinePilotReadiness?> readiness, Func<FrontlineMap> currentMap,
         PreferredMountCatalog mountCatalog)
         : base("PvP Sentinel - Configuration###PvPSentinelConfiguration")
     {
@@ -39,66 +43,31 @@ internal sealed class ConfigurationWindow : Window
         this.resetMatchCounter = resetMatchCounter;
         this.isEmergencyStopped = isEmergencyStopped;
         this.rebornStatus = rebornStatus;
+        this.readiness = readiness;
+        this.currentMap = currentMap;
         this.mountCatalog = mountCatalog;
-        Size = new Vector2(620, 820);
+        Size = new Vector2(550, 460);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
     public override void Draw()
     {
-        ImGui.TextWrapped("Frontline development controls. Manual routes remain available on all maps. Worqor group navigation is separately opt-in; queue/requeue and generic objective automation remain disabled.");
-        ImGui.Separator();
-
-        if (ImGui.Button("EMERGENCY STOP", new Vector2(180, 34)))
-            emergencyStop();
-        ImGui.SameLine();
-        if (isEmergencyStopped())
-        {
-            ImGui.TextWrapped("STOP LATCHED");
-            if (ImGui.Button("Clear emergency-stop latch"))
-                clearEmergencyStop();
-        }
-        else
-        {
-            ImGui.TextDisabled("Stops PvPSentinel-owned movement/actions/queue. External plugins remain independent.");
-        }
-
-        ImGui.Separator();
-
-        if (BeginSection("Core controls", true))
+        if (BeginSection("Core", true))
         {
             DrawCheckbox("Enable PvPSentinel", config.Enabled, value => config.Enabled = value);
-            ImGui.Indent();
             DrawCheckbox("Enable navigation", config.NavigationEnabled, value => config.NavigationEnabled = value);
             DrawCombatProvider();
-            if (config.CombatProvider == CombatProvider.RotationSolverReborn)
-            {
-                DrawCheckbox("Continue manual route during Reborn combat", config.ContinueManualTravelDuringRebornCombat,
-                    value => config.ContinueManualTravelDuringRebornCombat = value);
-                ImGui.TextWrapped("Reborn still handles combat actions. PvP Sentinel keeps following the selected vnavmesh route on foot, even while combat is active. Movement may interrupt casts. STOP, death, results, and path-failure limits still cancel movement.");
-            }
-            if (config.CombatProvider == CombatProvider.NativePvPSentinel)
-                DrawNativeCombatMode();
-            DrawCheckbox("Enable strategic target scoring", config.TargetSelectionEnabled, value => config.TargetSelectionEnabled = value);
-            DrawCheckbox("Prioritize safe finish-KO opportunities", config.FinishKoPriorityEnabled, value => config.FinishKoPriorityEnabled = value);
-            DrawCheckbox("Enable long-distance mounting", config.MountingEnabled, value => config.MountingEnabled = value);
-            DrawCheckbox("Worqor group navigation (opt-in)", config.WorqorGroupNavigationEnabled,
-                value => config.WorqorGroupNavigationEnabled = value);
-            ImGui.TextWrapped("Requires PvP Sentinel navigation and active RotationSolverReborn autorotation. Picks a fresh unclaimed or soon-activating Triumph near a friendly group and keeps it until arrival or death. After respawn, if no such Triumph is available, it makes one trip to a visible allied field group. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it for the match.");
-            DrawCheckbox("Seal Rock group navigation (opt-in)", config.SealRockGroupNavigationEnabled,
-                value => config.SealRockGroupNavigationEnabled = value);
-            ImGui.TextWrapped("Supervised match pilot. Requires navigation, ready vnavmesh, and active Reborn autorotation. Commits to a fresh neutral tomelith supported by allies, or makes one trip to a visible allied field group. Holds through combat until arrival or death. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it. Captured tomelith ownership is not used.");
-            DrawCheckbox("Shatter group navigation (opt-in)", config.ShatterGroupNavigationEnabled,
-                value => config.ShatterGroupNavigationEnabled = value);
-            ImGui.TextWrapped("Supervised Shatter match pilot. Routes to an approach outside supported ice or makes one bounded trip to a visible allied field group. An inactive or depleted ice retires the route after confirmation. Requires navigation, ready vnavmesh, reliable team classification, and active Reborn autorotation. If Reborn is inactive after reconnect or death, enable its autorotation to resume travel. Manual selection takes priority; STOP disables this mode. A bounded route failure pauses it.");
-            DrawCheckbox("Onsal Hakair group navigation (opt-in)", config.OnsalGroupNavigationEnabled,
-                value => config.OnsalGroupNavigationEnabled = value);
-            ImGui.TextWrapped("Supervised allied-field-group travel only. Ovoo state and ownership are unresolved, so ONS-xx locations remain manual destinations and are never chosen by this pilot. Requires active Reborn autorotation, reliable team classification, and ready vnavmesh. STOP disables the mode; a bounded route failure pauses it.");
-            DrawCheckbox("Secure group navigation (opt-in)", config.SecureGroupNavigationEnabled,
-                value => config.SecureGroupNavigationEnabled = value);
-            ImGui.TextWrapped("Supervised allied-field-group travel only. Secure objective selection remains disabled and unresolved; SEC-CENTER and discovered SEC-xx locations remain available for manual testing. Requires active Reborn autorotation, reliable team classification, and ready vnavmesh.");
-            ImGui.TextDisabled("Other-map autonomous strategy, queue/requeue: disabled");
-            ImGui.Unindent();
+            var pilot = readiness();
+            ImGui.Separator();
+            ImGui.Text("Status");
+            ImGui.Text($"Frontline: {currentMap().DisplayName()}");
+            ImGui.Text($"Navigation: {(pilot?.CanTravel == true ? "Active" : config.NavigationEnabled ? "Blocked" : "Off")}");
+            ImGui.Text($"Combat provider: {(pilot?.ProviderActive == true ? "Ready" : "Not ready")}");
+            ImGui.Text($"vnavmesh: {(pilot?.MeshReady == true ? "Ready" : "Unavailable/loading")}");
+            if (ImGui.Button("EMERGENCY STOP", new Vector2(180, 34)))
+                emergencyStop();
+            if (isEmergencyStopped() && ImGui.Button("Clear emergency-stop latch"))
+                clearEmergencyStop();
         }
 
         if (BeginSection("Diagnostics and testing display", true))
@@ -132,8 +101,10 @@ internal sealed class ConfigurationWindow : Window
             DrawPreferredMount();
         }
 
-        if (BeginSection("Targets"))
+        if (BeginSection("Advanced combat policy"))
         {
+            DrawCheckbox("Enable strategic target scoring", config.TargetSelectionEnabled, value => config.TargetSelectionEnabled = value);
+            DrawCheckbox("Prioritize safe finish-KO opportunities", config.FinishKoPriorityEnabled, value => config.FinishKoPriorityEnabled = value);
             DrawFloat("Enemy engagement radius", config.EnemyEngagementRadius, 10f, 40f, value => config.EnemyEngagementRadius = value, "%.1f y");
             DrawFloat("Finish target HP threshold", config.FinishTargetHpPercent, 5f, 50f, value => config.FinishTargetHpPercent = value, "%.0f %%");
             DrawFloat("Finish target max chase", config.FinishTargetMaxChaseDistance, 10f, 40f, value => config.FinishTargetMaxChaseDistance = value, "%.1f y");
@@ -203,7 +174,7 @@ internal sealed class ConfigurationWindow : Window
         if (BeginSection("Frontline lifecycle and allowed maps"))
         {
             ImGui.TextDisabled("Automatic queue / accept / requeue: disabled for manual M2 validation");
-            ImGui.TextWrapped("Allowed-map preferences are retained for later lifecycle work, but this build never queues automatically.");
+            ImGui.TextWrapped("These preferences apply only to future queue work, not navigation within a match.");
             DrawCheckbox("The Borderland Ruins (Secure)", config.AllowBorderlandRuins, value => config.AllowBorderlandRuins = value);
             DrawCheckbox("Seal Rock (Seize)", config.AllowSealRock, value => config.AllowSealRock = value);
             DrawCheckbox("The Fields of Glory (Shatter)", config.AllowFieldsOfGlory, value => config.AllowFieldsOfGlory = value);
@@ -308,16 +279,12 @@ internal sealed class ConfigurationWindow : Window
                 ? new Vector4(0.35f, 0.9f, 0.55f, 1f)
                 : new Vector4(1f, 0.55f, 0.25f, 1f);
             ImGui.TextColored(color,
-                $"Reborn: installed {YesNo(status.Installed)}, loaded {YesNo(status.Loaded)}, active {YesNo(status.AutorotationActive)}, version {status.Version}");
-            ImGui.TextWrapped("Reborn owns local targeting, combat actions, and ordinary PvP defensives. PvPSentinel observes Reborn's read-only status. Manual travel may continue during combat when the option above is enabled; autonomous travel still yields. Reborn's PvP-blocked control IPC is never invoked.");
-            ImGui.TextWrapped("Recommended Reborn setup: auto-enable at PvP start ON; auto-disable at match end ON; auto-disable when dead OFF; auto-disable after combat OFF; stop actions while Guarding ON; cancel casts when the target Guards ON; position lock OFF; Purify Heavy/Bind ON.");
-            if (config.NativeCombatMode == NativeCombatMode.Active)
-                ImGui.TextDisabled("Native Active is configured but dormant while the Reborn provider is selected. PvPSentinel never runs both combat owners together.");
+                $"Reborn: {(status.Loaded ? "loaded" : "not loaded")}, {(status.AutorotationActive ? "active" : "inactive")}, {status.Version}");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("PvPSentinel observes Reborn readiness only. See Development for all blockers and RSR settings.");
         }
-        else
-        {
-            ImGui.TextWrapped("Generic External mode has no MMOMinion or Champion IPC. It only yields PvPSentinel-owned movement from local combat/action state.");
-        }
+        else if (config.CombatProvider == CombatProvider.NativePvPSentinel)
+            DrawNativeCombatMode();
     }
 
     private void SelectProvider(CombatProvider provider, string label)

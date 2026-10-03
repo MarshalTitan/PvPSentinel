@@ -28,7 +28,10 @@ internal sealed record FrontlinePilotReadiness(
         $"Provider installed: {Yes(ProviderInstalled)}",
         $"Provider loaded: {Yes(ProviderLoaded)} [{Gate(ProviderLoaded)}]",
         $"Provider activity observable: {Yes(ProviderActivityObservable)} [{Gate(ProviderActivityObservable)}]",
-        $"Provider autorotation active: {Yes(ProviderActive)} [{Gate(ProviderActive)}]",
+        $"Provider active: {Yes(ProviderActive)} [{Gate(ProviderActive)}]",
+        Provider == CombatProvider.RotationSolverReborn && ProviderLoaded && !ProviderActive
+            ? "RSR inactive: check PvP auto-on ON, turn-off-on-death OFF, disable-during-transitions OFF, PvP auto-off ON, after-combat auto-off OFF, PvP-specific state ON."
+            : "Provider activity must be verified before automatic travel.",
     ];
 
     private static string Yes(bool value) => value ? "Yes" : "No";

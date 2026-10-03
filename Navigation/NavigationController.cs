@@ -179,11 +179,9 @@ internal sealed class NavigationController(
 
         var hasManualDestination = manualArmed &&
             (manualRequest is not null || activeManual is not null || manualPendingPath is not null || manualYieldedToCombat);
-        var continueManualWithReborn = config.ContinueManualTravelDuringRebornCombat &&
-            config.Enabled && config.NavigationEnabled &&
+        var continueManualWithReborn = config.Enabled && config.NavigationEnabled &&
             combat.Provider == CombatProvider.RotationSolverReborn && combat.ControllerActive &&
             game.IsFrontline && !game.IsBetweenAreas && game.IsClassificationReliable &&
-            (!game.IsMounted || config.MountingEnabled) &&
             battlefield.Match.Lifecycle == FrontlineMatchLifecycle.MatchActive &&
             game.LocalPlayer is { IsDead: false };
         var combatEvidence = battlefield.Combat.BlocksMovement || combat.YieldNavigation;

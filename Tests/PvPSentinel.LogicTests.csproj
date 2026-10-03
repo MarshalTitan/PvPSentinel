@@ -39,6 +39,7 @@
     <Compile Include="../Strategy/ShatterGroupPilot.cs" Link="Strategy/ShatterGroupPilot.cs" />
     <Compile Include="../Strategy/FieldGroupPilot.cs" Link="Strategy/FieldGroupPilot.cs" />
     <Compile Include="../Strategy/FieldGroupTracker.cs" Link="Strategy/FieldGroupTracker.cs" />
+    <Compile Include="../Strategy/FrontlineDynamicFollowController.cs" Link="Strategy/FrontlineDynamicFollowController.cs" />
     <Compile Include="../FrontlineCore/BattlefieldModels.cs" Link="FrontlineCore/BattlefieldModels.cs" />
     <Compile Include="../FrontlineCore/TeamClassifier.cs" Link="FrontlineCore/TeamClassifier.cs" />
     <Compile Include="../FrontlineCore/PlayerTrackingPolicy.cs" Link="FrontlineCore/PlayerTrackingPolicy.cs" />
