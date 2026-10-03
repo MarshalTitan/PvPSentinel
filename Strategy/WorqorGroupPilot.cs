@@ -48,7 +48,7 @@ internal sealed class WorqorGroupPilot
         IReadOnlyList<FriendlyCluster> clusters,
         ManualNavigationSnapshot route,
         bool enabled,
-        bool rebornReady)
+        bool rebornReady, FieldGroupChoice? trackedFieldGroup = null)
     {
         var now = game.CapturedAtUtc;
         if (game.FrontlineMap != FrontlineMap.WorqorChirteh ||
@@ -191,9 +191,13 @@ internal sealed class WorqorGroupPilot
         {
             if (postDeathRegroupPending)
             {
-                var regroup = WorqorRegroupPolicy.Choose(game.LocalPlayer.Position,
-                    clusters.Select(cluster => new WorqorRegroupCandidate(
-                        cluster.Center, cluster.PlayerCount)));
+                var regroup = trackedFieldGroup.HasValue
+                    ? trackedFieldGroup.Value.Cluster is { } tracked
+                        ? new WorqorRegroupCandidate(trackedFieldGroup.Value.Destination, tracked.PlayerCount)
+                        : null
+                    : WorqorRegroupPolicy.Choose(game.LocalPlayer.Position,
+                        clusters.Select(cluster => new WorqorRegroupCandidate(
+                            cluster.Center, cluster.PlayerCount)));
                 if (regroup is not null)
                 {
                     committedId = "WOR-REGROUP";

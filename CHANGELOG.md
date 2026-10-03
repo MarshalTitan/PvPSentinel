@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1.13 — field-group tracking and delayed-path safety
+
+- Add independent shared field-group tracking for all five supervised pilots' fallback/regroup choices. Require a visible group of at least three, exclude observed pre-match/respawn base groups, confirm a stronger challenger, smooth its center, and lead its motion briefly. Objective selection and one-leg destination commitment remain map-specific.
+- Require vnavmesh build progress to be idle as well as Nav.IsReady before path requests. Explicitly invalidate pending route generations on stop/owner transitions. Validate the full generated path, then remove a nearby already-passed prefix only without skipping protected turns/elevation; request a fresh route if the player moved beyond that safe prefix. Existing staged recovery and failure bounds remain.
+- Audit the AGPL-licensed Auto PVP Series Grind project as a concepts-only reference in `docs/FRONTLINE_UPSTREAM_AUDIT.md` and `docs/CC_ARCHITECTURE_REFERENCE.md`. No code, coordinates, presets, or assets copied. Queue/requeue and CC remain disabled.
+
 ## 0.3.1.12 — Onsal and Secure supervised group pilots
 
 - Add separate default-off Onsal Hakair and Borderland Ruins (Secure) pilot toggles. Both use a small shared field-group policy: choose a visible allied cluster of at least three away from the local position and observed spawn, commit one bounded vnavmesh leg, hold after arrival, and reselect after death/respawn. Manual navigation and STOP take priority. Reborn autorotation, reliable team classification, vnavmesh, master/navigation enable, map allowance, and active match are required. Bounded failure pauses until toggled or the next match.

@@ -35,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DevelopmentLogger developmentLog;
     private readonly FriendlyClusterAnalyzer clusterAnalyzer;
     private readonly MainGroupTracker mainGroupTracker;
+    private readonly FieldGroupTracker fieldGroupTracker = new();
     private readonly TargetSelector targetSelector;
     private readonly ObjectiveStrategyService objectiveStrategy;
     private readonly WorqorGroupPilot worqorGroupPilot = new();
@@ -172,6 +173,11 @@ public sealed class Plugin : IDalamudPlugin
         var threat = threatTracker.Evaluate(game);
         var battlefieldState = battlefield.Update(game, threat);
         var clusters = clusterAnalyzer.Analyze(game.Friendlies, config.FriendlyClusterLinkRadius, game.CapturedAtUtc);
+        var trackedFieldGroup = fieldGroupTracker.Update(game.FrontlineMap,
+            battlefieldState.Match.Lifecycle == FrontlineMatchLifecycle.MatchActive,
+            battlefieldState.Match.Lifecycle == FrontlineMatchLifecycle.PreMatch,
+            game.IsClassificationReliable, game.LocalPlayer?.Position,
+            game.LocalPlayer?.IsDead == true, clusters, game.CapturedAtUtc);
         var mainCluster = mainGroupTracker.Select(clusters, game.CapturedAtUtc);
         var target = targetSelector.Select(game, mainCluster, config);
         var objective = objectiveStrategy.Select(game, config);
@@ -203,7 +209,8 @@ public sealed class Plugin : IDalamudPlugin
         var groupPlan = worqorGroupPilot.Update(
             game, battlefieldState, clusters, navigation.ManualSnapshot,
             config.Enabled && config.NavigationEnabled && config.WorqorGroupNavigationEnabled,
-            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive);
+            config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
+            trackedFieldGroup);
         if (groupPlan is not null)
         {
             navigation.SetManualNavigationArmed(true);
@@ -217,7 +224,7 @@ public sealed class Plugin : IDalamudPlugin
             config.Enabled && config.NavigationEnabled && config.AllowSealRock &&
             config.SealRockGroupNavigationEnabled,
             config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
-            vnav.IsReady);
+            vnav.IsReady, trackedFieldGroup);
         if (sealRockPlan is not null)
         {
             navigation.SetManualNavigationArmed(true);
@@ -231,7 +238,7 @@ public sealed class Plugin : IDalamudPlugin
             config.Enabled && config.NavigationEnabled && config.AllowFieldsOfGlory &&
             config.ShatterGroupNavigationEnabled,
             config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
-            vnav.IsReady);
+            vnav.IsReady, trackedFieldGroup);
         if (shatterGroupPilot.RetiredDestinationId is { } retiredId &&
             navigation.ManualSnapshot.DestinationId == retiredId)
             navigation.StopManualNavigation("Shatter ice became inactive or depleted; selecting another destination.");
@@ -249,7 +256,8 @@ public sealed class Plugin : IDalamudPlugin
             config.Enabled && config.NavigationEnabled && config.AllowOnsalHakair &&
             config.OnsalGroupNavigationEnabled,
             config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
-            vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId);
+            vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId,
+            trackedFieldGroup);
         if (onsalGroupPilot.CancelDestinationId is { } unsafeOnsal &&
             navigation.CurrentManualDestinationId == unsafeOnsal)
             navigation.StopManualNavigation("Onsal pilot safety gate became unavailable.");
@@ -266,7 +274,8 @@ public sealed class Plugin : IDalamudPlugin
             config.Enabled && config.NavigationEnabled && config.AllowBorderlandRuins &&
             config.SecureGroupNavigationEnabled,
             config.CombatProvider == CombatProvider.RotationSolverReborn && combatDecision.ControllerActive,
-            vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId);
+            vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId,
+            trackedFieldGroup);
         if (secureGroupPilot.CancelDestinationId is { } unsafeSecure &&
             navigation.CurrentManualDestinationId == unsafeSecure)
             navigation.StopManualNavigation("Secure pilot safety gate became unavailable.");

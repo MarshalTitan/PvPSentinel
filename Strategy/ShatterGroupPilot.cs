@@ -42,7 +42,7 @@ internal sealed class ShatterGroupPilot
 
     public ShatterGroupPlan? Update(GameStateSnapshot game, BattlefieldState battlefield,
         IReadOnlyList<FriendlyCluster> clusters, ManualNavigationSnapshot route,
-        bool enabled, bool rebornReady, bool meshReady)
+        bool enabled, bool rebornReady, bool meshReady, FieldGroupChoice? trackedFieldGroup = null)
     {
         var now = game.CapturedAtUtc;
         RetiredDestinationId = null;
@@ -215,22 +215,23 @@ internal sealed class ShatterGroupPilot
 
         // Group travel is a bounded leg to its current position, not pursuit of
         // moving players. Wait until the group has left the spawn/local area.
-        var fieldGroup = clusters
+        var fieldGroup = trackedFieldGroup.HasValue ? trackedFieldGroup.Value.Cluster : clusters
             .Select(group => new { Group = group, Distance = Distance(localPosition, group.Center) })
             .Where(item => item.Group.PlayerCount >= 3 && item.Distance is >= 35f and <= 400f)
             .OrderByDescending(item => item.Group.PlayerCount * 8f - item.Distance * 0.15f)
             .ThenBy(item => item.Distance)
-            .FirstOrDefault();
+            .FirstOrDefault()?.Group;
         if (fieldGroup is null)
         {
             WaitFor("Waiting for a supported icebound tomelith or visible field group", now);
             return null;
         }
         committedId = "SHATTER-REGROUP";
+        var groupPosition = trackedFieldGroup?.Destination ?? fieldGroup.Center;
         Event("shatter_group_regroup_selected",
-            $"destination={committedId}; group={fieldGroup.Group.PlayerCount}; distance={fieldGroup.Distance:F1}; commitment=arrival-or-death", now);
+            $"destination={committedId}; group={fieldGroup.PlayerCount}; distance={Distance(localPosition, groupPosition):F1}; commitment=arrival-or-death", now);
         Status = "Committed to allied field group until arrival or death";
-        return new ShatterGroupPlan(committedId, "Allied field group", fieldGroup.Group.Center, []);
+        return new ShatterGroupPlan(committedId, "Allied field group", groupPosition, []);
     }
 
     private static bool ShatterIceCandidate(MapObjectiveState objective) =>
