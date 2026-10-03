@@ -199,11 +199,11 @@ internal sealed class WorqorGroupPilot
                 var position = trackedFieldGroup.Value.Destination;
                 committedId = "WOR-REGROUP";
                 var reason = postDeathRegroupPending ? "no-supported-Triumph-after-death" : "no-supported-Triumph";
-                var detail = $"destination={committedId}; group={fieldGroup.PlayerCount}; distance={HorizontalDistance(game.LocalPlayer.Position, position):F1}; reason={reason}; source=shared-field-tracker; commitment=arrival-or-death";
-                Event("worqor_group_regroup_selected", detail, now);
+                var fallbackDetail = $"destination={committedId}; group={fieldGroup.PlayerCount}; distance={HorizontalDistance(game.LocalPlayer.Position, position):F1}; reason={reason}; source=shared-field-tracker; commitment=arrival-or-death";
+                Event("worqor_group_regroup_selected", fallbackDetail, now);
                 Status = "Committed to allied field group until arrival or death";
                 return new WorqorGroupPlan(committedId, "Allied field group",
-                    position, [], detail);
+                    position, [], fallbackDetail);
             }
             WaitFor("Waiting for a supported Triumph or a valid tracked allied field group", now);
             return null;
