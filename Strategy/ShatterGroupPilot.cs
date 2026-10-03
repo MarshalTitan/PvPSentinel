@@ -31,6 +31,8 @@ internal sealed class ShatterGroupPilot
 
     public string Status { get; private set; } = "Off";
     public string? CommittedDestinationId => committedId;
+    public string? CancelDestinationId { get; private set; }
+    public bool HoldingAfterArrival(DateTime now) => lastArrivedId is not null && now < selectAfterUtc;
     public string? RetiredDestinationId { get; private set; }
 
     public IReadOnlyList<ManualNavigationEvent> DrainEvents()
@@ -42,10 +44,12 @@ internal sealed class ShatterGroupPilot
 
     public ShatterGroupPlan? Update(GameStateSnapshot game, BattlefieldState battlefield,
         IReadOnlyList<FriendlyCluster> clusters, ManualNavigationSnapshot route,
-        bool enabled, bool rebornReady, bool meshReady, FieldGroupChoice? trackedFieldGroup = null)
+        bool enabled, bool rebornReady, bool meshReady, FieldGroupChoice? trackedFieldGroup = null,
+        bool allowGroupFallback = true)
     {
         var now = game.CapturedAtUtc;
         RetiredDestinationId = null;
+        CancelDestinationId = null;
         if (game.FrontlineMap != FrontlineMap.FieldsOfGlory ||
             battlefield.Match.Lifecycle is FrontlineMatchLifecycle.Outside or FrontlineMatchLifecycle.Results)
         {
@@ -112,7 +116,13 @@ internal sealed class ShatterGroupPilot
         else invalidSinceUtc = null;
         if (!rebornReady || !meshReady)
         {
-            WaitFor(!rebornReady ? "Reborn autorotation inactive; enable it to resume Shatter travel" : "Waiting for vnavmesh", now);
+            if (committedId is { } unsafeDestination)
+            {
+                CancelDestinationId = unsafeDestination;
+                committedId = null;
+                selectAfterUtc = now.AddSeconds(4);
+            }
+            WaitFor(!rebornReady ? "Waiting for combat provider readiness" : "Waiting for vnavmesh", now);
             return null;
         }
 
@@ -213,6 +223,11 @@ internal sealed class ShatterGroupPilot
                 false, ShatterApproachPolicy.MinimumClearance(objective.Kind));
         }
 
+        if (!allowGroupFallback)
+        {
+            WaitFor("No supported ice; shared dynamic field-group follower may run", now);
+            return null;
+        }
         // Group travel is a bounded leg to its current position, not pursuit of
         // moving players. Wait until the group has left the spawn/local area.
         var fieldGroup = trackedFieldGroup.HasValue ? trackedFieldGroup.Value.Cluster : clusters

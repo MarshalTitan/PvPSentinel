@@ -72,10 +72,9 @@ var priorCounterConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("
 var configStore = new Dalamud.Plugin.TestPluginInterface();
 priorCounterConfig.Initialize(configStore);
 Check("old counter config upgrades without losing navigation and provider choices", true,
-    priorCounterConfig.Version == 17 && priorCounterConfig.Enabled &&
-    priorCounterConfig.NavigationEnabled && priorCounterConfig.ShatterGroupNavigationEnabled &&
-    priorCounterConfig.CombatProvider == CombatProvider.RotationSolverReborn &&
-    !priorCounterConfig.OnsalGroupNavigationEnabled && !priorCounterConfig.SecureGroupNavigationEnabled);
+    priorCounterConfig.Version == 18 && priorCounterConfig.Enabled &&
+    priorCounterConfig.NavigationEnabled &&
+    priorCounterConfig.CombatProvider == CombatProvider.RotationSolverReborn);
 Check("old counter fields disappear from re-saved config", true,
     configStore.LastSavedJson is { } savedConfig &&
     !savedConfig.Contains("TargetCounter", StringComparison.Ordinal));
@@ -85,10 +84,21 @@ var priorPilotConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
      "SecureGroupNavigationEnabled":true}
     """)!;
 priorPilotConfig.Initialize(new Dalamud.Plugin.TestPluginInterface());
-Check("new map pilots default off without altering old pilot choices", true,
-    priorPilotConfig.Version == 17 && priorPilotConfig.WorqorGroupNavigationEnabled &&
-    priorPilotConfig.SealRockGroupNavigationEnabled && priorPilotConfig.ShatterGroupNavigationEnabled &&
-    !priorPilotConfig.OnsalGroupNavigationEnabled && !priorPilotConfig.SecureGroupNavigationEnabled);
+Check("old false map switches cannot disable navigation after migration", true,
+    priorPilotConfig.Version == 18 && !priorPilotConfig.NavigationEnabled);
+var oldFalseMap = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
+    {"Version":17,"Enabled":true,"NavigationEnabled":true,
+     "WorqorGroupNavigationEnabled":false,"MountingEnabled":false,
+     "ContinueManualTravelDuringRebornCombat":false}
+    """)!;
+var oldFalseStore = new Dalamud.Plugin.TestPluginInterface();
+oldFalseMap.Initialize(oldFalseStore);
+Check("navigation is authoritative and obsolete switches are not saved", true,
+    oldFalseMap.Version == 18 && oldFalseMap.NavigationEnabled &&
+    oldFalseStore.LastSavedJson is { } migrated &&
+    !migrated.Contains("GroupNavigationEnabled", StringComparison.Ordinal) &&
+    !migrated.Contains("MountingEnabled", StringComparison.Ordinal) &&
+    !migrated.Contains("ContinueManualTravelDuringRebornCombat", StringComparison.Ordinal));
 
 Check("existing Native provider configuration value is preserved", 2, (int)CombatProvider.NativePvPSentinel);
 Check("Reborn provider uses a new configuration value", 3, (int)CombatProvider.RotationSolverReborn);
@@ -190,6 +200,89 @@ Check("moving field position is smoothed and briefly led", true,
 Check("unreliable classification yields no field destination", true,
     sharedField.Update(FrontlineMap.OnsalHakair, true, false, false,
         playerAwayFromBase, false, [largerField], fieldNow.AddSeconds(8)).Cluster is null);
+
+// The dynamic policy shares one implementation on all five recognized maps.
+foreach (var item in mapCases)
+{
+    var follower = new FrontlineDynamicFollowController(() => 0x123);
+    var choice = new FieldGroupChoice(new FriendlyCluster(new Vector3(100, 0, 0), Vector3.Zero, 8),
+        new Vector3(102, 0, 0), new Vector3(100, 0, 0), new Vector3(2, 0, 0), true);
+    var first = follower.Update(item.Map, fieldNow, true, true, false, false, false,
+        ManualNavigationSnapshot.Disarmed, null, Vector3.Zero, choice);
+    Check($"{item.Map} shares dynamic first-life group fallback", true,
+        first.Plan?.DestinationId == FrontlineDynamicFollowController.Id(item.Map));
+    var route = ManualNavigationSnapshot.Disarmed with
+    {
+        Armed = true, State = ManualRouteState.Following, DestinationId = first.Plan!.DestinationId
+    };
+    var small = follower.Update(item.Map, fieldNow.AddSeconds(1), true, true, false, false, false,
+        route, route.DestinationId, Vector3.Zero,
+        choice with { Destination = new Vector3(104, 0, 0), GroupChanged = false });
+    Check($"{item.Map} small group drift does not repath", true, small.Plan is null);
+    var moved = follower.Update(item.Map, fieldNow.AddSeconds(3), true, true, false, false, false,
+        route, route.DestinationId, Vector3.Zero,
+        choice with { Destination = new Vector3(118, 0, 0), GroupChanged = false });
+    Check($"{item.Map} materially moved group refreshes route", true,
+        moved.Plan is not null && moved.Plan.Reason == "group-moved-materially");
+    var arrived = follower.Update(item.Map, fieldNow.AddSeconds(3.25), true, true, false, false, false,
+        route with { State = ManualRouteState.Arrived }, null, Vector3.Zero,
+        choice with { Destination = new Vector3(134, 0, 0), GroupChanged = false });
+    Check($"{item.Map} old endpoint arrival does not impose six-second hold", true,
+        arrived.Plan is not null);
+    var inCombat = follower.Update(item.Map, fieldNow.AddSeconds(6), true, true, false, false, false,
+        route, route.DestinationId, Vector3.Zero,
+        choice with { Destination = new Vector3(150, 0, 0), GroupChanged = false });
+    Check($"{item.Map} combat presence does not gate dynamic follower", true, inCombat.Plan is not null);
+    var staticPriority = follower.Update(item.Map, fieldNow.AddSeconds(7), true, true, false, false, true,
+        route, route.DestinationId, Vector3.Zero, choice);
+    Check($"{item.Map} static objective overrides follower", true, staticPriority.Plan is null);
+    var stopped = follower.Update(item.Map, fieldNow.AddSeconds(8), false, true, false, false, false,
+        route, route.DestinationId, Vector3.Zero, choice);
+    Check($"{item.Map} STOP cancels owned group route", true, stopped.CancelOwned);
+}
+var slotChoice = new FieldGroupChoice(new FriendlyCluster(new Vector3(100, 0, 0), Vector3.Zero, 6),
+    new Vector3(102, 0, 0), new Vector3(100, 0, 0), new Vector3(2, 0, 0), true);
+var slotA = new FrontlineDynamicFollowController(() => 0x123);
+var slotB = new FrontlineDynamicFollowController(() => 0x234);
+var a = slotA.Update(FrontlineMap.WorqorChirteh, fieldNow, true, true, false, false, false,
+    ManualNavigationSnapshot.Disarmed, null, Vector3.Zero, slotChoice).Plan!;
+var b = slotB.Update(FrontlineMap.WorqorChirteh, fieldNow, true, true, false, false, false,
+    ManualNavigationSnapshot.Disarmed, null, Vector3.Zero, slotChoice).Plan!;
+Check("formation seeds produce distinct bounded positions", true,
+    Vector3.Distance(a.Position, b.Position) >= 3f &&
+    Vector3.Distance(a.Position, slotChoice.Destination) < 20f &&
+    Vector3.Distance(b.Position, slotChoice.Destination) < 20f);
+Check("formation slot persists through normal updates", true,
+    slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(3), true, true, false, false, false,
+        ManualNavigationSnapshot.Disarmed with { State = ManualRouteState.Following, DestinationId = a.DestinationId },
+        a.DestinationId, Vector3.Zero,
+        slotChoice with { Destination = new Vector3(117, 0, 0), GroupChanged = false }).Plan is not null &&
+    slotA.Slot.Contains("23"));
+var late = slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(4), true, false, false, false, false,
+    ManualNavigationSnapshot.Disarmed with { DestinationId = a.DestinationId,
+        State = ManualRouteState.RequestingPath }, a.DestinationId, Vector3.Zero, slotChoice);
+Check("readiness loss rejects pending dynamic path", true, late.CancelOwned && late.Plan is null);
+var resumed = slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(5), true, true, false, false, false,
+    ManualNavigationSnapshot.Disarmed with { DestinationId = a.DestinationId,
+        State = ManualRouteState.Cancelled, Explanation = "Automatic route paused: provider not ready." },
+    null, Vector3.Zero, slotChoice);
+Check("provider recovery reacquires group after safe cancellation", true, resumed.Plan is not null);
+var failedFollower = new FrontlineDynamicFollowController(() => 0x123);
+failedFollower.Update(FrontlineMap.WorqorChirteh, fieldNow, true, true, false, false, false,
+    ManualNavigationSnapshot.Disarmed, null, Vector3.Zero, slotChoice);
+Check("bounded dynamic route failure pauses automatic retry", true,
+    failedFollower.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(1), true, true, false, false, false,
+        ManualNavigationSnapshot.Disarmed with { DestinationId = a.DestinationId,
+            State = ManualRouteState.Failed }, null, Vector3.Zero, slotChoice).Plan is null &&
+    failedFollower.Status.Contains("bounded route failure"));
+var deadFollow = slotB.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(1), true, true, true, false, false,
+    ManualNavigationSnapshot.Disarmed with { DestinationId = b.DestinationId }, b.DestinationId,
+    Vector3.Zero, slotChoice);
+Check("death clears dynamic route and formation", true, deadFollow.CancelOwned && slotB.Destination is null);
+var resultsFollow = slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(5), true, true, false, true, false,
+    ManualNavigationSnapshot.Disarmed with { DestinationId = a.DestinationId }, a.DestinationId,
+    Vector3.Zero, slotChoice);
+Check("results end dynamic follower", true, resultsFollow.CancelOwned);
 
 var yieldTracker = new ExternalCombatYieldTracker();
 var yieldStart = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -759,6 +852,18 @@ var firstPilotPlan = pilot.Update(pilotGame, activeWorqor, [fieldGroup],
     ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
 Check("Worqor pilot chooses supported Triumph", "WOR-02", firstPilotPlan?.DestinationId ?? "NONE");
 var emptyWorqor = activeWorqor with { Objectives = [] };
+var retiringWorqor = new WorqorGroupPilot();
+retiringWorqor.Update(pilotGame, activeWorqor, [fieldGroup],
+    ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor, allowGroupFallback: false);
+var followingTriumph = ManualNavigationSnapshot.Disarmed with
+    { Armed = true, DestinationId = "WOR-02", State = ManualRouteState.Following };
+retiringWorqor.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(1) },
+    emptyWorqor, [fieldGroup], followingTriumph, true, true, trackedWorqor,
+    allowGroupFallback: false);
+Check("stale Worqor objective retires after confirmation for dynamic fallback", "WOR-02",
+    (retiringWorqor.Update(pilotGame with { CapturedAtUtc = pilotNow.AddSeconds(4) },
+        emptyWorqor, [fieldGroup], followingTriumph, true, true, trackedWorqor,
+        allowGroupFallback: false), retiringWorqor.CancelDestinationId).Item2 ?? "NONE");
 var firstLifeGroupPilot = new WorqorGroupPilot();
 var firstLifeGroupLeg = firstLifeGroupPilot.Update(pilotGame, emptyWorqor, [fieldGroup],
     ManualNavigationSnapshot.Disarmed, true, true, trackedWorqor);
@@ -875,6 +980,16 @@ Check("Seal Rock never follows a stale marker", "SR-REGROUP",
         [sealGroup], ManualNavigationSnapshot.Disarmed, true, true, true)?.DestinationId ?? "NONE");
 var followingSeal = ManualNavigationSnapshot.Disarmed with
     { Armed = true, DestinationId = "SR-02", State = ManualRouteState.Following };
+var retiringSeal = new SealRockGroupPilot();
+retiringSeal.Update(sealGame, sealBattle, [sealGroup], ManualNavigationSnapshot.Disarmed,
+    true, true, true, allowGroupFallback: false);
+retiringSeal.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(1) },
+    sealBattle with { Objectives = [] }, [sealGroup], followingSeal,
+    true, true, true, allowGroupFallback: false);
+Check("stale Seal Rock objective retires for dynamic fallback", "SR-02",
+    (retiringSeal.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(4) },
+        sealBattle with { Objectives = [] }, [sealGroup], followingSeal,
+        true, true, true, allowGroupFallback: false), retiringSeal.CancelDestinationId).Item2 ?? "NONE");
 Check("Seal Rock holds a destination through changing markers", true,
     sealPilot.Update(sealGame with { CapturedAtUtc = sealNow.AddSeconds(1) },
         claimedSeal, [sealGroup], followingSeal, true, true, true) is null);

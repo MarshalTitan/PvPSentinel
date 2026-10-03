@@ -24,10 +24,10 @@ internal sealed class NativeMountController(
         int nearbyEnemies,
         Configuration config)
     {
-        if (!config.MountingEnabled)
+        if (!config.Enabled || !config.NavigationEnabled)
         {
             mountRequestPendingUntilUtc = DateTime.MinValue;
-            return new MountDecision(MountState.Disabled, false, "Automatic mounting is disabled.");
+            return new MountDecision(MountState.Disabled, false, "Navigation is disabled; automatic mounting is disabled.");
         }
 
         if (!game.IsFrontline || game.LocalPlayer is null || game.LocalPlayer.IsDead || game.IsBetweenAreas)

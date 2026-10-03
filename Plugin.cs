@@ -37,13 +37,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly FriendlyClusterAnalyzer clusterAnalyzer;
     private readonly MainGroupTracker mainGroupTracker;
     private readonly FieldGroupTracker fieldGroupTracker = new();
+    private readonly FrontlineDynamicFollowController dynamicFollow = new();
     private readonly TargetSelector targetSelector;
     private readonly ObjectiveStrategyService objectiveStrategy;
     private readonly WorqorGroupPilot worqorGroupPilot = new();
     private readonly SealRockGroupPilot sealRockGroupPilot = new();
     private readonly ShatterGroupPilot shatterGroupPilot = new();
-    private readonly FieldGroupPilot onsalGroupPilot = new(FrontlineMap.OnsalHakair, "onsal", "ONS-REGROUP");
-    private readonly FieldGroupPilot secureGroupPilot = new(FrontlineMap.BorderlandRuins, "secure", "SEC-REGROUP");
     private readonly BehaviorEngine behaviorEngine = new();
     private readonly VNavmeshAdapter vnav;
     private readonly NavigationController navigation;
@@ -115,7 +114,7 @@ public sealed class Plugin : IDalamudPlugin
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
         diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath,
-            () => combat.LastAction, () => $"Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}; Shatter: {shatterGroupPilot.Status}; Onsal: {onsalGroupPilot.Status}; Secure: {secureGroupPilot.Status}",
+            () => combat.LastAction, () => $"Policy: {current.Game.FrontlineMap}; dynamic: {dynamicFollow.Status}; slot: {dynamicFollow.Slot}; destination: {dynamicFollow.Destination?.ToString() ?? "none"}; Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}; Shatter: {shatterGroupPilot.Status}",
             () => pilotReadiness,
             StopNavigationFromUi, OnDiagnosticsClosed)
         {
@@ -130,6 +129,7 @@ public sealed class Plugin : IDalamudPlugin
             queueLifecycle.ResetMatchCounter,
             () => queueLifecycle.EmergencyStopLatched,
             () => rotationSolverReborn.GetStatus(DateTime.UtcNow),
+            () => pilotReadiness, () => current.Game.FrontlineMap,
             mountCatalog);
         windows.AddWindow(diagnostics);
         windows.AddWindow(configurationWindow);
@@ -195,128 +195,107 @@ public sealed class Plugin : IDalamudPlugin
             threat,
             navigation.IsMountTransitionPending(game.CapturedAtUtc));
         var reborn = rotationSolverReborn.GetStatus(game.CapturedAtUtc);
-        var selectedPilotEnabled = game.FrontlineMap switch
-        {
-            FrontlineMap.WorqorChirteh => config.WorqorGroupNavigationEnabled,
-            FrontlineMap.SealRock => config.SealRockGroupNavigationEnabled && config.AllowSealRock,
-            FrontlineMap.FieldsOfGlory => config.ShatterGroupNavigationEnabled && config.AllowFieldsOfGlory,
-            FrontlineMap.OnsalHakair => config.OnsalGroupNavigationEnabled && config.AllowOnsalHakair,
-            FrontlineMap.BorderlandRuins => config.SecureGroupNavigationEnabled && config.AllowBorderlandRuins,
-            _ => false,
-        };
+        var supportedMap = game.FrontlineMap is FrontlineMap.WorqorChirteh or FrontlineMap.SealRock or
+            FrontlineMap.FieldsOfGlory or FrontlineMap.OnsalHakair or FrontlineMap.BorderlandRuins;
+        var pilotEnabled = config.Enabled && config.NavigationEnabled && supportedMap;
         pilotReadiness = new FrontlinePilotReadiness(
-            config.Enabled && config.NavigationEnabled && selectedPilotEnabled,
-            battlefieldState.Match.Lifecycle, game.IsClassificationReliable, vnav.IsReady,
+            pilotEnabled, battlefieldState.Match.Lifecycle, game.IsClassificationReliable, vnav.IsReady,
             config.CombatProvider,
             config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.Installed,
             config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.Loaded,
             config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.IpcAvailable,
             config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.AutorotationActive && combatDecision.ControllerActive);
-        // External ACR has no verified activity IPC yet; retain a fail-closed
-        // slot for it rather than treating observed local actions as readiness.
+        // External ACR currently has no trustworthy activity IPC, and Native
+        // Shadow mode cannot own travel into combat. Both remain fail closed.
         developmentLog.Changed("pilot-readiness", string.Join('|', pilotReadiness.Lines),
             $"{game.FrontlineMap} pilot {(pilotReadiness.CanTravel ? "READY" : "BLOCKED")}: {string.Join("; ", pilotReadiness.Lines)}");
-        if (!config.WorqorGroupNavigationEnabled &&
-            navigation.ManualSnapshot.DestinationId == worqorGroupPilot.CommittedDestinationId)
-            navigation.StopManualNavigation("Worqor group navigation was turned off.");
-        if (!config.SealRockGroupNavigationEnabled &&
-            navigation.ManualSnapshot.DestinationId == sealRockGroupPilot.CommittedDestinationId)
-            navigation.StopManualNavigation("Seal Rock group navigation was turned off.");
-        if (!config.ShatterGroupNavigationEnabled &&
-            navigation.ManualSnapshot.DestinationId == shatterGroupPilot.CommittedDestinationId)
-            navigation.StopManualNavigation("Shatter group navigation was turned off.");
-        if ((!config.OnsalGroupNavigationEnabled || !config.AllowOnsalHakair) &&
-            onsalGroupPilot.CommittedDestinationId is { } onsalDestination &&
-            navigation.CurrentManualDestinationId == onsalDestination)
-            navigation.StopManualNavigation("Onsal group navigation was turned off.");
-        if ((!config.SecureGroupNavigationEnabled || !config.AllowBorderlandRuins) &&
-            secureGroupPilot.CommittedDestinationId is { } secureDestination &&
-            navigation.CurrentManualDestinationId == secureDestination)
-            navigation.StopManualNavigation("Secure group navigation was turned off.");
-        var groupPlan = worqorGroupPilot.Update(
-            game, battlefieldState, clusters, navigation.ManualSnapshot,
-            config.Enabled && config.NavigationEnabled && config.WorqorGroupNavigationEnabled,
-            pilotReadiness.CanTravel,
-            trackedFieldGroup);
+
+        if (!pilotReadiness.CanTravel && navigation.CurrentManualDestinationId is { } automated &&
+            (dynamicFollow.Owns(game.FrontlineMap, automated) ||
+             automated == worqorGroupPilot.CommittedDestinationId ||
+             automated == sealRockGroupPilot.CommittedDestinationId ||
+             automated == shatterGroupPilot.CommittedDestinationId))
+            navigation.StopManualNavigation("Automatic route paused: lifecycle, team, mesh, or provider not ready.");
+
+        var route = navigation.ManualSnapshot;
+        var dynamicRoute = dynamicFollow.Owns(game.FrontlineMap, navigation.CurrentManualDestinationId) ||
+            dynamicFollow.Owns(game.FrontlineMap, route.DestinationId);
+        // The objective selectors should evaluate while the shared follower is
+        // moving. Other routes, including user requests, keep their priority.
+        var objectiveRoute = dynamicRoute
+            ? route with { DestinationId = "NONE", State = ManualRouteState.Idle }
+            : route;
+        var worqorPlan = worqorGroupPilot.Update(game, battlefieldState, clusters, objectiveRoute,
+            pilotEnabled && game.FrontlineMap == FrontlineMap.WorqorChirteh,
+            pilotReadiness.CanTravel, trackedFieldGroup, allowGroupFallback: false);
         if (worqorGroupPilot.CancelDestinationId is { } unsafeWorqor &&
             navigation.CurrentManualDestinationId == unsafeWorqor)
             navigation.StopManualNavigation("Worqor pilot safety gate became unavailable.");
-        if (groupPlan is not null)
-        {
-            navigation.SetManualNavigationArmed(true);
-            navigation.RequestManualDestination(groupPlan.DestinationId, groupPlan.DestinationName,
-                groupPlan.Position, groupPlan.ApproachAnchors);
-        }
-        foreach (var groupEvent in worqorGroupPilot.DrainEvents())
-            battlefield.RecordNavigationEvent(groupEvent);
-        var sealRockPlan = sealRockGroupPilot.Update(
-            game, battlefieldState, clusters, navigation.ManualSnapshot,
-            config.Enabled && config.NavigationEnabled && config.AllowSealRock &&
-            config.SealRockGroupNavigationEnabled,
-            pilotReadiness.CanTravel,
-            vnav.IsReady, trackedFieldGroup);
-        if (sealRockPlan is not null)
-        {
-            navigation.SetManualNavigationArmed(true);
-            navigation.RequestManualDestination(sealRockPlan.DestinationId, sealRockPlan.DestinationName,
-                sealRockPlan.Position, sealRockPlan.ApproachAnchors);
-        }
-        foreach (var groupEvent in sealRockGroupPilot.DrainEvents())
-            battlefield.RecordNavigationEvent(groupEvent);
-        var shatterPlan = shatterGroupPilot.Update(
-            game, battlefieldState, clusters, navigation.ManualSnapshot,
-            config.Enabled && config.NavigationEnabled && config.AllowFieldsOfGlory &&
-            config.ShatterGroupNavigationEnabled,
-            pilotReadiness.CanTravel,
-            vnav.IsReady, trackedFieldGroup);
+        foreach (var pilotEvent in worqorGroupPilot.DrainEvents())
+            battlefield.RecordNavigationEvent(pilotEvent);
+
+        var sealRockPlan = sealRockGroupPilot.Update(game, battlefieldState, clusters, objectiveRoute,
+            pilotEnabled && game.FrontlineMap == FrontlineMap.SealRock,
+            pilotReadiness.CanTravel, vnav.IsReady, trackedFieldGroup, allowGroupFallback: false);
+        if (sealRockGroupPilot.CancelDestinationId is { } unsafeSealRock &&
+            navigation.CurrentManualDestinationId == unsafeSealRock)
+            navigation.StopManualNavigation("Seal Rock objective is stale or unsupported.");
+        foreach (var pilotEvent in sealRockGroupPilot.DrainEvents())
+            battlefield.RecordNavigationEvent(pilotEvent);
+
+        var shatterPlan = shatterGroupPilot.Update(game, battlefieldState, clusters, objectiveRoute,
+            pilotEnabled && game.FrontlineMap == FrontlineMap.FieldsOfGlory,
+            pilotReadiness.CanTravel, vnav.IsReady, trackedFieldGroup, allowGroupFallback: false);
         if (shatterGroupPilot.RetiredDestinationId is { } retiredId &&
-            navigation.ManualSnapshot.DestinationId == retiredId)
+            navigation.CurrentManualDestinationId == retiredId)
             navigation.StopManualNavigation("Shatter ice became inactive or depleted; selecting another destination.");
-        if (shatterPlan is not null)
+        foreach (var pilotEvent in shatterGroupPilot.DrainEvents())
+            battlefield.RecordNavigationEvent(pilotEvent);
+
+        var objectiveSelected = worqorPlan is not null || sealRockPlan is not null || shatterPlan is not null;
+        if (objectiveSelected)
+        {
+            dynamicFollow.SuspendForStatic();
+            navigation.SetManualNavigationArmed(true);
+            if (worqorPlan is not null)
+                navigation.RequestManualDestination(worqorPlan.DestinationId, worqorPlan.DestinationName,
+                    worqorPlan.Position, worqorPlan.ApproachAnchors);
+            if (sealRockPlan is not null)
+                navigation.RequestManualDestination(sealRockPlan.DestinationId, sealRockPlan.DestinationName,
+                    sealRockPlan.Position, sealRockPlan.ApproachAnchors);
+            if (shatterPlan is not null)
+                navigation.RequestManualDestination(shatterPlan.DestinationId, shatterPlan.DestinationName,
+                    shatterPlan.Position, shatterPlan.ApproachAnchors,
+                    shatterPlan.IncludeReferencePosition, shatterPlan.MinimumApproachClearance);
+        }
+        var staticBusy = objectiveSelected || (game.FrontlineMap switch
+        {
+            FrontlineMap.WorqorChirteh => worqorGroupPilot.CommittedDestinationId is not null ||
+                worqorGroupPilot.HoldingAfterArrival(game.CapturedAtUtc),
+            FrontlineMap.SealRock => sealRockGroupPilot.CommittedDestinationId is not null ||
+                sealRockGroupPilot.HoldingAfterArrival(game.CapturedAtUtc),
+            FrontlineMap.FieldsOfGlory => shatterGroupPilot.CommittedDestinationId is not null ||
+                shatterGroupPilot.HoldingAfterArrival(game.CapturedAtUtc),
+            _ => false,
+        });
+        var follow = dynamicFollow.Update(game.FrontlineMap, game.CapturedAtUtc, pilotEnabled,
+            pilotReadiness.CanTravel, game.LocalPlayer?.IsDead == true,
+            battlefieldState.Match.Lifecycle == FrontlineMatchLifecycle.Results,
+            staticBusy, navigation.ManualSnapshot, navigation.CurrentManualDestinationId,
+            game.LocalPlayer?.Position, trackedFieldGroup);
+        if (follow.CancelOwned && dynamicFollow.Owns(game.FrontlineMap, navigation.CurrentManualDestinationId))
+        {
+            navigation.StopManualNavigation(follow.Status);
+            battlefield.RecordNavigationEvent(new ManualNavigationEvent("dynamic_follow_cancelled", follow.Status, game.CapturedAtUtc));
+        }
+        if (follow.Plan is { } dynamicPlan)
         {
             navigation.SetManualNavigationArmed(true);
-            navigation.RequestManualDestination(shatterPlan.DestinationId, shatterPlan.DestinationName,
-                shatterPlan.Position, shatterPlan.ApproachAnchors,
-                shatterPlan.IncludeReferencePosition, shatterPlan.MinimumApproachClearance);
+            if (navigation.RequestManualDestination(dynamicPlan.DestinationId, "Allied field group formation",
+                dynamicPlan.Position))
+                battlefield.RecordNavigationEvent(new ManualNavigationEvent("dynamic_follow_destination",
+                    $"map={game.FrontlineMap}; reason={dynamicPlan.Reason}; destination={dynamicPlan.Position}; slot={dynamicFollow.Slot}", game.CapturedAtUtc));
         }
-        foreach (var groupEvent in shatterGroupPilot.DrainEvents())
-            battlefield.RecordNavigationEvent(groupEvent);
-        var onsalPlan = onsalGroupPilot.Update(game, battlefieldState, clusters,
-            navigation.ManualSnapshot,
-            config.Enabled && config.NavigationEnabled && config.AllowOnsalHakair &&
-            config.OnsalGroupNavigationEnabled,
-            pilotReadiness.CanTravel,
-            vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId,
-            trackedFieldGroup);
-        if (onsalGroupPilot.CancelDestinationId is { } unsafeOnsal &&
-            navigation.CurrentManualDestinationId == unsafeOnsal)
-            navigation.StopManualNavigation("Onsal pilot safety gate became unavailable.");
-        if (onsalPlan is not null)
-        {
-            navigation.SetManualNavigationArmed(true);
-            navigation.RequestManualDestination(onsalPlan.DestinationId, onsalPlan.DestinationName,
-                onsalPlan.Position);
-        }
-        foreach (var groupEvent in onsalGroupPilot.DrainEvents())
-            battlefield.RecordNavigationEvent(groupEvent);
-        var securePlan = secureGroupPilot.Update(game, battlefieldState, clusters,
-            navigation.ManualSnapshot,
-            config.Enabled && config.NavigationEnabled && config.AllowBorderlandRuins &&
-            config.SecureGroupNavigationEnabled,
-            pilotReadiness.CanTravel,
-            vnav.IsReady, game.IsInCombat, navigation.CurrentManualDestinationId,
-            trackedFieldGroup);
-        if (secureGroupPilot.CancelDestinationId is { } unsafeSecure &&
-            navigation.CurrentManualDestinationId == unsafeSecure)
-            navigation.StopManualNavigation("Secure pilot safety gate became unavailable.");
-        if (securePlan is not null)
-        {
-            navigation.SetManualNavigationArmed(true);
-            navigation.RequestManualDestination(securePlan.DestinationId, securePlan.DestinationName,
-                securePlan.Position);
-        }
-        foreach (var groupEvent in secureGroupPilot.DrainEvents())
-            battlefield.RecordNavigationEvent(groupEvent);
         var navDecision = navigation.Update(game, behavior, mainCluster, objective, combatDecision, battlefieldState, config);
         foreach (var navigationEvent in navigation.DrainManualEvents())
             battlefield.RecordNavigationEvent(navigationEvent);
@@ -386,13 +365,9 @@ public sealed class Plugin : IDalamudPlugin
 
     private void StopNavigationFromUi()
     {
-        config.WorqorGroupNavigationEnabled = false;
-        config.SealRockGroupNavigationEnabled = false;
-        config.ShatterGroupNavigationEnabled = false;
-        config.OnsalGroupNavigationEnabled = false;
-        config.SecureGroupNavigationEnabled = false;
+        config.NavigationEnabled = false;
         config.Save();
-        navigation.StopManualNavigation();
+        navigation.StopManualNavigation("STOP disabled navigation until explicitly enabled again.");
     }
 
     private void EmergencyStop()
@@ -401,13 +376,7 @@ public sealed class Plugin : IDalamudPlugin
         queueLifecycle.EmergencyStop();
         config.Enabled = false;
         config.NavigationEnabled = false;
-        config.MountingEnabled = false;
         config.ObjectiveNavigationEnabled = false;
-        config.WorqorGroupNavigationEnabled = false;
-        config.SealRockGroupNavigationEnabled = false;
-        config.ShatterGroupNavigationEnabled = false;
-        config.OnsalGroupNavigationEnabled = false;
-        config.SecureGroupNavigationEnabled = false;
         config.QueueAutomationEnabled = false;
         config.CombatProvider = CombatProvider.Off;
         config.Save();

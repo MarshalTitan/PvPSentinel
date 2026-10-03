@@ -22,11 +22,14 @@ internal sealed class SealRockGroupPilot
     private DateTime selectAfterUtc = DateTime.MinValue;
     private bool manualOverride;
     private bool pausedAfterFailure;
+    private DateTime? invalidSinceUtc;
     private string lastWaitingReason = string.Empty;
     private DateTime lastWaitingEventUtc = DateTime.MinValue;
 
     public string Status { get; private set; } = "Off";
     public string? CommittedDestinationId => committedId;
+    public string? CancelDestinationId { get; private set; }
+    public bool HoldingAfterArrival(DateTime now) => lastArrivedId is not null && now < selectAfterUtc;
 
     public IReadOnlyList<ManualNavigationEvent> DrainEvents()
     {
@@ -37,9 +40,11 @@ internal sealed class SealRockGroupPilot
 
     public SealRockGroupPlan? Update(GameStateSnapshot game, BattlefieldState battlefield,
         IReadOnlyList<FriendlyCluster> clusters, ManualNavigationSnapshot route,
-        bool enabled, bool rebornReady, bool meshReady, FieldGroupChoice? trackedFieldGroup = null)
+        bool enabled, bool rebornReady, bool meshReady, FieldGroupChoice? trackedFieldGroup = null,
+        bool allowGroupFallback = true)
     {
         var now = game.CapturedAtUtc;
+        CancelDestinationId = null;
         if (game.FrontlineMap != FrontlineMap.SealRock ||
             battlefield.Match.Lifecycle is FrontlineMatchLifecycle.Outside or FrontlineMatchLifecycle.Results)
         {
@@ -73,9 +78,38 @@ internal sealed class SealRockGroupPilot
         }
         if (!rebornReady || !meshReady)
         {
-            WaitFor(!rebornReady ? "Waiting for Reborn autorotation" : "Waiting for vnavmesh", now);
+            if (committedId is { } unsafeDestination)
+            {
+                CancelDestinationId = unsafeDestination;
+                committedId = null;
+                selectAfterUtc = now.AddSeconds(4);
+            }
+            WaitFor(!rebornReady ? "Waiting for combat provider readiness" : "Waiting for vnavmesh", now);
             return null;
         }
+
+        if (committedId is { } objectiveId && objectiveId != "SR-REGROUP" &&
+            route.DestinationId == objectiveId && RouteInProgress(route))
+        {
+            var selected = battlefield.Objectives.FirstOrDefault(item => item.LogicalId == objectiveId);
+            var supportedNearby = selected?.ReferencePosition is { } position &&
+                clusters.Any(cluster => cluster.PlayerCount >= 3 && Distance(cluster.Center, position) <= 65f);
+            var valid = selected?.LastSeenUtc is { } seen && now - seen <= TimeSpan.FromSeconds(3) &&
+                selected.State == ObjectiveLifecycle.Active && selected.Owner == ObjectiveOwner.Neutral && supportedNearby;
+            invalidSinceUtc = valid ? null : invalidSinceUtc ?? now;
+            if (invalidSinceUtc is { } invalidSince && now - invalidSince >= TimeSpan.FromSeconds(3))
+            {
+                CancelDestinationId = objectiveId;
+                committedId = null;
+                lastArrivedId = objectiveId;
+                lastArrivalUtc = now;
+                invalidSinceUtc = null;
+                Event("seal_rock_objective_retired", $"destination={objectiveId}; reason=stale-or-unsupported", now);
+                Status = "Tomelith no longer supported; returning to field group";
+                return null;
+            }
+        }
+        else invalidSinceUtc = null;
 
         if (committedId is { } current)
         {
@@ -170,6 +204,11 @@ internal sealed class SealRockGroupPilot
                 objective.ValidatedApproachAnchors.Select(anchor => anchor.Position).ToArray());
         }
 
+        if (!allowGroupFallback)
+        {
+            WaitFor("No supported tomelith; shared dynamic field-group follower may run", now);
+            return null;
+        }
         // Group travel is a bounded leg to its current position, not pursuit of
         // moving players. Wait until the group has left the spawn/local area.
         var fieldGroup = trackedFieldGroup.HasValue ? trackedFieldGroup.Value.Cluster : clusters
@@ -205,6 +244,7 @@ internal sealed class SealRockGroupPilot
         selectAfterUtc = DateTime.MinValue;
         manualOverride = false;
         pausedAfterFailure = false;
+        invalidSinceUtc = null;
         lastWaitingReason = string.Empty;
         lastWaitingEventUtc = DateTime.MinValue;
         Status = "Off";

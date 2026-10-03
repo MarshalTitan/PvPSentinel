@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1.17 — Five-map dynamic allied-field-group following
+
+- Replace bounded group-position legs and post-arrival idle with one shared moving-field-group follower across all five Frontline maps. Preserve objective-first static routes for trustworthy Worqor Triumphs, Seal Rock tomeliths and Shatter ice. Onsal and Secure remain group-follow only while objective meanings are unresolved.
+- Track smoothed group center and velocity, reject spawn groups, retain group-switch hysteresis, and refresh a vnavmesh destination only after material movement and a short debounce. Do not supersede a pending path request; STOP/death/results and provider loss invalidate owned movement.
+- Give each client a random ranged formation offset behind and to one side of the field group. Hold that offset during ordinary movement, regenerate after death or group replacement. Existing Company Chocobo selection and mount safety now follow navigation automatically.
+- Make master enable plus navigation the only normal movement switches. Ignore and drop old map, mounting and Reborn-combat booleans in version-18 config migration. Keep RSR status read-only and show exact RSR lifecycle settings in diagnostics and documentation. Queue/requeue remains disabled.
+
+
 ## 0.3.1.16 — Native Frontline marker crash fix
 
 - The 17:47 Worqor crash dump identifies a `System.AccessViolationException` in `Utf8String.ToString()` while decoding `AgentMap.EventMarkers` in PvPSentinel. Copy and validate bounded marker vector, records, and UTF-8 text through `ReadProcessMemory`; unreadable or inconsistent snapshots are ignored without dereferencing freed native text. Keep named Triumph and other map marker evidence available when valid.

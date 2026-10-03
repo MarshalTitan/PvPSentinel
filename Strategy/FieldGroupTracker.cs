@@ -3,12 +3,11 @@ using PvPSentinel.Models;
 
 namespace PvPSentinel.Strategy;
 
-internal readonly record struct FieldGroupChoice(FriendlyCluster? Cluster, Vector3 Destination);
+internal readonly record struct FieldGroupChoice(FriendlyCluster? Cluster, Vector3 Destination,
+    Vector3 SmoothedCenter = default, Vector3 Velocity = default, bool GroupChanged = false);
 
 /// <summary>
-/// Observes allied field groups for the supervised pilots. It supplies a destination
-/// only when a field group is visible; the map pilots still own objective choices
-/// and keep a route committed until their existing arrival/death boundaries.
+/// Observes allied field groups for the shared dynamic follower and map policies.
 /// </summary>
 internal sealed class FieldGroupTracker
 {
@@ -59,7 +58,9 @@ internal sealed class FieldGroupTracker
 
         var local = playerPosition.Value;
         var candidates = clusters.Where(group => group.PlayerCount >= 3 &&
-            Distance(local, group.Center) is >= 35f and <= 400f &&
+            Distance(local, group.Center) <= 400f &&
+            (Distance(local, group.Center) >= 35f ||
+             center is { } prior && Distance(prior, group.Center) <= 32f) &&
             (basePosition is null || Distance(basePosition.Value, group.Center) >= 50f)).ToArray();
         if (candidates.Length == 0)
         {
@@ -104,10 +105,12 @@ internal sealed class FieldGroupTracker
                 selected = incumbent;
         }
 
+        var groupChanged = center is null;
         if (center is null || sampleUtc == DateTime.MinValue ||
             now - sampleUtc > TimeSpan.FromSeconds(3) ||
             Distance(center.Value, selected.Center) > 32f)
         {
+            groupChanged = true;
             center = selected.Center;
             velocity = Vector3.Zero;
         }
@@ -128,7 +131,7 @@ internal sealed class FieldGroupTracker
         }
         sampleUtc = now;
         var lead = velocity.Length() >= 0.8f ? velocity * 1.2f : Vector3.Zero;
-        return new FieldGroupChoice(selected, center.Value + lead);
+        return new FieldGroupChoice(selected, center.Value + lead, center.Value, velocity, groupChanged);
     }
 
     public void Reset()

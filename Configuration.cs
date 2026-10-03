@@ -7,7 +7,7 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 17;
+    public int Version { get; set; } = 18;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
@@ -15,7 +15,6 @@ public sealed class Configuration : IPluginConfiguration
     public NativeCombatMode NativeCombatMode { get; set; } = NativeCombatMode.ShadowObserve;
     public bool TargetSelectionEnabled { get; set; } = true;
     public bool FinishKoPriorityEnabled { get; set; } = true;
-    public bool MountingEnabled { get; set; }
     // Mount sheet row 1 is Company Chocobo. This is resolved and validated
     // against the live game-data row before use; it is not an action ID.
     public uint PreferredMountId { get; set; } = 1;
@@ -46,12 +45,6 @@ public sealed class Configuration : IPluginConfiguration
     public float ExternalCombatYieldSeconds { get; set; } = 2.5f;
     public float RotationSolverQuietSeconds { get; set; } = 2f;
     public float RotationSolverEnemyClearanceRadius { get; set; } = 30f;
-    public bool ContinueManualTravelDuringRebornCombat { get; set; } = true;
-    public bool WorqorGroupNavigationEnabled { get; set; }
-    public bool SealRockGroupNavigationEnabled { get; set; }
-    public bool ShatterGroupNavigationEnabled { get; set; }
-    public bool OnsalGroupNavigationEnabled { get; set; }
-    public bool SecureGroupNavigationEnabled { get; set; }
     public float NativeRecuperateHpPercent { get; set; } = 75f;
     public float NativeGuardHpPercent { get; set; } = 35f;
     public float NativeGuardMaximumHpPercent { get; set; } = 65f;
@@ -118,7 +111,7 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 17)
+        if (Version >= 18)
             return;
 
         // Version 1 exposed independent booleans for navigation and native action
@@ -129,7 +122,6 @@ public sealed class Configuration : IPluginConfiguration
             Enabled = false;
             NavigationEnabled = false;
             CombatProvider = CombatProvider.Off;
-            MountingEnabled = false;
             ObjectiveNavigationEnabled = false;
             QueueAutomationEnabled = false;
         }
@@ -224,37 +216,10 @@ public sealed class Configuration : IPluginConfiguration
                 RotationSolverQuietSeconds = 2f;
         }
 
-        if (Version < 12)
-        {
-            // The user explicitly selected continuous manual travel during
-            // Reborn combat. Only manual routes use this option; strategy and
-            // queue automation remain disabled.
-            ContinueManualTravelDuringRebornCombat = true;
-        }
-
-        if (Version < 13)
-        {
-            // A new explicit opt-in for one map must not inherit the old,
-            // disabled strategic-navigation setting.
-            WorqorGroupNavigationEnabled = false;
-        }
-
-        if (Version < 14)
-            SealRockGroupNavigationEnabled = false;
-
-        if (Version < 15)
-            ShatterGroupNavigationEnabled = false;
-
-        // Re-save older configurations without the removed display-only counter
-        // properties. Unknown JSON fields from prior releases are ignored when
-        // the configuration is loaded; all safety and navigation settings remain.
-        if (Version < 17)
-        {
-            OnsalGroupNavigationEnabled = false;
-            SecureGroupNavigationEnabled = false;
-        }
-
-        Version = 17;
+        // Version 18 removes legacy per-map, mounting, and Reborn-travel
+        // switches. Unknown fields in older JSON are ignored. The existing
+        // NavigationEnabled value alone expresses navigation intent.
+        Version = 18;
         Save();
     }
 

@@ -29,11 +29,13 @@ internal sealed class WorqorGroupPilot
     private DateTime selectAfterUtc = DateTime.MinValue;
     private bool manualOverride;
     private bool pausedAfterFailure;
+    private DateTime? invalidSinceUtc;
     private string lastWaitingReason = string.Empty;
     private DateTime lastWaitingEventUtc = DateTime.MinValue;
 
     public string Status { get; private set; } = "Off";
     public string? CommittedDestinationId => committedId;
+    public bool HoldingAfterArrival(DateTime now) => lastArrivedId is not null && now < selectAfterUtc;
     public string? CancelDestinationId { get; private set; }
 
     public IReadOnlyList<ManualNavigationEvent> DrainEvents()
@@ -49,7 +51,8 @@ internal sealed class WorqorGroupPilot
         IReadOnlyList<FriendlyCluster> clusters,
         ManualNavigationSnapshot route,
         bool enabled,
-        bool rebornReady, FieldGroupChoice? trackedFieldGroup = null)
+        bool rebornReady, FieldGroupChoice? trackedFieldGroup = null,
+        bool allowGroupFallback = true)
     {
         var now = game.CapturedAtUtc;
         CancelDestinationId = null;
@@ -96,6 +99,31 @@ internal sealed class WorqorGroupPilot
             PauseUnsafeRoute("Pilot readiness unavailable; see lifecycle, vnavmesh and combat-provider blockers", now);
             return null;
         }
+
+        if (committedId is { } objectiveId && objectiveId != "WOR-REGROUP" &&
+            route.DestinationId == objectiveId && RouteInProgress(route))
+        {
+            var selected = battlefield.Objectives.FirstOrDefault(item => item.LogicalId == objectiveId);
+            var supported = selected?.ReferencePosition is { } position &&
+                clusters.Any(cluster => cluster.PlayerCount >= 2 && HorizontalDistance(cluster.Center, position) <= 75f);
+            var valid = selected?.LastSeenUtc is { } seen && now - seen <= TimeSpan.FromSeconds(3) &&
+                (selected.State == ObjectiveLifecycle.Active && selected.Owner == ObjectiveOwner.Neutral ||
+                 selected.State == ObjectiveLifecycle.Preactivating && selected.ActivationEtaSeconds is >= 0 and <= 30) &&
+                supported;
+            invalidSinceUtc = valid ? null : invalidSinceUtc ?? now;
+            if (invalidSinceUtc is { } invalidSince && now - invalidSince >= TimeSpan.FromSeconds(3))
+            {
+                CancelDestinationId = objectiveId;
+                committedId = null;
+                lastArrivedId = objectiveId;
+                lastArrivalUtc = now;
+                invalidSinceUtc = null;
+                Event("worqor_objective_retired", $"destination={objectiveId}; reason=stale-or-unsupported", now);
+                Status = "Objective no longer supported; returning to field group";
+                return null;
+            }
+        }
+        else invalidSinceUtc = null;
 
         if (committedId is { } current)
         {
@@ -191,6 +219,11 @@ internal sealed class WorqorGroupPilot
 
         if (viable.Length == 0)
         {
+            if (!allowGroupFallback)
+            {
+                WaitFor("No supported Triumph; shared dynamic field-group follower may run", now);
+                return null;
+            }
             // The shared tracker has already excluded spawn groups, required a
             // useful field force, and smoothed/led its position. Use this same
             // fallback on the first life as after a death; never chase raw PCs.
@@ -235,6 +268,7 @@ internal sealed class WorqorGroupPilot
         selectAfterUtc = DateTime.MinValue;
         manualOverride = false;
         pausedAfterFailure = false;
+        invalidSinceUtc = null;
         postDeathRegroupPending = false;
         lastWaitingReason = string.Empty;
         lastWaitingEventUtc = DateTime.MinValue;

@@ -28,7 +28,19 @@ internal sealed record FrontlinePilotReadiness(
         $"Provider installed: {Yes(ProviderInstalled)}",
         $"Provider loaded: {Yes(ProviderLoaded)} [{Gate(ProviderLoaded)}]",
         $"Provider activity observable: {Yes(ProviderActivityObservable)} [{Gate(ProviderActivityObservable)}]",
-        $"Provider autorotation active: {Yes(ProviderActive)} [{Gate(ProviderActive)}]",
+        $"Provider active: {Yes(ProviderActive)} [{Gate(ProviderActive)}]",
+        ..(Provider == CombatProvider.RotationSolverReborn && ProviderLoaded && !ProviderActive
+            ? new[]
+            {
+                "RSR inactive; check its lifecycle settings:",
+                "Auto turn on when PvP match starts: ON",
+                "Auto turn off when dead in PvP: OFF",
+                "Disable automatically during area transitions: OFF",
+                "Auto turn off when PvP match ends: ON",
+                "Auto turn off after combat: OFF",
+                "Set RSR to PvP-specific state when enabled in PvP zone: ON",
+            }
+            : Array.Empty<string>()),
     ];
 
     private static string Yes(bool value) => value ? "Yes" : "No";

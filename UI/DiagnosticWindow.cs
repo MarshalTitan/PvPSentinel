@@ -349,7 +349,7 @@ internal sealed class DiagnosticWindow : Window
         KeyValue("Selected destination", $"{manual.DestinationId} — {manual.DestinationName}");
         KeyValue("Route state", manual.State.ToString());
         KeyValue("Manual navigation armed", YesNo(manual.Armed));
-        KeyValue("Group navigation pilots", groupPilotStatus());
+        KeyValue("Map policy / dynamic follower", groupPilotStatus());
         if (pilotReadiness() is { } readiness)
         {
             ImGui.TextUnformatted($"Current pilot {(readiness.CanTravel ? "READY" : "BLOCKED")}");
