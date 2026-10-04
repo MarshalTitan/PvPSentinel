@@ -492,8 +492,14 @@ Check("dynamic leg avoids mount churn for nearby detour", false,
     MountTravelPolicy.ShouldMountForLeg(false, true, 85f, 27f, 55f));
 Check("dynamic long leg still requests mount", true,
     MountTravelPolicy.ShouldMountForLeg(false, true, 220f, 180f, 55f));
-Check("dynamic group stays mounted until close", 14f,
-    MountTravelPolicy.DismountDistanceForLeg(true, 28f));
+Check("dynamic group arrival stays mounted without combat", false,
+    MountTravelPolicy.ShouldDismount(true, 0f, 28f, false, dynamicFieldLeg: true));
+Check("dynamic group short remaining route stays mounted", false,
+    MountTravelPolicy.ShouldDismount(true, 12f, 28f, false, dynamicFieldLeg: true));
+Check("dynamic group combat dismounts at any distance", true,
+    MountTravelPolicy.ShouldDismount(true, 100f, 28f, true, dynamicFieldLeg: true));
+Check("unmounted group does not request dismount", false,
+    MountTravelPolicy.ShouldDismount(false, 0f, 28f, true, dynamicFieldLeg: true));
 Check("dynamic handoff accepts current owned route", true,
     DynamicRouteHandoffPolicy.MayReplace(true, true, false, "R01", "R01", "FIELD", "FIELD"));
 Check("STOP invalidates late dynamic path", false,
