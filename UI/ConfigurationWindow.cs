@@ -58,8 +58,9 @@ internal sealed class ConfigurationWindow : Window
         this.mountCatalog = mountCatalog;
         drawModernNavigation = DrawModernNavigation;
         drawModernContent = DrawModernContent;
-        Size = new Vector2(550, 460);
+        Size = new Vector2(920f, 720f);
         SizeCondition = ImGuiCond.FirstUseEver;
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(620f, 520f) };
     }
 
     public override void PreDraw()

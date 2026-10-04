@@ -13,6 +13,17 @@
         "requested": "[1.2.39, )",
         "resolved": "1.2.39",
         "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
+      },
+      "MarshalTitan.SentinelCore": {
+        "type": "Transitive",
+        "resolved": "0.2.1",
+        "contentHash": "8d3HKchXIVZxGqXiy5eDSIJC/OgRG90D/ImOI0asq0sf0qHORcfGc7jUEZCWmlMgqgs5FBBK/fcsdveo32hrSA=="
+      },
+      "MarshalTitan.SentinelCore.UI": {
+        "type": "Direct",
+        "requested": "[0.2.1]",
+        "resolved": "0.2.1",
+        "contentHash": "C5bwSHZ2PotnHMWLm5MhqUNMMvZ+0GI5AmVRnE1TYkN6UdbUbsqN4/Mdywhmmq3198xbZLsAa1KSXY2mqLNR4g=="
       }
     }
   }

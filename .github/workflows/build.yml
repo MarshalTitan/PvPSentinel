@@ -31,7 +31,7 @@ jobs:
           Expand-Archive -Path dalamud.zip -DestinationPath $dalamudDir -Force
           Remove-Item dalamud.zip
 
-      - run: dotnet restore PvPSentinel.csproj
+      - run: dotnet restore PvPSentinel.csproj --locked-mode
 
       - name: Require release tag to match project version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "PvPSentinel adopts the shared Sentinel Modern UI from SentinelCore 0.2.0. Choose Classic or Sentinel Modern in Appearance; existing settings remain Classic. Configuration pages and Development diagnostics use the shared palette and controls. Frontline navigation and combat policies are unchanged. Queue/requeue remains disabled."
+            --notes "PvPSentinel pins SentinelCore UI 0.2.1. Sentinel Modern keeps its navigation sidebar on the left, with the selected page on the right and a full-width non-scrolling header. Classic and all gameplay settings remain available. Frontline navigation and combat policies are unchanged. Queue/requeue remains disabled."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }
