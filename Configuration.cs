@@ -7,7 +7,9 @@ namespace PvPSentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 18;
+    public int Version { get; set; } = 19;
+    // 0 = Classic, 1 = Sentinel Modern. This plugin owns its own opt-in choice.
+    public int ConfigurationTheme { get; set; }
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
@@ -111,8 +113,15 @@ public sealed class Configuration : IPluginConfiguration
 
     private void MigrateFailClosedDefaults()
     {
-        if (Version >= 18)
+        if (Version >= 19)
+        {
+            if (ConfigurationTheme is < 0 or > 1)
+            {
+                ConfigurationTheme = 0;
+                Save();
+            }
             return;
+        }
 
         // Version 1 exposed independent booleans for navigation and native action
         // execution. Requiring an explicit re-enable prevents an old development
@@ -216,10 +225,10 @@ public sealed class Configuration : IPluginConfiguration
                 RotationSolverQuietSeconds = 2f;
         }
 
-        // Version 18 removes legacy per-map, mounting, and Reborn-travel
-        // switches. Unknown fields in older JSON are ignored. The existing
-        // NavigationEnabled value alone expresses navigation intent.
-        Version = 18;
+        // Version 18 removed legacy map/mount switches. The theme is new in
+        // version 19; retain every existing gameplay setting and position.
+        ConfigurationTheme = 0;
+        Version = 19;
         Save();
     }
 

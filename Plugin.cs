@@ -113,7 +113,7 @@ public sealed class Plugin : IDalamudPlugin
         var queueAdapter = new FrontlineQueueAdapter(gameGui, dataManager, developmentLog);
         queueLifecycle = new QueueLifecycleController(queueAdapter, dutyState, developmentLog);
 
-        diagnostics = new DiagnosticWindow(() => current, vnav, navigation, battlefield, wrath,
+        diagnostics = new DiagnosticWindow(config, () => current, vnav, navigation, battlefield, wrath,
             () => combat.LastAction, () => $"Policy: {current.Game.FrontlineMap}; dynamic: {dynamicFollow.Status}; slot: {dynamicFollow.Slot}; destination: {dynamicFollow.Destination?.ToString() ?? "none"}; Worqor: {worqorGroupPilot.Status}; Seal Rock: {sealRockGroupPilot.Status}; Shatter: {shatterGroupPilot.Status}",
             () => pilotReadiness,
             StopNavigationFromUi, OnDiagnosticsClosed)

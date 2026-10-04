@@ -1,0 +1,9 @@
+# Sentinel Modern in PvPSentinel
+
+PvPSentinel `0.3.1.20` uses the published `MarshalTitan.SentinelCore.UI` `0.2.0` library from SentinelCore `v0.2.0.0` (commit `4886a207d003850a163f680e81cf3a714c4993cc`). The pinned UI and generic Core NuGet packages are included under `.packages/SentinelCore/v0.2.0.0` so builds and the installed plugin do not require another Sentinel plugin. Update those packages through an explicit versioned release change.
+
+The Appearance section offers Classic and Sentinel Modern. Existing configurations migrate to Classic; new installations also start there. The preference is saved as `ConfigurationTheme` (`0` or `1`). No gameplay values, window identifiers, size defaults, or persisted Dalamud window positions are changed by theme migration. Invalid saved theme values fall back to Classic.
+
+Modern configuration uses the shared Core style scope, ambient treatment, responsive shell, navigation, cards, switches, and status chips. Core, Movement, Combat, Native combat, Diagnostics, Frontline lifecycle, and Appearance retain the existing settings and callbacks. The Development window keeps its dense diagnostic workflow and plugin-specific threat, behavior, and state colours while adopting Core styling and sections. Dalamud retains the title bar, close and collapse controls. Standard sliders, combos, and buttons retain their normal keyboard/controller interaction, and Modern switches respond to item activation.
+
+To verify in game, select Modern in Appearance, resize the configuration window through compact and wide layouts, use keyboard/controller navigation on its controls, open and close Development, restart the plugin, then return to Classic. Confirm emergency STOP and the persisted window positions. The Frontline movement, combat, provider, and queue policies were not changed.

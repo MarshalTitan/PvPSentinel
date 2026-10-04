@@ -1,5 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using Dalamud.Interface.Utility;
+using SentinelCore.UI;
 using PvPSentinel.Models;
 using PvPSentinel.Integrations;
 using PvPSentinel.Navigation;
@@ -10,6 +12,14 @@ namespace PvPSentinel.UI;
 
 internal sealed class ConfigurationWindow : Window
 {
+    private enum ConfigurationPage { Core, Movement, Combat, NativeCombat, Diagnostics, Frontline, Appearance }
+    private readonly SentinelModernStyleScope modernStyle = new();
+    private readonly Action drawModernNavigation;
+    private readonly Action drawModernContent;
+    private ConfigurationPage selectedPage;
+    private bool IsModern => SentinelThemeState<ConfigurationPage>.NormalizeTheme(config.ConfigurationTheme)
+        == SentinelThemeKind.Modern;
+
     private readonly Configuration config;
     private readonly Action<bool> diagnosticsVisibilityChanged;
     private readonly Action<bool> verboseLoggingChanged;
@@ -46,14 +56,129 @@ internal sealed class ConfigurationWindow : Window
         this.readiness = readiness;
         this.currentMap = currentMap;
         this.mountCatalog = mountCatalog;
+        drawModernNavigation = DrawModernNavigation;
+        drawModernContent = DrawModernContent;
         Size = new Vector2(550, 460);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
+    public override void PreDraw()
+    {
+        if (IsModern)
+            modernStyle.Push(ImGuiHelpers.GlobalScale);
+    }
+
+    public override void PostDraw() => modernStyle.Pop();
+
     public override void Draw()
     {
+        if (IsModern)
+            DrawModern();
+        else
+            DrawClassic();
+    }
+
+    private void DrawClassic()
+    {
         if (BeginSection("Core", true))
+            DrawCore();
+
+        if (BeginSection("Diagnostics and testing display", true))
+            DrawDiagnostics();
+
+        if (BeginSection("Movement and clustering"))
+            DrawMovement();
+
+        if (BeginSection("Advanced combat policy"))
+            DrawCombat();
+
+        if (BeginSection("Native PvP combat (experimental)"))
+            DrawNativeCombat();
+
+        if (BeginSection("Frontline lifecycle and allowed maps"))
+            DrawFrontline();
+
+        if (BeginSection("Appearance"))
+            DrawAppearance();
+
+        ImGui.Spacing();
+        if (ImGui.Button("Save configuration"))
+            config.Save();
+        ImGui.SameLine();
+        ImGui.TextDisabled("Changes are also saved as they are made.");
+    }
+
+    private void DrawModern()
+    {
+        var pilot = readiness();
+        var status = isEmergencyStopped() ? new SentinelModernStatus("STOPPED", SentinelModernStatusTone.Warning)
+            : pilot?.CanTravel == true ? new SentinelModernStatus("NAV READY", SentinelModernStatusTone.Success)
+            : new SentinelModernStatus("STANDBY", SentinelModernStatusTone.Neutral);
+        var options = new SentinelModernShellOptions(
+            "PvPSentinel-Modern", "MARSHALTITAN  /  SENTINEL", "PVP SENTINEL",
+            "Frontline strategy and supervised navigation")
         {
+            Scale = ImGuiHelpers.GlobalScale,
+            ContextLabel = "Modern",
+            Status = status,
+        };
+        SentinelModernConfigurationShell.Draw(options, drawModernNavigation, drawModernContent);
+    }
+
+    private void DrawModernNavigation()
+    {
+        var scale = ImGuiHelpers.GlobalScale;
+        SentinelModernNavigation.GroupLabel("NAVIGATION");
+        NavItem(ConfigurationPage.Core, "Core", scale);
+        NavItem(ConfigurationPage.Movement, "Movement", scale);
+        ImGui.Spacing();
+        SentinelModernNavigation.GroupLabel("COMBAT");
+        NavItem(ConfigurationPage.Combat, "Combat policy", scale);
+        NavItem(ConfigurationPage.NativeCombat, "Native combat", scale);
+        ImGui.Spacing();
+        SentinelModernNavigation.GroupLabel("TOOLS");
+        NavItem(ConfigurationPage.Diagnostics, "Diagnostics", scale);
+        NavItem(ConfigurationPage.Frontline, "Frontline lifecycle", scale);
+        NavItem(ConfigurationPage.Appearance, "Appearance", scale);
+    }
+
+    private void NavItem(ConfigurationPage page, string title, float scale)
+    {
+        if (SentinelModernNavigation.Item(page.ToString(), title, selectedPage == page, scale))
+            selectedPage = page;
+    }
+
+    private void DrawModernContent()
+    {
+        var (title, description) = selectedPage switch
+        {
+            ConfigurationPage.Core => ("Core", "Enable travel, select a combat provider, and see readiness."),
+            ConfigurationPage.Diagnostics => ("Diagnostics", "Visibility and event logging for supervised tests."),
+            ConfigurationPage.Movement => ("Movement", "Clustering, mounting, and bounded route recovery."),
+            ConfigurationPage.Combat => ("Combat policy", "Target scoring and provider coordination."),
+            ConfigurationPage.NativeCombat => ("Native combat", "Experimental action and defensive thresholds."),
+            ConfigurationPage.Frontline => ("Frontline lifecycle", "Future queue preferences; queueing remains disabled."),
+            _ => ("Appearance", "Choose the presentation for PvPSentinel windows."),
+        };
+        SentinelModernUi.PageHeading(title, description);
+        ImGui.Spacing();
+        using var card = SentinelModernCard.Begin("PvPSentinel-ModernPageCard");
+        if (!card.IsVisible)
+            return;
+        switch (selectedPage)
+        {
+            case ConfigurationPage.Core: DrawCore(); break;
+            case ConfigurationPage.Diagnostics: DrawDiagnostics(); break;
+            case ConfigurationPage.Movement: DrawMovement(); break;
+            case ConfigurationPage.Combat: DrawCombat(); break;
+            case ConfigurationPage.NativeCombat: DrawNativeCombat(); break;
+            case ConfigurationPage.Frontline: DrawFrontline(); break;
+            case ConfigurationPage.Appearance: DrawAppearance(); break;
+        }
+    }
+
+    private void DrawCore()
+    {
             DrawCheckbox("Enable PvPSentinel", config.Enabled, value => config.Enabled = value);
             DrawCheckbox("Enable navigation", config.NavigationEnabled, value => config.NavigationEnabled = value);
             DrawCombatProvider();
@@ -64,14 +189,22 @@ internal sealed class ConfigurationWindow : Window
             ImGui.Text($"Navigation: {(pilot?.CanTravel == true ? "Active" : config.NavigationEnabled ? "Blocked" : "Off")}");
             ImGui.Text($"Combat provider: {(pilot is { ProviderLoaded: true, ProviderActivityObservable: true } ? "Connected" : "Not connected")}");
             ImGui.Text($"vnavmesh: {(pilot?.MeshReady == true ? "Ready" : "Unavailable/loading")}");
+            if (IsModern)
+            {
+                var scale = ImGuiHelpers.GlobalScale;
+                SentinelModernUi.StatusChip(pilot?.CanTravel == true ? "NAV READY" : "NAV BLOCKED",
+                    pilot?.CanTravel == true ? SentinelModernStatusTone.Success : SentinelModernStatusTone.Warning, scale);
+                SentinelModernUi.StatusChip(pilot?.MeshReady == true ? "MESH READY" : "MESH LOADING",
+                    pilot?.MeshReady == true ? SentinelModernStatusTone.Success : SentinelModernStatusTone.Neutral, scale);
+            }
             if (ImGui.Button("EMERGENCY STOP", new Vector2(180, 34)))
                 emergencyStop();
             if (isEmergencyStopped() && ImGui.Button("Clear emergency-stop latch"))
                 clearEmergencyStop();
-        }
+    }
 
-        if (BeginSection("Diagnostics and testing display", true))
-        {
+    private void DrawDiagnostics()
+    {
             DrawCheckbox("Show diagnostic window", config.ShowDiagnostics, value =>
             {
                 config.ShowDiagnostics = value;
@@ -82,10 +215,10 @@ internal sealed class ConfigurationWindow : Window
                 config.VerboseLogging = value;
                 verboseLoggingChanged(value);
             });
-        }
+    }
 
-        if (BeginSection("Movement and clustering"))
-        {
+    private void DrawMovement()
+    {
             DrawFloat("Friendly cluster link radius", config.FriendlyClusterLinkRadius, 6f, 30f, value => config.FriendlyClusterLinkRadius = value, "%.1f y");
             DrawFloat("Main-group follow radius", config.MainGroupFollowRadius, 8f, 40f, value => config.MainGroupFollowRadius = value, "%.1f y");
             DrawFloat("Regroup distance", config.MainGroupRegroupDistance, 20f, 80f, value => config.MainGroupRegroupDistance = value, "%.1f y");
@@ -99,10 +232,10 @@ internal sealed class ConfigurationWindow : Window
             DrawFloat("Dismount distance", config.DismountDistance, 10f, 45f, value => config.DismountDistance = value, "%.1f y");
             DrawFloat("Mount enemy safety radius", config.MountEnemySafetyRadius, 15f, 50f, value => config.MountEnemySafetyRadius = value, "%.1f y");
             DrawPreferredMount();
-        }
+    }
 
-        if (BeginSection("Advanced combat policy"))
-        {
+    private void DrawCombat()
+    {
             DrawCheckbox("Enable strategic target scoring", config.TargetSelectionEnabled, value => config.TargetSelectionEnabled = value);
             DrawCheckbox("Prioritize safe finish-KO opportunities", config.FinishKoPriorityEnabled, value => config.FinishKoPriorityEnabled = value);
             DrawFloat("Enemy engagement radius", config.EnemyEngagementRadius, 10f, 40f, value => config.EnemyEngagementRadius = value, "%.1f y");
@@ -116,10 +249,10 @@ internal sealed class ConfigurationWindow : Window
                 DrawFloat("Reborn post-combat quiet period", config.RotationSolverQuietSeconds, 1f, 15f, value => config.RotationSolverQuietSeconds = value, "%.1f s");
                 DrawFloat("Reborn targeting-threat radius", config.RotationSolverEnemyClearanceRadius, 10f, 60f, value => config.RotationSolverEnemyClearanceRadius = value, "%.1f y");
             }
-        }
+    }
 
-        if (BeginSection("Native PvP combat (experimental)"))
-        {
+    private void DrawNativeCombat()
+    {
             ImGui.TextWrapped("Shadow / Observe is the safe default: the native combat subsystem evaluates and logs targets/actions but cannot target, act, or move. Active permits verified native actions; strategic navigation remains a separate controller.");
         DrawFloat("Recuperate below HP", config.NativeRecuperateHpPercent, 25f, 95f, value => config.NativeRecuperateHpPercent = value, "%.0f %%");
         DrawFloat("Guard base danger HP", config.NativeGuardHpPercent, 10f, 60f, value => config.NativeGuardHpPercent = value, "%.0f %%");
@@ -169,10 +302,10 @@ internal sealed class ConfigurationWindow : Window
             ImGui.TreePop();
         }
 
-        }
+    }
 
-        if (BeginSection("Frontline lifecycle and allowed maps"))
-        {
+    private void DrawFrontline()
+    {
             ImGui.TextDisabled("Automatic queue / accept / requeue: disabled for manual M2 validation");
             ImGui.TextWrapped("These preferences apply only to future queue work, not navigation within a match.");
             DrawCheckbox("The Borderland Ruins (Secure)", config.AllowBorderlandRuins, value => config.AllowBorderlandRuins = value);
@@ -183,19 +316,46 @@ internal sealed class ConfigurationWindow : Window
             DrawInt("Match limit (this session)", config.MatchLimit, 1, 100, value => config.MatchLimit = value);
             if (ImGui.Button("Reset session match counter"))
                 resetMatchCounter();
-        }
+    }
 
-        ImGui.Spacing();
+    private void DrawAppearance()
+    {
+        var modern = IsModern;
+        if (ImGui.BeginCombo("Configuration theme", modern ? "Sentinel Modern" : "Classic"))
+        {
+            if (ImGui.Selectable("Classic", !modern))
+                SetTheme(SentinelThemeKind.Classic);
+            if (ImGui.Selectable("Sentinel Modern", modern))
+                SetTheme(SentinelThemeKind.Modern);
+            ImGui.EndCombo();
+        }
+        ImGui.TextDisabled("Existing configurations remain Classic until changed here.");
         if (ImGui.Button("Save configuration"))
             config.Save();
-        ImGui.SameLine();
-        ImGui.TextDisabled("Changes are also saved as they are made.");
+    }
+
+    private void SetTheme(SentinelThemeKind theme)
+    {
+        if (config.ConfigurationTheme == (int)theme)
+            return;
+        config.ConfigurationTheme = (int)theme;
+        config.Save();
     }
 
     private void DrawCheckbox(string label, bool current, Action<bool> setter)
     {
         var value = current;
-        if (!ImGui.Checkbox(label, ref value))
+        var changed = IsModern
+            ? SentinelModernControls.Toggle(label, label, ref value, ImGuiHelpers.GlobalScale)
+            : ImGui.Checkbox(label, ref value);
+        // Core draws the switch; keyboard/gamepad activation is provided by
+        // the underlying ImGui item when it did not receive a mouse click.
+        if (IsModern && !changed && ImGui.IsItemActivated())
+        {
+            value = !value;
+            changed = true;
+        }
+        if (!changed)
             return;
         setter(value);
         config.Save();
