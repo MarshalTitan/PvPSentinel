@@ -1,5 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using Dalamud.Interface.Utility;
+using SentinelCore.UI;
 using PvPSentinel.Integrations;
 using PvPSentinel.FrontlineCore;
 using PvPSentinel.Models;
@@ -11,6 +13,8 @@ namespace PvPSentinel.UI;
 
 internal sealed class DiagnosticWindow : Window
 {
+    private readonly Configuration config;
+    private readonly SentinelModernStyleScope modernStyle = new();
     private readonly Func<TacticalSnapshot> snapshot;
     private readonly IVNavmeshAdapter vnav;
     private readonly NavigationController navigation;
@@ -23,6 +27,7 @@ internal sealed class DiagnosticWindow : Window
     private readonly Action closed;
 
     public DiagnosticWindow(
+        Configuration config,
         Func<TacticalSnapshot> snapshot,
         IVNavmeshAdapter vnav,
         NavigationController navigation,
@@ -35,6 +40,7 @@ internal sealed class DiagnosticWindow : Window
         Action closed)
         : base("PvP Sentinel - Development###PvPSentinelDiagnostics")
     {
+        this.config = config;
         this.snapshot = snapshot;
         this.vnav = vnav;
         this.navigation = navigation;
@@ -51,8 +57,18 @@ internal sealed class DiagnosticWindow : Window
 
     public override void OnClose() => closed();
 
+    public override void PreDraw()
+    {
+        if (config.ConfigurationTheme == (int)SentinelThemeKind.Modern)
+            modernStyle.Push(ImGuiHelpers.GlobalScale);
+    }
+
+    public override void PostDraw() => modernStyle.Pop();
+
     public override void Draw()
     {
+        if (config.ConfigurationTheme == (int)SentinelThemeKind.Modern)
+            SentinelModernAmbient.DrawRings(ImGuiHelpers.GlobalScale, 0.45f);
         var state = snapshot();
         var game = state.Game;
         var local = game.LocalPlayer;
@@ -500,8 +516,13 @@ internal sealed class DiagnosticWindow : Window
     }
 
     private static void ColoredText(Vector4 color, string text) => ImGui.TextColored(color, text);
-    private static bool BeginSection(string title, bool defaultOpen = false) =>
-        ImGui.CollapsingHeader(title, defaultOpen ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None);
+    private bool BeginSection(string title, bool defaultOpen = false)
+    {
+        var flags = defaultOpen ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None;
+        return config.ConfigurationTheme == (int)SentinelThemeKind.Modern
+            ? SentinelModernControls.CollapsingSection(title, flags)
+            : ImGui.CollapsingHeader(title, flags);
+    }
     private static void Subheading(string title)
     {
         ImGui.Spacing();

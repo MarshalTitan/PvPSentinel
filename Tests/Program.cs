@@ -72,7 +72,7 @@ var priorCounterConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("
 var configStore = new Dalamud.Plugin.TestPluginInterface();
 priorCounterConfig.Initialize(configStore);
 Check("old counter config upgrades without losing navigation and provider choices", true,
-    priorCounterConfig.Version == 18 && priorCounterConfig.Enabled &&
+    priorCounterConfig.Version == 19 && priorCounterConfig.ConfigurationTheme == 0 && priorCounterConfig.Enabled &&
     priorCounterConfig.NavigationEnabled &&
     priorCounterConfig.CombatProvider == CombatProvider.RotationSolverReborn);
 Check("old counter fields disappear from re-saved config", true,
@@ -85,7 +85,7 @@ var priorPilotConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
     """)!;
 priorPilotConfig.Initialize(new Dalamud.Plugin.TestPluginInterface());
 Check("old false map switches cannot disable navigation after migration", true,
-    priorPilotConfig.Version == 18 && !priorPilotConfig.NavigationEnabled);
+    priorPilotConfig.Version == 19 && !priorPilotConfig.NavigationEnabled);
 var oldFalseMap = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
     {"Version":17,"Enabled":true,"NavigationEnabled":true,
      "WorqorGroupNavigationEnabled":false,"MountingEnabled":false,
@@ -94,11 +94,32 @@ var oldFalseMap = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
 var oldFalseStore = new Dalamud.Plugin.TestPluginInterface();
 oldFalseMap.Initialize(oldFalseStore);
 Check("navigation is authoritative and obsolete switches are not saved", true,
-    oldFalseMap.Version == 18 && oldFalseMap.NavigationEnabled &&
+    oldFalseMap.Version == 19 && oldFalseMap.NavigationEnabled &&
     oldFalseStore.LastSavedJson is { } migrated &&
     !migrated.Contains("GroupNavigationEnabled", StringComparison.Ordinal) &&
     !migrated.Contains("MountingEnabled", StringComparison.Ordinal) &&
     !migrated.Contains("ContinueManualTravelDuringRebornCombat", StringComparison.Ordinal));
+
+var oldThemeConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
+    {"Version":18,"ConfigurationTheme":1,"Enabled":true,"NavigationEnabled":true,
+     "PreferredMountId":14,"ShowDiagnostics":false}
+    """)!;
+oldThemeConfig.Initialize(new Dalamud.Plugin.TestPluginInterface());
+Check("existing config migrates to Classic preserving gameplay and window settings", true,
+    oldThemeConfig.Version == 19 && oldThemeConfig.ConfigurationTheme == 0 &&
+    oldThemeConfig.Enabled && oldThemeConfig.NavigationEnabled &&
+    oldThemeConfig.PreferredMountId == 14 && !oldThemeConfig.ShowDiagnostics);
+var savedModernConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
+    {"Version":19,"ConfigurationTheme":1,"Enabled":true}
+    """)!;
+savedModernConfig.Initialize(new Dalamud.Plugin.TestPluginInterface());
+Check("Modern choice survives reload", true, savedModernConfig.ConfigurationTheme == 1);
+var invalidThemeConfig = JsonSerializer.Deserialize<PvPSentinel.Configuration>("""
+    {"Version":19,"ConfigurationTheme":99,"NavigationEnabled":true}
+    """)!;
+invalidThemeConfig.Initialize(new Dalamud.Plugin.TestPluginInterface());
+Check("invalid saved theme falls back to Classic without changing navigation", true,
+    invalidThemeConfig.ConfigurationTheme == 0 && invalidThemeConfig.NavigationEnabled);
 
 Check("existing Native provider configuration value is preserved", 2, (int)CombatProvider.NativePvPSentinel);
 Check("Reborn provider uses a new configuration value", 3, (int)CombatProvider.RotationSolverReborn);
