@@ -17,6 +17,7 @@ internal sealed class FrontlineDynamicFollowController(Func<int>? newSeed = null
     private Vector3? lastDestination;
     private Vector3 lastForward;
     private DateTime lastRequestUtc = DateTime.MinValue;
+    private DateTime lastValidGroupUtc = DateTime.MinValue;
     private bool wasDead;
     private bool pausedAfterFailure;
     private bool manualOverride;
@@ -88,9 +89,12 @@ internal sealed class FrontlineDynamicFollowController(Func<int>? newSeed = null
         }
         if (group?.Cluster is not { PlayerCount: >= 3 } || localPosition is null)
         {
+            if (owns && now - lastValidGroupUtc <= TimeSpan.FromSeconds(5))
+                return Decision(null, false, "Allied group temporarily unobserved; retaining current route briefly");
             lastDestination = null;
             return Decision(null, owns, "Waiting for a valid allied field group");
         }
+        lastValidGroupUtc = now;
 
         if (group.Value.GroupChanged)
         {
@@ -105,12 +109,13 @@ internal sealed class FrontlineDynamicFollowController(Func<int>? newSeed = null
         var age = now - lastRequestUtc;
         // Stay within support range without repeatedly routing to the centroid.
         if (distance <= 14f)
-            return Decision(null, owns, $"With allied group; formation {Slot}");
+            return Decision(null, false, $"With allied group; retaining committed formation leg {Slot}");
         var inFlight = route.State is ManualRouteState.Snapping or ManualRouteState.RequestingPath;
         var refresh = lastDestination is null || !owns ||
-            route.State == ManualRouteState.Arrived && moved >= 8f ||
-            age >= TimeSpan.FromSeconds(2) && moved >= 10f ||
-            age >= TimeSpan.FromSeconds(3) && moved >= 4f;
+            route.State == ManualRouteState.Arrived && age >= TimeSpan.FromSeconds(2) ||
+            // A moving group can outrun an old endpoint, but a routine
+            // centroid shift must not tear down a protected vnavmesh route.
+            age >= TimeSpan.FromSeconds(15) && moved >= 25f;
         // Let the existing request finish or fail under the navigation
         // controller's bounded recovery before submitting another generation.
         if (inFlight)
@@ -120,7 +125,8 @@ internal sealed class FrontlineDynamicFollowController(Func<int>? newSeed = null
 
         var reason = lastDestination is null ? "acquire" : !owns ? "reacquire" :
             route.State == ManualRouteState.Arrived ? "group-moved-after-arrival" :
-            moved >= 10f ? "group-moved-materially" : "route-aged-and-group-moving";
+            route.State == ManualRouteState.Arrived ? "group-moved-after-arrival" :
+            moved >= 25f ? "group-moved-materially" : "group-moved-after-hold";
         lastDestination = destination;
         lastRequestUtc = now;
         return Decision(new DynamicFollowPlan(Id(currentMap), destination, reason), false,
@@ -131,6 +137,7 @@ internal sealed class FrontlineDynamicFollowController(Func<int>? newSeed = null
     {
         lastDestination = null;
         lastRequestUtc = DateTime.MinValue;
+        lastValidGroupUtc = DateTime.MinValue;
         Status = "Static objective route has priority";
     }
 

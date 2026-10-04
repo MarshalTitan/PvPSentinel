@@ -204,7 +204,7 @@ public sealed class Plugin : IDalamudPlugin
             config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.Installed,
             config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.Loaded,
             config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.IpcAvailable,
-            config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.AutorotationActive && combatDecision.ControllerActive);
+            config.CombatProvider == CombatProvider.RotationSolverReborn && reborn.AutorotationActive);
         // External ACR currently has no trustworthy activity IPC, and Native
         // Shadow mode cannot own travel into combat. Both remain fail closed.
         developmentLog.Changed("pilot-readiness", string.Join('|', pilotReadiness.Lines),
@@ -291,8 +291,8 @@ public sealed class Plugin : IDalamudPlugin
         if (follow.Plan is { } dynamicPlan)
         {
             navigation.SetManualNavigationArmed(true);
-            if (navigation.RequestManualDestination(dynamicPlan.DestinationId, "Allied field group formation",
-                dynamicPlan.Position))
+            if (navigation.RequestDynamicDestination(dynamicPlan.DestinationId, "Allied field group formation",
+                dynamicPlan.Position, game.LocalPlayer!.Position, game.CapturedAtUtc))
                 battlefield.RecordNavigationEvent(new ManualNavigationEvent("dynamic_follow_destination",
                     $"map={game.FrontlineMap}; reason={dynamicPlan.Reason}; destination={dynamicPlan.Position}; slot={dynamicFollow.Slot}", game.CapturedAtUtc));
         }

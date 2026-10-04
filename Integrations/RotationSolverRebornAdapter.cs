@@ -90,7 +90,7 @@ internal sealed class RotationSolverRebornAdapter : IDisposable
                 nextGcdActionId, ResolveAction(nextGcdActionId), lastActionSignalUtc,
                 active
                     ? "RotationSolverReborn is loaded and reports autorotation active. PvP control IPC is intentionally not used."
-                    : "RotationSolverReborn is loaded, but autorotation reports inactive. Enable it before relying on external combat."));
+                    : "RotationSolverReborn is loaded and connected, but reports autorotation Off. Travel may continue; verify combat actions during supervised testing."));
         }
         catch (Exception ex)
         {

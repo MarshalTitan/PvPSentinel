@@ -76,7 +76,9 @@ internal sealed class CombatProviderCoordinator(
         bool sentinelMountTransitionPending)
     {
         var status = rotationSolverReborn.GetStatus(game.CapturedAtUtc);
-        var providerActive = status.Loaded && status.IpcAvailable && status.AutorotationActive;
+        // Connection readiness is separate from RSR's mode report. PvPSentinel
+        // cannot verify action execution through this IPC; it only owns travel.
+        var providerAvailable = status.Loaded && status.IpcAvailable;
         var nearbyEnemies = game.LocalPlayer is null
             ? 0
             : CountNear(game.Enemies, game.LocalPlayer.Position, config.RotationSolverEnemyClearanceRadius);
@@ -85,7 +87,7 @@ internal sealed class CombatProviderCoordinator(
             : 0;
         var engagement = rebornEngagement.Update(
             game.CapturedAtUtc,
-            providerActive && game.IsFrontline && game.IsClassificationReliable && game.LocalPlayer is not null,
+            providerAvailable && game.IsFrontline && game.IsClassificationReliable && game.LocalPlayer is not null,
             game.LocalPlayer?.IsDead == true,
             game.IsMounted,
             game.IsMounting,
@@ -136,7 +138,7 @@ internal sealed class CombatProviderCoordinator(
 
         return new CombatDecision(
             CombatProvider.RotationSolverReborn,
-            providerActive,
+            providerAvailable,
             engagement.ShouldYield,
             status.NextActionId,
             desiredAction,

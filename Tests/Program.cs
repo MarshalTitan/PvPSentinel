@@ -197,6 +197,13 @@ var movingField = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true
 Check("moving field position is smoothed and briefly led", true,
     sharedField.SmoothedCenter is { } smooth &&
     movingField.Destination.X > smooth.X && movingField.Destination.X < 154f);
+var lostFrame = sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
+    playerAwayFromBase, false, [spawnCrowd], fieldNow.AddSeconds(8));
+Check("brief field observation loss retains old field group, not spawn", 10,
+    lostFrame.Cluster?.PlayerCount ?? 0);
+Check("expired field observation does not invent a destination", true,
+    sharedField.Update(FrontlineMap.OnsalHakair, true, false, true,
+        playerAwayFromBase, false, [spawnCrowd], fieldNow.AddSeconds(11)).Cluster is null);
 Check("unreliable classification yields no field destination", true,
     sharedField.Update(FrontlineMap.OnsalHakair, true, false, false,
         playerAwayFromBase, false, [largerField], fieldNow.AddSeconds(8)).Cluster is null);
@@ -222,21 +229,30 @@ foreach (var item in mapCases)
     var moved = follower.Update(item.Map, fieldNow.AddSeconds(3), true, true, false, false, false,
         route, route.DestinationId, Vector3.Zero,
         choice with { Destination = new Vector3(118, 0, 0), GroupChanged = false });
-    Check($"{item.Map} materially moved group refreshes route", true,
-        moved.Plan is not null && moved.Plan.Reason == "group-moved-materially");
-    var arrived = follower.Update(item.Map, fieldNow.AddSeconds(3.25), true, true, false, false, false,
-        route with { State = ManualRouteState.Arrived }, null, Vector3.Zero,
-        choice with { Destination = new Vector3(134, 0, 0), GroupChanged = false });
-    Check($"{item.Map} old endpoint arrival does not impose six-second hold", true,
-        arrived.Plan is not null);
-    var inCombat = follower.Update(item.Map, fieldNow.AddSeconds(6), true, true, false, false, false,
+    Check($"{item.Map} active group route is not interrupted by short drift", true,
+        moved.Plan is null && !moved.CancelOwned);
+    var missing = follower.Update(item.Map, fieldNow.AddSeconds(4), true, true, false, false, false,
+        route, route.DestinationId, Vector3.Zero, null);
+    Check($"{item.Map} transient missing group retains route", true,
+        missing.Plan is null && !missing.CancelOwned);
+    var material = follower.Update(item.Map, fieldNow.AddSeconds(15), true, true, false, false, false,
         route, route.DestinationId, Vector3.Zero,
-        choice with { Destination = new Vector3(150, 0, 0), GroupChanged = false });
-    Check($"{item.Map} combat presence does not gate dynamic follower", true, inCombat.Plan is not null);
-    var staticPriority = follower.Update(item.Map, fieldNow.AddSeconds(7), true, true, false, false, true,
+        choice with { Destination = new Vector3(140, 0, 0), GroupChanged = false });
+    Check($"{item.Map} sustained material group movement refreshes route", true,
+        material.Plan?.Reason == "group-moved-materially");
+    var arrived = follower.Update(item.Map, fieldNow.AddSeconds(16), true, true, false, false, false,
+        route with { State = ManualRouteState.Arrived }, null, Vector3.Zero,
+        choice with { Destination = new Vector3(158, 0, 0), GroupChanged = false });
+    Check($"{item.Map} arrival briefly holds before new group leg", true,
+        arrived.Plan is null);
+    var inCombat = follower.Update(item.Map, fieldNow.AddSeconds(18), true, true, false, false, false,
+        route with { State = ManualRouteState.Arrived }, null, Vector3.Zero,
+        choice with { Destination = new Vector3(165, 0, 0), GroupChanged = false });
+    Check($"{item.Map} combat presence does not gate follow reacquisition", true, inCombat.Plan is not null);
+    var staticPriority = follower.Update(item.Map, fieldNow.AddSeconds(19), true, true, false, false, true,
         route, route.DestinationId, Vector3.Zero, choice);
     Check($"{item.Map} static objective overrides follower", true, staticPriority.Plan is null);
-    var stopped = follower.Update(item.Map, fieldNow.AddSeconds(8), false, true, false, false, false,
+    var stopped = follower.Update(item.Map, fieldNow.AddSeconds(20), false, true, false, false, false,
         route, route.DestinationId, Vector3.Zero, choice);
     Check($"{item.Map} STOP cancels owned group route", true, stopped.CancelOwned);
 }
@@ -253,10 +269,10 @@ Check("formation seeds produce distinct bounded positions", true,
     Vector3.Distance(a.Position, slotChoice.Destination) < 20f &&
     Vector3.Distance(b.Position, slotChoice.Destination) < 20f);
 Check("formation slot persists through normal updates", true,
-    slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(3), true, true, false, false, false,
+    slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(16), true, true, false, false, false,
         ManualNavigationSnapshot.Disarmed with { State = ManualRouteState.Following, DestinationId = a.DestinationId },
         a.DestinationId, Vector3.Zero,
-        slotChoice with { Destination = new Vector3(117, 0, 0), GroupChanged = false }).Plan is not null &&
+        slotChoice with { Destination = new Vector3(137, 0, 0), GroupChanged = false }).Plan is not null &&
     slotA.Slot.Contains("23"));
 var late = slotA.Update(FrontlineMap.WorqorChirteh, fieldNow.AddSeconds(4), true, false, false, false, false,
     ManualNavigationSnapshot.Disarmed with { DestinationId = a.DestinationId,
@@ -472,6 +488,20 @@ Check("route arrival threshold requests dismount", true,
     MountTravelPolicy.ShouldDismount(true, 27.9f, 28f, false));
 Check("combat ownership requests an immediate dismount", true,
     MountTravelPolicy.ShouldDismount(true, 100f, 28f, true));
+Check("dynamic leg avoids mount churn for nearby detour", false,
+    MountTravelPolicy.ShouldMountForLeg(false, true, 85f, 27f, 55f));
+Check("dynamic long leg still requests mount", true,
+    MountTravelPolicy.ShouldMountForLeg(false, true, 220f, 180f, 55f));
+Check("dynamic group stays mounted until close", 14f,
+    MountTravelPolicy.DismountDistanceForLeg(true, 28f));
+Check("dynamic handoff accepts current owned route", true,
+    DynamicRouteHandoffPolicy.MayReplace(true, true, false, "R01", "R01", "FIELD", "FIELD"));
+Check("STOP invalidates late dynamic path", false,
+    DynamicRouteHandoffPolicy.MayReplace(false, false, false, "R01", "R01", "FIELD", null));
+Check("recovery rejects late dynamic path", false,
+    DynamicRouteHandoffPolicy.MayReplace(true, true, true, "R01", "R01", "FIELD", "FIELD"));
+Check("new route rejects stale dynamic handoff", false,
+    DynamicRouteHandoffPolicy.MayReplace(true, true, false, "R01", "R02", "FIELD", "FIELD"));
 
 var normalizedSelf = TeamClassifier.Classify(0x10, 0x10, 0, 0, true);
 Check("normalized classifier resolves SELF before team", BattlefieldRelationship.Self, normalizedSelf.Relationship);
@@ -1330,12 +1360,14 @@ foreach (var map in mapCases)
 }
 var blocked = new FrontlinePilotReadiness(true, FrontlineMatchLifecycle.PreMatch,
     true, false, CombatProvider.RotationSolverReborn, true, true, true, false);
-Check("loaded but inactive Reborn does not allow travel", false, blocked.CanTravel);
+Check("pre-match still blocks with connected Reborn", false, blocked.CanTravel);
+Check("loaded connected RSR Off permits supervised travel", true,
+    (blocked with { Lifecycle = FrontlineMatchLifecycle.MatchActive, MeshReady = true }).CanTravel);
 Check("all simultaneous blockers are visible", true,
     blocked.Lines.Any(line => line.Contains("PreMatch [FAIL]")) &&
     blocked.Lines.Any(line => line.Contains("loading [FAIL]")) &&
     blocked.Lines.Any(line => line.Contains("loaded: Yes [OK]")) &&
-    blocked.Lines.Any(line => line.Contains("active: No [FAIL]")));
+    blocked.Lines.Any(line => line.Contains("autorotation active: No [diagnostic")));
 Check("unobservable External ACR stays fail closed", false,
     (blocked with { Lifecycle = FrontlineMatchLifecycle.MatchActive, MeshReady = true,
         Provider = CombatProvider.ExternalAcr, ProviderLoaded = true,

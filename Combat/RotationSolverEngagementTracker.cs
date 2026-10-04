@@ -32,7 +32,7 @@ internal sealed class RotationSolverEngagementTracker
 
     public RotationSolverEngagementDecision Update(
         DateTime now,
-        bool providerAvailableAndActive,
+        bool providerConnected,
         bool isDead,
         bool isMounted,
         bool isMounting,
@@ -49,7 +49,7 @@ internal sealed class RotationSolverEngagementTracker
         enemiesTargetingPlayer = Math.Max(0, enemiesTargetingPlayer);
         quietSeconds = Math.Clamp(quietSeconds, 1f, 15f);
 
-        if (!providerAvailableAndActive)
+        if (!providerConnected)
         {
             Reset();
             return new RotationSolverEngagementDecision(
@@ -57,7 +57,7 @@ internal sealed class RotationSolverEngagementTracker
                 false,
                 nearbyEnemies,
                 enemiesTargetingPlayer,
-                "RotationSolverReborn is not both loaded and active; PvPSentinel will not claim that external combat is being handled.");
+                "RotationSolverReborn is not connected; PvPSentinel cannot coordinate external combat travel.");
         }
 
         if (isDead)
@@ -101,7 +101,7 @@ internal sealed class RotationSolverEngagementTracker
                 true,
                 nearbyEnemies,
                 enemiesTargetingPlayer,
-                $"Engagement latched because {evidence}. Reborn owns local combat; strategic travel remains paused until combat and observed hard-target pressure clear.");
+                $"Engagement latched because {evidence}. Strategic travel remains paused until combat and observed hard-target pressure clear; Reborn action execution is not observable.");
         }
 
         if (state == ExternalEngagementState.Engaged)

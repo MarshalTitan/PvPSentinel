@@ -62,7 +62,7 @@ internal sealed class ConfigurationWindow : Window
             ImGui.Text("Status");
             ImGui.Text($"Frontline: {currentMap().DisplayName()}");
             ImGui.Text($"Navigation: {(pilot?.CanTravel == true ? "Active" : config.NavigationEnabled ? "Blocked" : "Off")}");
-            ImGui.Text($"Combat provider: {(pilot?.ProviderActive == true ? "Ready" : "Not ready")}");
+            ImGui.Text($"Combat provider: {(pilot is { ProviderLoaded: true, ProviderActivityObservable: true } ? "Connected" : "Not connected")}");
             ImGui.Text($"vnavmesh: {(pilot?.MeshReady == true ? "Ready" : "Unavailable/loading")}");
             if (ImGui.Button("EMERGENCY STOP", new Vector2(180, 34)))
                 emergencyStop();
@@ -275,13 +275,13 @@ internal sealed class ConfigurationWindow : Window
         if (config.CombatProvider == CombatProvider.RotationSolverReborn)
         {
             var status = rebornStatus();
-            var color = status.Loaded && status.IpcAvailable && status.AutorotationActive
+            var color = status.Loaded && status.IpcAvailable
                 ? new Vector4(0.35f, 0.9f, 0.55f, 1f)
                 : new Vector4(1f, 0.55f, 0.25f, 1f);
             ImGui.TextColored(color,
-                $"Reborn: {(status.Loaded ? "loaded" : "not loaded")}, {(status.AutorotationActive ? "active" : "inactive")}, {status.Version}");
+                $"Reborn: {(status.Loaded ? "loaded" : "not loaded")}, mode {(status.AutorotationActive ? "active" : "Off")}, {status.Version}");
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("PvPSentinel observes Reborn readiness only. See Development for all blockers and RSR settings.");
+                ImGui.SetTooltip("Loaded and connected permits supervised travel even when RSR reports Off. Combat action execution cannot be verified through this IPC; see Development.");
         }
         else if (config.CombatProvider == CombatProvider.NativePvPSentinel)
             DrawNativeCombatMode();
