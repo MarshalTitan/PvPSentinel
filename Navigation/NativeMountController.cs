@@ -45,14 +45,14 @@ internal sealed class NativeMountController(
             mountRequestPendingUntilUtc = DateTime.MinValue;
             if (!forceDismount)
                 return new MountDecision(MountState.Mounted, false,
-                    "Mounted travel remains stable until arrival or confirmed combat requires a dismount.");
+                    "Mounted travel remains stable; group-follow arrival alone does not require a dismount.");
 
             var accepted = TryDismount(game.CapturedAtUtc);
             developmentLog.Throttled("mount-dismount", accepted
-                ? "Requested dismount before combat/arrival."
+                ? "Requested dismount for combat or an objective approach."
                 : "Dismount request is waiting for the general action to become available.", TimeSpan.FromSeconds(2));
             return new MountDecision(accepted ? MountState.DismountRequested : MountState.Blocked, true,
-                accepted ? "Dismount requested before combat or close-range arrival." : "Unable to dismount safely yet.");
+                accepted ? "Dismount requested for combat or an objective approach." : "Unable to dismount safely yet.");
         }
 
         if (forceDismount)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1.19 — Keep the mount through allied-group arrival
+
+- Keep Company Chocobo mounted during dynamic allied-field-group arrival and the next group-follow leg. Only an observed combat engagement requests dismount during dynamic following; a short remaining route or arrival alone does not.
+- Preserve the close-approach dismount policy for static supported objectives, plus combat dismounting, mount safety gates, validated vnavmesh route handoff, and existing map pilots.
+- The supplied Worqor match recorded 20 group-follow dismount requests, including 12 with no nearby enemies; repeated arrivals at the group's previous position caused the reported mount cycle. Route handoff otherwise improved to 55 arrivals and 16 validated dynamic retargets.
+
 ## 0.3.1.18 — RSR Off travel and smoother field-group route handoff
 
 - Permit supervised Frontline travel when selected RSR is loaded and its read-only status IPC responds, even if its autorotation mode reports Off. Keep the mode visible as a diagnostic and do not claim that the IPC proves combat actions executed. Never set RSR's PvP operating mode.

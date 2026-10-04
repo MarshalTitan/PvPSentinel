@@ -527,8 +527,9 @@ internal sealed class NavigationController(
         var shouldDismount = MountTravelPolicy.ShouldDismount(
             game.IsMounted,
             remainingRouteDistance,
-            MountTravelPolicy.DismountDistanceForLeg(dynamicFieldLeg, config.DismountDistance),
-            combatOwnsMovement: combatTravelActive) &&
+            config.DismountDistance,
+            combatOwnsMovement: combatTravelActive,
+            dynamicFieldLeg: dynamicFieldLeg) &&
             (combatTravelActive || (manualPlan is not null &&
                                     manualRecoveryPhase != ManualRecoveryPhase.DepartureStage));
         var mountDecision = mount.Update(game, longDistance, shouldDismount, nearbyMountThreats, config);
