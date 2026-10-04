@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.3.1.20</Version>
+    <Version>0.3.1.21</Version>
     <Author>MarshalTitan</Author>
     <Name>PvP Sentinel</Name>
     <Punchline>Frontline strategy, safe navigation, lifecycle, and modular combat providers.</Punchline>
@@ -13,7 +13,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="MarshalTitan.SentinelCore.UI" Version="0.2.0" />
+    <PackageReference Include="MarshalTitan.SentinelCore.UI" Version="[0.2.1]" />
     <Compile Remove="Tests/**/*.cs" />
   </ItemGroup>
 </Project>
