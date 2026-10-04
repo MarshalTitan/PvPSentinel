@@ -14,9 +14,11 @@ internal sealed record FrontlinePilotReadiness(
     bool ProviderActivityObservable,
     bool ProviderActive)
 {
-    // Providers without a trustworthy active-state signal cannot own a pilot.
+    // A live, queryable provider connection is the travel gate. RSR's mode
+    // signal is displayed separately: it does not prove whether combat actions
+    // were executed, and its Off state is not a navigation stop request.
     public bool CanTravel => Enabled && Lifecycle == FrontlineMatchLifecycle.MatchActive &&
-        TeamReliable && MeshReady && ProviderLoaded && ProviderActivityObservable && ProviderActive;
+        TeamReliable && MeshReady && ProviderLoaded && ProviderActivityObservable;
 
     public IReadOnlyList<string> Lines =>
     [
@@ -28,17 +30,12 @@ internal sealed record FrontlinePilotReadiness(
         $"Provider installed: {Yes(ProviderInstalled)}",
         $"Provider loaded: {Yes(ProviderLoaded)} [{Gate(ProviderLoaded)}]",
         $"Provider activity observable: {Yes(ProviderActivityObservable)} [{Gate(ProviderActivityObservable)}]",
-        $"Provider active: {Yes(ProviderActive)} [{Gate(ProviderActive)}]",
+        $"Provider reports autorotation active: {Yes(ProviderActive)} [diagnostic; action execution unverified]",
         ..(Provider == CombatProvider.RotationSolverReborn && ProviderLoaded && !ProviderActive
             ? new[]
             {
-                "RSR inactive; check its lifecycle settings:",
-                "Auto turn on when PvP match starts: ON",
-                "Auto turn off when dead in PvP: OFF",
-                "Disable automatically during area transitions: OFF",
-                "Auto turn off when PvP match ends: ON",
-                "Auto turn off after combat: OFF",
-                "Set RSR to PvP-specific state when enabled in PvP zone: ON",
+                "RSR reports Off; travel is permitted, but confirm combat actions in a supervised match.",
+                "If RSR does not act, review its PvP auto-start, death, transition, match-end and after-combat settings.",
             }
             : Array.Empty<string>()),
     ];

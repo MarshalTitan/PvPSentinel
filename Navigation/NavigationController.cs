@@ -36,6 +36,14 @@ internal sealed class NavigationController(
     private ManualRecoveryPhase manualRecoveryPhase;
     private Vector3? manualSnapped;
     private Task<IReadOnlyList<Vector3>>? manualPendingPath;
+    private Task<IReadOnlyList<Vector3>>? dynamicReplacementPath;
+    private ManualNavigationRequest? dynamicReplacementRequest;
+    private Vector3? dynamicReplacementSnap;
+    private Vector3 dynamicReplacementOrigin;
+    private DateTime dynamicReplacementRequestedUtc = DateTime.MinValue;
+    private string dynamicReplacementRouteId = "NONE";
+    private readonly PathRequestGate dynamicReplacementGate = new();
+    private long dynamicReplacementTicket;
     private Vector3 manualPathOrigin;
     private readonly PathRequestGate manualPathGate = new();
     private long manualPathTicket;
@@ -65,6 +73,8 @@ internal sealed class NavigationController(
 
     public void SetManualNavigationArmed(bool armed)
     {
+        if (manualArmed == armed)
+            return;
         manualArmed = armed;
         if (!armed)
         {
@@ -93,6 +103,7 @@ internal sealed class NavigationController(
     {
         if (!manualArmed)
             return false;
+        ClearDynamicReplacement();
         manualPathGate.Invalidate();
         var replacement = new ManualNavigationRequest(
             destinationId,
@@ -135,6 +146,37 @@ internal sealed class NavigationController(
             manualRequest = replacement;
         }
         Emit("navigation_request", $"destination={destinationId}; reference={FormatVector(referencePosition)}; approaches={replacement.ApproachAnchors.Count}; center_allowed={includeReferencePosition}; clearance={minimumApproachClearance:F1}");
+        return true;
+    }
+
+    /// <summary>Generate a moving-group replacement while the old validated route keeps running.</summary>
+    public bool RequestDynamicDestination(string destinationId, string destinationName,
+        Vector3 referencePosition, Vector3 currentPosition, DateTime now)
+    {
+        if (!manualArmed)
+            return false;
+        if (activeManual?.DestinationId != destinationId || !ownsPath || !vnav.IsPathRunning ||
+            !vnav.IsReady || manualYieldedToCombat)
+            return RequestManualDestination(destinationId, destinationName, referencePosition);
+
+        var snapped = vnav.FindNearestReachable(referencePosition, 12f, 8f);
+        if (snapped is null)
+        {
+            Emit("navigation_dynamic_retarget_rejected",
+                $"destination={destinationId}; reason=no-reachable-mesh-point; old_route_retained=true");
+            return false;
+        }
+        ClearDynamicReplacement();
+        dynamicReplacementRequest = new ManualNavigationRequest(destinationId, destinationName,
+            referencePosition, [], now);
+        dynamicReplacementSnap = snapped;
+        dynamicReplacementOrigin = currentPosition;
+        dynamicReplacementRequestedUtc = now;
+        dynamicReplacementRouteId = manualRouteId;
+        dynamicReplacementTicket = dynamicReplacementGate.Begin();
+        dynamicReplacementPath = vnav.FindPathAsync(currentPosition, snapped.Value, 2.5f);
+        Emit("navigation_dynamic_retarget_request",
+            $"destination={destinationId}; endpoint={FormatVector(snapped.Value)}; old_route_retained=true");
         return true;
     }
 
@@ -465,6 +507,8 @@ internal sealed class NavigationController(
             return Decision(false, null, NavigationPathState.Idle, MountState.Disabled, manualSnapshot.Explanation);
         }
 
+        CompleteDynamicReplacement(local.Position, now, config);
+
         var distance = manualSnapped is { } target
             ? HorizontalDistance(local.Position, target)
             : HorizontalDistance(local.Position, activeManual.ReferencePosition);
@@ -475,11 +519,15 @@ internal sealed class NavigationController(
         var remainingRouteDistance = manualPlan is null
             ? distance
             : manualPlan.RemainingLength(local.Position, manualRouteCursor);
-        var longDistance = !combatTravelActive && remainingRouteDistance >= config.MountDistance;
+        var dynamicFieldLeg = activeManual.DestinationId.StartsWith("FIELD-FOLLOW-", StringComparison.Ordinal);
+        // A nearby group across a wall can have a long generated detour. Avoid
+        // mounting for that short local leg, then dismounting one second later.
+        var longDistance = MountTravelPolicy.ShouldMountForLeg(combatTravelActive, dynamicFieldLeg,
+            remainingRouteDistance, distance, config.MountDistance);
         var shouldDismount = MountTravelPolicy.ShouldDismount(
             game.IsMounted,
             remainingRouteDistance,
-            config.DismountDistance,
+            MountTravelPolicy.DismountDistanceForLeg(dynamicFieldLeg, config.DismountDistance),
             combatOwnsMovement: combatTravelActive) &&
             (combatTravelActive || (manualPlan is not null &&
                                     manualRecoveryPhase != ManualRecoveryPhase.DepartureStage));
@@ -807,6 +855,93 @@ internal sealed class NavigationController(
             $"destination={activeManual?.DestinationId}; route={manualRouteId}; attempt={manualRouteAttempt}; candidate={CurrentCandidateLabel(acceptedRecoveryPhase)}; recovery={recoveryResult}; origin={FormatVector(origin)}; endpoint={FormatVector(manualSnapped!.Value)}; raw_waypoints={rawRoute.Count}; trimmed_prefix={reconciled.RemovedPoints}; execution_waypoints={manualPlan.Waypoints.Count}; length={manualPlan.Length:F1}; raw_geometry={FormatRoute(rawRoute, 128)}; execution_geometry={manualPlan.FormatGeometry()}");
     }
 
+    private void CompleteDynamicReplacement(Vector3 current, DateTime now, Configuration config)
+    {
+        if (dynamicReplacementPath is null)
+            return;
+        if (now - dynamicReplacementRequestedUtc >
+            TimeSpan.FromSeconds(Math.Clamp(config.PathRequestTimeoutSeconds, 2f, 30f)))
+        {
+            ClearDynamicReplacement();
+            Emit("navigation_dynamic_retarget_rejected", "reason=timeout; old_route_retained=true");
+            return;
+        }
+        if (!dynamicReplacementPath.IsCompleted)
+            return;
+        var task = dynamicReplacementPath;
+        var request = dynamicReplacementRequest;
+        var snapped = dynamicReplacementSnap;
+        var origin = dynamicReplacementOrigin;
+        var requestedAt = dynamicReplacementRequestedUtc;
+        var oldRouteId = dynamicReplacementRouteId;
+        var validTicket = dynamicReplacementGate.IsCurrent(dynamicReplacementTicket);
+        ClearDynamicReplacement();
+        if (request is null || snapped is null ||
+            !DynamicRouteHandoffPolicy.MayReplace(validTicket, ownsPath,
+                manualReplacementAttempt || manualRecoveryPhase != ManualRecoveryPhase.None,
+                oldRouteId, manualRouteId, request.DestinationId, activeManual?.DestinationId))
+            return;
+        IReadOnlyList<Vector3> generated;
+        try { generated = task.GetAwaiter().GetResult(); }
+        catch (Exception ex)
+        {
+            Emit("navigation_dynamic_retarget_rejected",
+                $"reason={ex.GetType().Name}; old_route_retained=true");
+            return;
+        }
+        if (!PathValidator.Validate(generated, origin, snapped.Value, 2.5f).IsValid)
+        {
+            Emit("navigation_dynamic_retarget_rejected", "reason=invalid-generated-route; old_route_retained=true");
+            return;
+        }
+        var reconciled = PathPrefixTrimmer.Reconcile(generated, origin, current, now - requestedAt);
+        if (reconciled.RepathFromCurrentPosition ||
+            !PathValidator.Validate(reconciled.Route, current, snapped.Value, 2.5f).IsValid)
+        {
+            Emit("navigation_dynamic_retarget_rejected", "reason=stale-origin; old_route_retained=true");
+            return;
+        }
+        var plan = RouteExecutionPlan.Build(reconciled.Route);
+        if (plan.Waypoints.Count < 2)
+        {
+            Emit("navigation_dynamic_retarget_rejected", "reason=short-route; old_route_retained=true");
+            return;
+        }
+
+        // Only now release the old route. Stage execution below uses exactly
+        // the same protected geometry and bounded stuck recovery as acquisition.
+        if (ownsPath)
+            vnav.Stop();
+        ownsPath = false;
+        manualPathGate.Invalidate();
+        manualPendingPath = null;
+        activeManual = request;
+        manualCandidates = request.Candidates().ToList();
+        manualCandidateIndex = 0;
+        ResetManualRecovery();
+        manualSnapped = snapped;
+        manualPlan = plan;
+        manualRoute = reconciled.Route;
+        manualRouteCursor = 0;
+        manualStageEnd = 0;
+        manualReplacementAttempt = false;
+        manualRouteAttempt++;
+        manualRouteId = $"{request.DestinationId}-R{manualRouteAttempt:00}";
+        manualLastProgressPosition = current;
+        manualLastProgressUtc = now;
+        Emit("navigation_dynamic_retarget_ready",
+            $"destination={request.DestinationId}; route={manualRouteId}; length={plan.Length:F1}; trimmed_prefix={reconciled.RemovedPoints}; old_route_replaced=true");
+    }
+
+    private void ClearDynamicReplacement()
+    {
+        dynamicReplacementGate.Invalidate();
+        dynamicReplacementPath = null;
+        dynamicReplacementRequest = null;
+        dynamicReplacementSnap = null;
+        dynamicReplacementRouteId = "NONE";
+    }
+
     private bool StartManualStage(Vector3 currentPosition, DateTime now)
     {
         if (manualPlan is null || manualRouteCursor >= manualPlan.LastIndex)
@@ -903,6 +1038,7 @@ internal sealed class NavigationController(
 
     private void CancelManual(string reason, ManualRouteState state, string eventName)
     {
+        ClearDynamicReplacement();
         manualPathGate.Invalidate();
         var id = activeManual?.DestinationId ?? manualRequest?.DestinationId ?? manualSnapshot.DestinationId;
         if (ownsPath)

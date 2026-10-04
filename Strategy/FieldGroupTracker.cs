@@ -18,6 +18,8 @@ internal sealed class FieldGroupTracker
     private Vector3? challengerCenter;
     private DateTime challengerSinceUtc = DateTime.MinValue;
     private DateTime sampleUtc = DateTime.MinValue;
+    private DateTime lastObservedUtc = DateTime.MinValue;
+    private FriendlyCluster? lastObservedGroup;
     private bool wasDead;
 
     internal Vector3? SmoothedCenter => center;
@@ -64,6 +66,16 @@ internal sealed class FieldGroupTracker
             (basePosition is null || Distance(basePosition.Value, group.Center) >= 50f)).ToArray();
         if (candidates.Length == 0)
         {
+            // Player objects briefly disappear at render range and near terrain.
+            // Retain the last observed field destination for a bounded interval,
+            // without accepting a spawn cluster or inventing a new group.
+            if (lastObservedGroup is { } recent && center is { } held &&
+                now - lastObservedUtc <= TimeSpan.FromSeconds(3))
+            {
+                sampleUtc = now;
+                velocity = Vector3.Zero;
+                return new FieldGroupChoice(recent, held, held, Vector3.Zero);
+            }
             ClearGroup();
             return default;
         }
@@ -130,6 +142,8 @@ internal sealed class FieldGroupTracker
             }
         }
         sampleUtc = now;
+        lastObservedGroup = selected;
+        lastObservedUtc = now;
         var lead = velocity.Length() >= 0.8f ? velocity * 1.2f : Vector3.Zero;
         return new FieldGroupChoice(selected, center.Value + lead, center.Value, velocity, groupChanged);
     }
@@ -149,6 +163,8 @@ internal sealed class FieldGroupTracker
         sampleUtc = DateTime.MinValue;
         challengerCenter = null;
         challengerSinceUtc = DateTime.MinValue;
+        lastObservedGroup = null;
+        lastObservedUtc = DateTime.MinValue;
     }
 
     private static float Score(FriendlyCluster group, Vector3 local) =>

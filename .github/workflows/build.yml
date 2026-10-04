@@ -77,7 +77,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Five-map Frontline dynamic field-group following with smoothed predictive tracking, stable per-life ranged formation, bounded destination refresh and objective-first static routes. One navigation switch now applies to every supported map. RSR readiness stays read-only and fails closed. STOP, death, results, manual priority, navmesh validation and route recovery remain. Queue/requeue is disabled. See docs/FRONTLINE_DYNAMIC_FOLLOW.md for RSR setup and test logs."
+            --notes "Five-map Frontline navigation with objective-first strategy, stable allied-group tracking and validated moving-route handoff. Connected RSR permits supervised navigation when its mode reports Off; combat execution remains unverified. Mount threshold hysteresis reduces group-leg churn. STOP, death, results, manual priority, navmesh validation and route recovery remain. Queue/requeue is disabled. See docs/FRONTLINE_DYNAMIC_FOLLOW.md for test guidance."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

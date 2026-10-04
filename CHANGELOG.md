@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1.18 — RSR Off travel and smoother field-group route handoff
+
+- Permit supervised Frontline travel when selected RSR is loaded and its read-only status IPC responds, even if its autorotation mode reports Off. Keep the mode visible as a diagnostic and do not claim that the IPC proves combat actions executed. Never set RSR's PvP operating mode.
+- Hold the tracked field group through a three-second player-visibility gap and the committed route through a five-second missing-group interval. Avoid canceling a running route merely because the player is close to its moving formation point.
+- Reduce group retargeting to sustained material drift (at least 25 yalms after 15 seconds). Generate and validate the replacement path while the previous route continues, then hand off only if its destination, route generation and movement owner are still current. Preserve protected stages, safe prefix trimming, STOP/death/results invalidation and bounded recovery.
+- Avoid mount/dismount churn for short nearby group legs whose navmesh detour is long; keep long-leg mounting and Company Chocobo. Continue the mounted group route to a closer arrival threshold, unless combat requires dismounting.
+- The supplied Worqor match recorded 67 dynamic requests, 23 dynamic cancellations and one arrival; these changes target those measured interruptions. Queue/requeue and new map-specific objective assumptions remain out of scope.
+
 ## 0.3.1.17 — Five-map dynamic allied-field-group following
 
 - Replace bounded group-position legs and post-arrival idle with one shared moving-field-group follower across all five Frontline maps. Preserve objective-first static routes for trustworthy Worqor Triumphs, Seal Rock tomeliths and Shatter ice. Onsal and Secure remain group-follow only while objective meanings are unresolved.

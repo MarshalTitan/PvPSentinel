@@ -1,28 +1,19 @@
-# Frontline dynamic navigation (v0.3.1.17)
+# Frontline dynamic navigation (v0.3.1.18)
 
-Enable **PvPSentinel** and **navigation**. Choose **RotationSolverReborn** as the combat provider. A running Frontline, reliable team classification, ready current-territory vnavmesh, and observed active combat provider are required before automatic travel. The Development window lists each blocker. External ACR currently lacks a verifiable active-state signal and remains blocked for automatic travel. Queue/requeue remains disabled.
+Enable **PvPSentinel** and **navigation**. Select **RotationSolverReborn** as the combat provider. Automatic travel also requires an active Frontline, reliable team classification, a ready current-territory vnavmesh, and a loaded RSR with responsive read-only IPC. RSR's `AutorotationActive` mode report is shown separately and does not gate travel: the user observed rotation while RSR displayed Off. This IPC cannot confirm that an action was actually executed. Supervise combat and use STOP if it does not work. PvPSentinel never changes RSR's PvP mode or issues RSR actions. External ACR has no verifiable connection signal and remains blocked for automatic travel. Queue/requeue is disabled.
 
-On Worqor, Seal Rock and Shatter, a fresh supported objective takes priority and uses the existing static route, approach geometry, and bounded recovery. A stale or unsupported Worqor/Seal Rock objective is retired after a three-second confirmation; Shatter keeps its depletion/staleness confirmation. Onsal and Secure objective state is unresolved, so their automated policy follows only an active allied field group. Manual destination selection takes priority everywhere.
+Worqor, Seal Rock and Shatter prefer fresh supported objectives with their existing approach geometry and bounded recovery. Onsal and Secure follow the active allied field group while objective semantics remain unresolved. Manual navigation takes priority. The shared tracker excludes spawn groups, requires at least three allies, confirms group switches, smooths the group center and predicts a short lead. It retains the last observed field group for three seconds through player-object visibility gaps; the follower keeps a committed route for up to five seconds while reacquiring. Death, Results, unreliable team classification and STOP clear the route immediately.
 
-The common field tracker excludes spawn groups, requires at least three allies, smooths the centroid, predicts brief motion, and confirms a stronger group before switching. The follower chooses a stable per-life ranged position seven to twelve yalms behind and five to twelve yalms to one side of the predicted group position. It requests a route refresh after the destination moves roughly ten yalms with a two-second debounce, or four yalms after three seconds. Pending path generation is allowed to complete under the existing bounded policy. Arrival has no six/eight-second group hold; if the group moved, the next leg starts immediately. A nearby formation does not issue a route. Company Chocobo and the existing mount safety gates remain in effect.
+The per-life ranged formation slot stays stable through brief visibility gaps. Ordinary group drift does not interrupt a running route. After fifteen seconds, a shift of at least twenty-five yalms may request a replacement path while the old validated route continues; only a validated, safe prefix-trimmed route replaces it. Invalid, stale, timed-out and post-STOP results cannot seize movement. Arrival holds briefly, then selects a new leg if the group moved. Protected elevation stages and existing bounded stuck recovery remain in force.
 
-The shared follower never controls combat. Reborn owns ordinary combat actions. PvPSentinel observes provider readiness and owns strategic travel, including ordinary combat travel under the existing cast/movement safety policy. No Reborn mode-setting PvP IPC or chat command is used. STOP disables navigation until it is explicitly enabled again. Emergency STOP also disables the master and combat-provider selection. Death, Results, team/mesh/provider loss, or bounded route failure cancel owned movement.
+Company Chocobo remains the preferred mount. Long group legs mount under the existing combat and nearby-enemy safety gates. A short straight-line group leg with a long detour does not cause a fresh mount request, and a mounted group leg stays mounted until fourteen yalms of route remain or real combat requires dismounting. No direct movement shortcut, jump or unchecked path is used for obstacles, spawn ledges or crystals. Shatter ice routes retain their clearance anchors.
 
-## Recommended RotationSolverReborn settings
+## RSR mode and combat check
 
-| RSR setting | Value |
-| --- | --- |
-| Auto turn on when PvP match starts | ON |
-| Auto turn off when dead in PvP | OFF |
-| Disable automatically during area transitions | OFF |
-| Auto turn off when PvP match ends | ON |
-| Auto turn off after combat | OFF |
-| Set RSR to PvP-specific state when enabled in PvP zone | ON |
+The RSR top-bar Off state and the read-only autorotation IPC can disagree with observed rotation behavior. In v0.3.1.18 an Off report is a diagnostic, not a PvPSentinel navigation blocker. RSR must still be loaded and its status IPC responsive. PvPSentinel follows its validated travel path in ordinary combat; its own combat actions remain disabled when RSR is selected. Actual RSR action execution must be confirmed visually in a supervised match. If rotation fails, adjust RSR's own PvP settings; its mode cannot be forced through supported PvP IPC. The previously suggested auto-start and death/transition settings are optional RSR-side controls, not prerequisites for Sentinel navigation.
 
-If Reborn is loaded but inactive, automatic travel remains blocked. Enable autorotation through its own supported controls and verify the lifecycle settings above. PvPSentinel never forces its operating mode.
+## Evidence for the next match
 
-## Supervised match evidence
+Upload `events.jsonl`, `summary.json`, `dalamud.log`, and `frontline-entry-stages.log`. Capture a short clip showing the RSR Off indicator while abilities fire and Sentinel follows the group. Also record any mount oscillation, path swap pause, unreachable location or Shatter ice collision. The Development window exposes lifecycle, provider connection/mode, group, destination, movement owner and route handoff diagnostics.
 
-Upload `events.jsonl`, `summary.json`, `dalamud.log`, and `frontline-entry-stages.log` after the match. A short video is useful when movement visibly lags the group, replans too often, collides with geometry, or stalls after respawn. The Development window shows the map policy, dynamic follower state, formation slot, destination, route state and provider blockers.
-
-This implementation uses PvPSentinel's own map sensors and shared field tracker. APSG match decisions were behavioral reference only; no substantial AGPL source was copied.
+The APSG recordings and user observations are behavior references. This implementation is independent and copies no AGPL source.
