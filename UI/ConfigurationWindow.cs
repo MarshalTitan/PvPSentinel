@@ -1,6 +1,8 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using Dalamud.Interface.Utility;
+using Dalamud.Interface;
+using Dalamud.Plugin;
 using SentinelCore.UI;
 using PvPSentinel.Models;
 using PvPSentinel.Integrations;
@@ -10,13 +12,31 @@ using System.Numerics;
 
 namespace PvPSentinel.UI;
 
-internal sealed class ConfigurationWindow : Window
+internal sealed class ConfigurationWindow : Window, IDisposable
 {
+    private const string WindowTitle = "PvP Sentinel - Configuration###PvPSentinelConfiguration";
+    private static readonly Vector2 ClassicMinimumSize = new(620f, 520f);
     private enum ConfigurationPage { Core, Movement, Combat, NativeCombat, Diagnostics, Frontline, Appearance }
+    private static readonly SentinelModernNavItem[] PrimaryNavigation =
+    [
+        new(nameof(ConfigurationPage.Core), null, "Core") { DrawIcon = static c => DrawNavIcon(FontAwesomeIcon.Cog, c) },
+        new(nameof(ConfigurationPage.Movement), null, "Movement") { DrawIcon = static c => DrawNavIcon(FontAwesomeIcon.Compass, c) },
+        new(nameof(ConfigurationPage.Combat), null, "Combat policy") { DrawIcon = static c => DrawNavIcon(FontAwesomeIcon.Crosshairs, c) },
+        new(nameof(ConfigurationPage.NativeCombat), null, "Native combat") { DrawIcon = static c => DrawNavIcon(FontAwesomeIcon.ShieldAlt, c) },
+        new(nameof(ConfigurationPage.Diagnostics), null, "Diagnostics") { DrawIcon = static c => DrawNavIcon(FontAwesomeIcon.Bug, c) },
+        new(nameof(ConfigurationPage.Frontline), null, "Frontline lifecycle") { DrawIcon = static c => DrawNavIcon(FontAwesomeIcon.Map, c) },
+        new(nameof(ConfigurationPage.Appearance), null, "Appearance") { DrawIcon = static c => DrawNavIcon(FontAwesomeIcon.Palette, c) },
+    ];
     private readonly SentinelModernStyleScope modernStyle = new();
-    private readonly Action drawModernNavigation;
+    private readonly SentinelModernAppShellState modernShellState = new();
+    private readonly ImGuiWindowFlags classicWindowFlags;
+    private readonly IDalamudPluginInterface pluginInterface;
+    private readonly Action<string> selectModernPage;
     private readonly Action drawModernContent;
+    private readonly Action collapseModern;
+    private readonly Action closeModern;
     private ConfigurationPage selectedPage;
+    private bool expandOnNextDraw;
     private bool IsModern => SentinelThemeState<ConfigurationPage>.NormalizeTheme(config.ConfigurationTheme)
         == SentinelThemeKind.Modern;
 
@@ -33,6 +53,7 @@ internal sealed class ConfigurationWindow : Window
     private readonly Func<FrontlineMap> currentMap;
 
     public ConfigurationWindow(
+        IDalamudPluginInterface pluginInterface,
         Configuration config,
         Action<bool> diagnosticsVisibilityChanged,
         Action<bool> verboseLoggingChanged,
@@ -43,8 +64,9 @@ internal sealed class ConfigurationWindow : Window
         Func<RotationSolverRebornStatus> rebornStatus,
         Func<FrontlinePilotReadiness?> readiness, Func<FrontlineMap> currentMap,
         PreferredMountCatalog mountCatalog)
-        : base("PvP Sentinel - Configuration###PvPSentinelConfiguration")
+        : base(WindowTitle)
     {
+        this.pluginInterface = pluginInterface;
         this.config = config;
         this.diagnosticsVisibilityChanged = diagnosticsVisibilityChanged;
         this.verboseLoggingChanged = verboseLoggingChanged;
@@ -56,8 +78,11 @@ internal sealed class ConfigurationWindow : Window
         this.readiness = readiness;
         this.currentMap = currentMap;
         this.mountCatalog = mountCatalog;
-        drawModernNavigation = DrawModernNavigation;
+        classicWindowFlags = Flags;
+        selectModernPage = SelectModernPage;
         drawModernContent = DrawModernContent;
+        collapseModern = RequestModernCollapse;
+        closeModern = RequestModernClose;
         Size = new Vector2(920f, 720f);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(620f, 520f) };
@@ -65,11 +90,44 @@ internal sealed class ConfigurationWindow : Window
 
     public override void PreDraw()
     {
+        if (expandOnNextDraw)
+        {
+            ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always);
+            expandOnNextDraw = false;
+        }
+
         if (IsModern)
-            modernStyle.Push(ImGuiHelpers.GlobalScale);
+        {
+            var scale = ImGuiHelpers.GlobalScale;
+            Flags = SentinelModernWindowChrome.UseCustomHeader(classicWindowFlags);
+            modernStyle.PushAppShell(scale);
+            var coreMinimum = SentinelModernAppLayout.MinimumWindowSize(scale);
+            SizeConstraints = new WindowSizeConstraints
+            {
+                MinimumSize = new Vector2(MathF.Max(ClassicMinimumSize.X, coreMinimum.X),
+                    MathF.Max(ClassicMinimumSize.Y, coreMinimum.Y)),
+            };
+        }
+        else
+        {
+            Flags = classicWindowFlags;
+            SizeConstraints = new WindowSizeConstraints { MinimumSize = ClassicMinimumSize };
+        }
     }
 
     public override void PostDraw() => modernStyle.Pop();
+
+    public void OpenAndExpand()
+    {
+        IsOpen = true;
+        expandOnNextDraw = true;
+    }
+
+    public void Dispose()
+    {
+        modernStyle.Dispose();
+        modernShellState.Dispose();
+    }
 
     public override void Draw()
     {
@@ -112,41 +170,60 @@ internal sealed class ConfigurationWindow : Window
     private void DrawModern()
     {
         var pilot = readiness();
-        var status = isEmergencyStopped() ? new SentinelModernStatus("STOPPED", SentinelModernStatusTone.Warning)
-            : pilot?.CanTravel == true ? new SentinelModernStatus("NAV READY", SentinelModernStatusTone.Success)
-            : new SentinelModernStatus("STANDBY", SentinelModernStatusTone.Neutral);
-        var options = new SentinelModernShellOptions(
-            "PvPSentinel-Modern", "MARSHALTITAN  /  SENTINEL", "PVP SENTINEL",
-            "Frontline strategy and supervised navigation")
+        var status = isEmergencyStopped() ? new SentinelModernStatusPillOptions("STOPPED", SentinelModernPillTone.Warning)
+            : pilot?.CanTravel == true ? new SentinelModernStatusPillOptions("NAV READY", SentinelModernPillTone.Ready)
+            : new SentinelModernStatusPillOptions("STANDBY", SentinelModernPillTone.Neutral);
+        var options = new SentinelModernAppShellOptions("PvPSentinel-Modern2", "PvP Sentinel", selectedPage.ToString())
         {
+            DrawPluginIcon = DrawPluginIcon,
             Scale = ImGuiHelpers.GlobalScale,
-            ContextLabel = "Modern",
+            DeltaTime = ImGui.GetIO().DeltaTime,
+            ReducedMotion = pluginInterface.UiBuilder.ShouldUseReducedMotion,
             Status = status,
+            SurfaceStyle = SentinelModernAppSurfaceStyle.Unified,
+            EnableWindowDragging = true,
+            RequestCollapse = collapseModern,
+            RequestClose = closeModern,
         };
-        SentinelModernConfigurationShell.Draw(options, drawModernNavigation, drawModernContent);
+        SentinelModernAppShell.Draw(options, modernShellState, PrimaryNavigation,
+            selectModernPage, drawModernContent);
     }
 
-    private void DrawModernNavigation()
+    private void SelectModernPage(string id)
     {
-        var scale = ImGuiHelpers.GlobalScale;
-        SentinelModernNavigation.GroupLabel("NAVIGATION");
-        NavItem(ConfigurationPage.Core, "Core", scale);
-        NavItem(ConfigurationPage.Movement, "Movement", scale);
-        ImGui.Spacing();
-        SentinelModernNavigation.GroupLabel("COMBAT");
-        NavItem(ConfigurationPage.Combat, "Combat policy", scale);
-        NavItem(ConfigurationPage.NativeCombat, "Native combat", scale);
-        ImGui.Spacing();
-        SentinelModernNavigation.GroupLabel("TOOLS");
-        NavItem(ConfigurationPage.Diagnostics, "Diagnostics", scale);
-        NavItem(ConfigurationPage.Frontline, "Frontline lifecycle", scale);
-        NavItem(ConfigurationPage.Appearance, "Appearance", scale);
-    }
-
-    private void NavItem(ConfigurationPage page, string title, float scale)
-    {
-        if (SentinelModernNavigation.Item(page.ToString(), title, selectedPage == page, scale))
+        if (Enum.TryParse<ConfigurationPage>(id, out var page))
             selectedPage = page;
+    }
+
+    private void RequestModernCollapse()
+    {
+        ImGui.SetWindowCollapsed(WindowTitle, true);
+    }
+
+    private void RequestModernClose() => IsOpen = false;
+
+    private static void DrawPluginIcon(SentinelModernIconDrawContext context)
+        => DrawIcon(FontAwesomeIcon.Crosshairs, context.DrawList, context.Minimum,
+            context.Maximum, SentinelModernPalette.Text);
+
+    private static void DrawNavIcon(FontAwesomeIcon icon, SentinelModernNavIconDrawContext context)
+        => DrawIcon(icon, context.DrawList, context.Minimum, context.Maximum, context.Colour);
+
+    private static void DrawIcon(FontAwesomeIcon icon, ImDrawListPtr drawList,
+        Vector2 minimum, Vector2 maximum, Vector4 colour)
+    {
+        var glyph = icon.ToIconString();
+        ImGui.PushFont(UiBuilder.IconFont);
+        try
+        {
+            var size = ImGui.CalcTextSize(glyph);
+            drawList.AddText(minimum + (((maximum - minimum) - size) * 0.5f),
+                ImGui.ColorConvertFloat4ToU32(colour), glyph);
+        }
+        finally
+        {
+            ImGui.PopFont();
+        }
     }
 
     private void DrawModernContent()
@@ -163,9 +240,6 @@ internal sealed class ConfigurationWindow : Window
         };
         SentinelModernUi.PageHeading(title, description);
         ImGui.Spacing();
-        using var card = SentinelModernCard.Begin("PvPSentinel-ModernPageCard");
-        if (!card.IsVisible)
-            return;
         switch (selectedPage)
         {
             case ConfigurationPage.Core: DrawCore(); break;
@@ -184,24 +258,34 @@ internal sealed class ConfigurationWindow : Window
             DrawCheckbox("Enable navigation", config.NavigationEnabled, value => config.NavigationEnabled = value);
             DrawCombatProvider();
             var pilot = readiness();
-            ImGui.Separator();
-            ImGui.Text("Status");
-            ImGui.Text($"Frontline: {currentMap().DisplayName()}");
-            ImGui.Text($"Navigation: {(pilot?.CanTravel == true ? "Active" : config.NavigationEnabled ? "Blocked" : "Off")}");
-            ImGui.Text($"Combat provider: {(pilot is { ProviderLoaded: true, ProviderActivityObservable: true } ? "Connected" : "Not connected")}");
-            ImGui.Text($"vnavmesh: {(pilot?.MeshReady == true ? "Ready" : "Unavailable/loading")}");
             if (IsModern)
             {
-                var scale = ImGuiHelpers.GlobalScale;
-                SentinelModernUi.StatusChip(pilot?.CanTravel == true ? "NAV READY" : "NAV BLOCKED",
-                    pilot?.CanTravel == true ? SentinelModernStatusTone.Success : SentinelModernStatusTone.Warning, scale);
-                SentinelModernUi.StatusChip(pilot?.MeshReady == true ? "MESH READY" : "MESH LOADING",
-                    pilot?.MeshReady == true ? SentinelModernStatusTone.Success : SentinelModernStatusTone.Neutral, scale);
+                ImGui.Spacing();
+                using var card = SentinelModernGlassCard.Begin("CoreReadiness",
+                    new SentinelModernGlassCardOptions { Size = new Vector2(0f, 138f) },
+                    ImGuiHelpers.GlobalScale);
+                if (card.IsVisible)
+                    DrawCoreStatus(pilot);
             }
+            else
+            {
+                ImGui.Separator();
+                DrawCoreStatus(pilot);
+            }
+            ImGui.Spacing();
             if (ImGui.Button("EMERGENCY STOP", new Vector2(180, 34)))
                 emergencyStop();
             if (isEmergencyStopped() && ImGui.Button("Clear emergency-stop latch"))
                 clearEmergencyStop();
+    }
+
+    private void DrawCoreStatus(FrontlinePilotReadiness? pilot)
+    {
+        ImGui.Text("Status");
+        ImGui.Text($"Frontline: {currentMap().DisplayName()}");
+        ImGui.Text($"Navigation: {(pilot?.CanTravel == true ? "Active" : config.NavigationEnabled ? "Blocked" : "Off")}");
+        ImGui.Text($"Combat provider: {(pilot is { ProviderLoaded: true, ProviderActivityObservable: true } ? "Connected" : "Not connected")}");
+        ImGui.Text($"vnavmesh: {(pilot?.MeshReady == true ? "Ready" : "Unavailable/loading")}");
     }
 
     private void DrawDiagnostics()
@@ -322,6 +406,14 @@ internal sealed class ConfigurationWindow : Window
     private void DrawAppearance()
     {
         var modern = IsModern;
+        if (modern)
+        {
+            ImGui.TextWrapped("Classic restores PvPSentinel's original configuration page and native title bar.");
+            if (ImGui.Button("Switch to Classic"))
+                SetTheme(SentinelThemeKind.Classic);
+            return;
+        }
+
         if (ImGui.BeginCombo("Configuration theme", modern ? "Sentinel Modern" : "Classic"))
         {
             if (ImGui.Selectable("Classic", !modern))
@@ -347,15 +439,8 @@ internal sealed class ConfigurationWindow : Window
     {
         var value = current;
         var changed = IsModern
-            ? SentinelModernControls.Toggle(label, label, ref value, ImGuiHelpers.GlobalScale)
+            ? SentinelModernSwitch.Draw(label, label, ref value, modernShellState.Motion, ImGuiHelpers.GlobalScale)
             : ImGui.Checkbox(label, ref value);
-        // Core draws the switch; keyboard/gamepad activation is provided by
-        // the underlying ImGui item when it did not receive a mouse click.
-        if (IsModern && !changed && ImGui.IsItemActivated())
-        {
-            value = !value;
-            changed = true;
-        }
         if (!changed)
             return;
         setter(value);
@@ -365,19 +450,43 @@ internal sealed class ConfigurationWindow : Window
     private void DrawFloat(string label, float current, float min, float max, Action<float> setter, string format)
     {
         var value = current;
-        if (!ImGui.SliderFloat(label, ref value, min, max, format))
-            return;
-        setter(value);
-        config.Save();
+        if (IsModern)
+        {
+            SentinelModernSettingsRow.Draw(label, label, null, () =>
+            {
+                if (ImGui.SliderFloat("##value", ref value, min, max, format))
+                {
+                    setter(value);
+                    config.Save();
+                }
+            }, 210f, ImGuiHelpers.GlobalScale);
+        }
+        else if (ImGui.SliderFloat(label, ref value, min, max, format))
+        {
+            setter(value);
+            config.Save();
+        }
     }
 
     private void DrawInt(string label, int current, int min, int max, Action<int> setter)
     {
         var value = current;
-        if (!ImGui.SliderInt(label, ref value, min, max))
-            return;
-        setter(value);
-        config.Save();
+        if (IsModern)
+        {
+            SentinelModernSettingsRow.Draw(label, label, null, () =>
+            {
+                if (ImGui.SliderInt("##value", ref value, min, max))
+                {
+                    setter(value);
+                    config.Save();
+                }
+            }, 210f, ImGuiHelpers.GlobalScale);
+        }
+        else if (ImGui.SliderInt(label, ref value, min, max))
+        {
+            setter(value);
+            config.Save();
+        }
     }
 
     private void DrawPreferredMount()
@@ -386,7 +495,26 @@ internal sealed class ConfigurationWindow : Window
         var label = resolution.IsAvailable
             ? resolution.Name
             : $"{config.PreferredMountName} (unavailable)";
-        if (ImGui.BeginCombo("Preferred Mount", label))
+        if (IsModern)
+            SentinelModernSettingsRow.Draw("Preferred Mount", "Preferred Mount", null,
+                () => DrawMountCombo("##mount", label, resolution), 210f, ImGuiHelpers.GlobalScale);
+        else
+            DrawMountCombo("Preferred Mount", label, resolution);
+
+        if (resolution.IsAvailable)
+            ImGui.TextDisabled($"Resolved from current game data: {resolution.Name} (Mount row {resolution.RowId}).");
+        else
+            ImGui.TextWrapped(resolution.Explanation);
+        if (!string.IsNullOrEmpty(mountCatalog.LastCatalogError))
+            ImGui.TextWrapped(mountCatalog.LastCatalogError);
+        if (ImGui.SmallButton("Refresh unlocked mounts"))
+            mountCatalog.GetUnlockedMounts(true);
+        ImGui.TextDisabled("No Mount Roulette fallback is used if the preferred mount is unavailable.");
+    }
+
+    private void DrawMountCombo(string id, string label, PreferredMountResolution resolution)
+    {
+        if (ImGui.BeginCombo(id, label))
         {
             foreach (var mount in mountCatalog.GetUnlockedMounts())
             {
@@ -402,16 +530,6 @@ internal sealed class ConfigurationWindow : Window
             }
             ImGui.EndCombo();
         }
-
-        if (resolution.IsAvailable)
-            ImGui.TextDisabled($"Resolved from current game data: {resolution.Name} (Mount row {resolution.RowId}).");
-        else
-            ImGui.TextWrapped(resolution.Explanation);
-        if (!string.IsNullOrEmpty(mountCatalog.LastCatalogError))
-            ImGui.TextWrapped(mountCatalog.LastCatalogError);
-        if (ImGui.SmallButton("Refresh unlocked mounts"))
-            mountCatalog.GetUnlockedMounts(true);
-        ImGui.TextDisabled("No Mount Roulette fallback is used if the preferred mount is unavailable.");
     }
 
     private void DrawCombatProvider()
@@ -424,14 +542,11 @@ internal sealed class ConfigurationWindow : Window
             _ => "Off",
         };
 
-        if (ImGui.BeginCombo("Combat provider", label))
-        {
-            SelectProvider(CombatProvider.Off, "Off");
-            SelectProvider(CombatProvider.ExternalAcr, "External Combat / ACR");
-            SelectProvider(CombatProvider.RotationSolverReborn, "RotationSolverReborn (External)");
-            SelectProvider(CombatProvider.NativePvPSentinel, "Native PvPSentinel (experimental)");
-            ImGui.EndCombo();
-        }
+        if (IsModern)
+            SentinelModernSettingsRow.Draw("Combat provider", "Combat provider", null,
+                () => DrawCombatProviderCombo("##provider", label), 210f, ImGuiHelpers.GlobalScale);
+        else
+            DrawCombatProviderCombo("Combat provider", label);
 
         if (config.CombatProvider == CombatProvider.RotationSolverReborn)
         {
@@ -446,6 +561,17 @@ internal sealed class ConfigurationWindow : Window
         }
         else if (config.CombatProvider == CombatProvider.NativePvPSentinel)
             DrawNativeCombatMode();
+    }
+
+    private void DrawCombatProviderCombo(string id, string label)
+    {
+        if (!ImGui.BeginCombo(id, label))
+            return;
+        SelectProvider(CombatProvider.Off, "Off");
+        SelectProvider(CombatProvider.ExternalAcr, "External Combat / ACR");
+        SelectProvider(CombatProvider.RotationSolverReborn, "RotationSolverReborn (External)");
+        SelectProvider(CombatProvider.NativePvPSentinel, "Native PvPSentinel (experimental)");
+        ImGui.EndCombo();
     }
 
     private void SelectProvider(CombatProvider provider, string label)
@@ -465,9 +591,17 @@ internal sealed class ConfigurationWindow : Window
         var label = config.NativeCombatMode == NativeCombatMode.Active
             ? "Active (experimental)"
             : "Shadow / Observe (safe default)";
-        if (!ImGui.BeginCombo("Native development mode", label))
-            return;
+        if (IsModern)
+            SentinelModernSettingsRow.Draw("Native development mode", "Native development mode", null,
+                () => DrawNativeModeCombo("##native", label), 210f, ImGuiHelpers.GlobalScale);
+        else
+            DrawNativeModeCombo("Native development mode", label);
+    }
 
+    private void DrawNativeModeCombo(string id, string label)
+    {
+        if (!ImGui.BeginCombo(id, label))
+            return;
         SelectNativeMode(NativeCombatMode.ShadowObserve, "Shadow / Observe (safe default)");
         SelectNativeMode(NativeCombatMode.Active, "Active (experimental)");
         ImGui.EndCombo();

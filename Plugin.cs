@@ -121,6 +121,7 @@ public sealed class Plugin : IDalamudPlugin
             IsOpen = config.ShowDiagnostics,
         };
         configurationWindow = new ConfigurationWindow(
+            pi,
             config,
             SetDiagnosticsVisibility,
             OnVerboseLoggingChanged,
@@ -158,12 +159,13 @@ public sealed class Plugin : IDalamudPlugin
         pi.UiBuilder.OpenConfigUi -= OpenConfiguration;
         commands.RemoveHandler(Command);
         windows.RemoveAllWindows();
+        configurationWindow.Dispose();
     }
 
     private void OnCommand(string _, string arguments)
     {
         if (arguments.Trim().Equals("config", StringComparison.OrdinalIgnoreCase))
-            configurationWindow.IsOpen = true;
+            configurationWindow.OpenAndExpand();
         else
             diagnostics.IsOpen = true;
     }
@@ -336,7 +338,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawUi() => windows.Draw();
     private void OpenDiagnostics() => SetDiagnosticsVisibility(true);
-    private void OpenConfiguration() => configurationWindow.IsOpen = true;
+    private void OpenConfiguration() => configurationWindow.OpenAndExpand();
 
     private void SetDiagnosticsVisibility(bool isOpen)
     {
