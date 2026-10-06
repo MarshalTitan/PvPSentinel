@@ -93,7 +93,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "PvPSentinel adopts Sentinel Modern 2 with the exact SentinelCore.UI 0.3.1 release: one draggable custom header, a unified application surface, Font Awesome icon rail, responsive settings rows, and reduced-motion-safe ambience. Classic and all Frontline/RSR/navigation behavior remain unchanged. Queue/requeue remains disabled."
+            --notes "Fix Sentinel Modern minimize: keep the shared Core themed header, readiness pill, page label, and expand control visible in a compact window. Preserve the expanded size and Classic native title bar. Frontline automation, combat, and Core.UI 0.3.1 are unchanged."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }

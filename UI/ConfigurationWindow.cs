@@ -37,6 +37,8 @@ internal sealed class ConfigurationWindow : Window, IDisposable
     private readonly Action closeModern;
     private ConfigurationPage selectedPage;
     private bool expandOnNextDraw;
+    private Vector2? pendingWindowSize;
+    private Vector2 modernFrameSize;
     private bool IsModern => SentinelThemeState<ConfigurationPage>.NormalizeTheme(config.ConfigurationTheme)
         == SentinelThemeKind.Modern;
 
@@ -99,20 +101,34 @@ internal sealed class ConfigurationWindow : Window, IDisposable
         if (IsModern)
         {
             var scale = ImGuiHelpers.GlobalScale;
+            // The native title bar is hidden in Modern. Never leave the native
+            // collapsed state set: its native expand button would also be hidden.
+            Collapsed = false;
+            CollapsedCondition = ImGuiCond.Always;
             Flags = SentinelModernWindowChrome.UseCustomHeader(classicWindowFlags);
             modernStyle.PushAppShell(scale);
-            var coreMinimum = SentinelModernAppLayout.MinimumWindowSize(scale);
+            var coreMinimum = SentinelModernAppLayout.MinimumWindowSize();
+            var headerHeight = SentinelModernAppLayoutOptions.Default.HeaderHeight;
+            var minimumWidth = MathF.Max(ClassicMinimumSize.X, coreMinimum.X);
+            var minimumHeight = config.ModernWindowMinimized
+                ? headerHeight : MathF.Max(ClassicMinimumSize.Y, coreMinimum.Y);
             SizeConstraints = new WindowSizeConstraints
             {
-                MinimumSize = new Vector2(MathF.Max(ClassicMinimumSize.X, coreMinimum.X),
-                    MathF.Max(ClassicMinimumSize.Y, coreMinimum.Y)),
+                MinimumSize = new Vector2(minimumWidth, minimumHeight),
+                MaximumSize = new Vector2(float.MaxValue,
+                    config.ModernWindowMinimized ? headerHeight : float.MaxValue),
             };
         }
         else
         {
+            Collapsed = null;
             Flags = classicWindowFlags;
             SizeConstraints = new WindowSizeConstraints { MinimumSize = ClassicMinimumSize };
         }
+
+        Size = pendingWindowSize ?? new Vector2(920f, 720f);
+        SizeCondition = pendingWindowSize.HasValue ? ImGuiCond.Always : ImGuiCond.FirstUseEver;
+        pendingWindowSize = null;
     }
 
     public override void PostDraw() => modernStyle.Pop();
@@ -121,6 +137,12 @@ internal sealed class ConfigurationWindow : Window, IDisposable
     {
         IsOpen = true;
         expandOnNextDraw = true;
+        if (IsModern && config.ModernWindowMinimized)
+        {
+            config.ModernWindowMinimized = false;
+            pendingWindowSize = ExpandedWindowSize();
+            config.Save();
+        }
     }
 
     public void Dispose()
@@ -169,6 +191,7 @@ internal sealed class ConfigurationWindow : Window, IDisposable
 
     private void DrawModern()
     {
+        modernFrameSize = ImGui.GetWindowSize();
         var pilot = readiness();
         var status = isEmergencyStopped() ? new SentinelModernStatusPillOptions("STOPPED", SentinelModernPillTone.Warning)
             : pilot?.CanTravel == true ? new SentinelModernStatusPillOptions("NAV READY", SentinelModernPillTone.Ready)
@@ -176,6 +199,7 @@ internal sealed class ConfigurationWindow : Window, IDisposable
         var options = new SentinelModernAppShellOptions("PvPSentinel-Modern2", "PvP Sentinel", selectedPage.ToString())
         {
             DrawPluginIcon = DrawPluginIcon,
+            ContextLabel = selectedPage.ToString(),
             Scale = ImGuiHelpers.GlobalScale,
             DeltaTime = ImGui.GetIO().DeltaTime,
             ReducedMotion = pluginInterface.UiBuilder.ShouldUseReducedMotion,
@@ -183,6 +207,7 @@ internal sealed class ConfigurationWindow : Window, IDisposable
             SurfaceStyle = SentinelModernAppSurfaceStyle.Unified,
             EnableWindowDragging = true,
             RequestCollapse = collapseModern,
+            CollapseTooltip = config.ModernWindowMinimized ? "Expand" : "Minimize",
             RequestClose = closeModern,
         };
         SentinelModernAppShell.Draw(options, modernShellState, PrimaryNavigation,
@@ -197,8 +222,29 @@ internal sealed class ConfigurationWindow : Window, IDisposable
 
     private void RequestModernCollapse()
     {
-        ImGui.SetWindowCollapsed(WindowTitle, true);
+        var scale = ImGuiHelpers.GlobalScale;
+        // The callback runs inside Core's header child. Use the top-level
+        // window size captured before entering the shell instead.
+        var width = MathF.Max(ClassicMinimumSize.X, modernFrameSize.X / scale);
+        if (config.ModernWindowMinimized)
+        {
+            config.ModernWindowMinimized = false;
+            pendingWindowSize = new Vector2(width,
+                MathF.Max(ClassicMinimumSize.Y, config.ModernExpandedHeight));
+        }
+        else
+        {
+            config.ModernExpandedWidth = width;
+            config.ModernExpandedHeight = MathF.Max(ClassicMinimumSize.Y, modernFrameSize.Y / scale);
+            config.ModernWindowMinimized = true;
+            pendingWindowSize = new Vector2(width, SentinelModernAppLayoutOptions.Default.HeaderHeight);
+        }
+        config.Save();
     }
+
+    private Vector2 ExpandedWindowSize() => new(
+        MathF.Max(ClassicMinimumSize.X, config.ModernExpandedWidth),
+        MathF.Max(ClassicMinimumSize.Y, config.ModernExpandedHeight));
 
     private void RequestModernClose() => IsOpen = false;
 
@@ -228,6 +274,8 @@ internal sealed class ConfigurationWindow : Window, IDisposable
 
     private void DrawModernContent()
     {
+        if (config.ModernWindowMinimized)
+            return;
         var (title, description) = selectedPage switch
         {
             ConfigurationPage.Core => ("Core", "Enable travel, select a combat provider, and see readiness."),
@@ -431,6 +479,11 @@ internal sealed class ConfigurationWindow : Window, IDisposable
     {
         if (config.ConfigurationTheme == (int)theme)
             return;
+        if (theme == SentinelThemeKind.Classic && config.ModernWindowMinimized)
+        {
+            config.ModernWindowMinimized = false;
+            pendingWindowSize = ExpandedWindowSize();
+        }
         config.ConfigurationTheme = (int)theme;
         config.Save();
     }

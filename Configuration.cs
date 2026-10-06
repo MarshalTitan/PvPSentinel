@@ -10,6 +10,10 @@ public sealed class Configuration : IPluginConfiguration
     public int Version { get; set; } = 19;
     // 0 = Classic, 1 = Sentinel Modern. This plugin owns its own opt-in choice.
     public int ConfigurationTheme { get; set; }
+    // The Modern header remains visible when compact, so its own expand control stays usable.
+    public bool ModernWindowMinimized { get; set; }
+    public float ModernExpandedWidth { get; set; } = 920f;
+    public float ModernExpandedHeight { get; set; } = 720f;
     public bool Enabled { get; set; }
     public bool NavigationEnabled { get; set; }
     public bool AutonomousStrategyEnabled { get; set; }
