@@ -33,6 +33,14 @@ jobs:
 
       - run: dotnet restore PvPSentinel.csproj --locked-mode
 
+      - name: Verify pinned SentinelCore UI package
+        shell: pwsh
+        run: |
+          $expected = 'e1a9ce4e1ce36042c0fcd53f4c23874d918640be10eef16c21f1cd436c6ba747'
+          $package = '.packages/SentinelCore/v0.3.1.0/MarshalTitan.SentinelCore.UI.0.3.1.nupkg'
+          $actual = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "SentinelCore.UI package hash mismatch: $actual" }
+
       - name: Require release tag to match project version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -52,6 +60,14 @@ jobs:
       - name: Prepare installable package
         shell: pwsh
         run: Copy-Item bin/Release/PvPSentinel/latest.zip bin/Release/PvPSentinel/PvPSentinel.zip
+
+      - name: Validate release package and bundled Core assemblies
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content PvPSentinel.csproj
+          ./.github/scripts/Validate-Package.ps1 `
+            -PackagePath 'bin/Release/PvPSentinel/PvPSentinel.zip' `
+            -ExpectedVersion ([string]$project.Project.PropertyGroup.Version)
 
       - uses: actions/upload-artifact@v4
         with:
@@ -77,7 +93,90 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "PvPSentinel pins SentinelCore UI 0.2.1. Sentinel Modern keeps its navigation sidebar on the left, with the selected page on the right and a full-width non-scrolling header. Classic and all gameplay settings remain available. Frontline navigation and combat policies are unchanged. Queue/requeue remains disabled."
+            --notes "PvPSentinel adopts Sentinel Modern 2 with the exact SentinelCore.UI 0.3.1 release: one draggable custom header, a unified application surface, Font Awesome icon rail, responsive settings rows, and reduced-motion-safe ambience. Classic and all Frontline/RSR/navigation behavior remain unchanged. Queue/requeue remains disabled."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }
+
+      - name: Verify published ZIP and authoritative child manifest
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content PvPSentinel.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          $url = "https://github.com/${{ github.repository }}/releases/download/v$version/PvPSentinel.zip"
+          $entries = @(Get-Content repo.json -Raw | ConvertFrom-Json)
+          $entry = @($entries | Where-Object InternalName -eq 'PvPSentinel')
+          if ($entry.Count -ne 1 -or $entry[0].AssemblyVersion -ne $version `
+              -or $entry[0].TestingAssemblyVersion -ne $version `
+              -or $entry[0].DownloadLinkInstall -ne $url `
+              -or $entry[0].DownloadLinkUpdate -ne $url `
+              -or $entry[0].DownloadLinkTesting -ne $url) {
+            throw "The authoritative child repo.json does not advertise $version and its published ZIP."
+          }
+
+          $download = Join-Path $env:RUNNER_TEMP 'public-PvPSentinel.zip'
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
+            try {
+              Invoke-WebRequest -Uri "$url`?release=${{ github.run_id }}-$attempt" -OutFile $download
+              ./.github/scripts/Validate-Package.ps1 -PackagePath $download -ExpectedVersion $version
+              break
+            }
+            catch {
+              if ($attempt -eq 12) { throw }
+              Start-Sleep -Seconds 5
+            }
+          }
+
+      - name: Notify central Sentinel catalog when configured
+        id: catalog_dispatch
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.DALAMUD_CATALOG_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            Write-Warning 'DALAMUD_CATALOG_TOKEN is unavailable; the central hourly reconciliation will read this child repo.json.'
+            'sent=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+          [xml]$project = Get-Content PvPSentinel.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          $payload = @{
+            event_type = 'plugin-released'
+            client_payload = @{
+              source_repository = '${{ github.repository }}'
+              source_commit = '${{ github.sha }}'
+              internal_name = 'PvPSentinel'
+              version = $version
+              tag = "v$version"
+            }
+          } | ConvertTo-Json -Depth 5
+          $payload | gh api --method POST 'repos/MarshalTitan/Sentinel/dispatches' --input -
+          if ($LASTEXITCODE -ne 0) { throw 'Central Sentinel catalog dispatch failed.' }
+          'sent=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Verify generated central catalog
+        if: steps.catalog_dispatch.outputs.sent == 'true'
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content PvPSentinel.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          $asset = "https://github.com/${{ github.repository }}/releases/download/v$version/PvPSentinel.zip"
+          for ($attempt = 1; $attempt -le 60; $attempt++) {
+            try {
+              $catalog = @(Invoke-RestMethod -Uri "https://raw.githubusercontent.com/MarshalTitan/Sentinel/main/repo.json?pvpsentinel=${{ github.run_id }}-$attempt")
+              $entry = @($catalog | Where-Object InternalName -eq 'PvPSentinel')
+              if ($entry.Count -eq 1 -and $entry[0].AssemblyVersion -eq $version `
+                  -and $entry[0].TestingAssemblyVersion -eq $version `
+                  -and $entry[0].DownloadLinkInstall -eq $asset `
+                  -and $entry[0].DownloadLinkUpdate -eq $asset `
+                  -and $entry[0].DownloadLinkTesting -eq $asset) {
+                Write-Host "Verified PvPSentinel $version in generated Sentinel catalog."
+                exit 0
+              }
+            }
+            catch { Write-Host "Catalog check $attempt: $($_.Exception.Message)" }
+            Start-Sleep -Seconds 5
+          }
+          throw "Generated Sentinel catalog did not publish PvPSentinel $version within five minutes."

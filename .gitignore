@@ -5,6 +5,6 @@ obj/
 *.user
 *.suo
 *.nupkg
-!.packages/SentinelCore/v0.2.1.0/*.nupkg
+!.packages/SentinelCore/v0.3.1.0/*.nupkg
 *.snupkg
 .tools/
