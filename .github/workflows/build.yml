@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: pvp-build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
@@ -75,6 +79,16 @@ jobs:
           path: bin/Release/PvPSentinel/PvPSentinel.zip
           if-no-files-found: error
 
+      - name: Read distribution version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -LiteralPath 'PvPSentinel.csproj' -Raw
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "Invalid version $version" }
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=v$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - name: Publish GitHub release
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: pwsh
@@ -105,16 +119,6 @@ jobs:
           [xml]$project = Get-Content PvPSentinel.csproj
           $version = [string]$project.Project.PropertyGroup.Version
           $url = "https://github.com/${{ github.repository }}/releases/download/v$version/PvPSentinel.zip"
-          $entries = @(Get-Content repo.json -Raw | ConvertFrom-Json)
-          $entry = @($entries | Where-Object InternalName -eq 'PvPSentinel')
-          if ($entry.Count -ne 1 -or $entry[0].AssemblyVersion -ne $version `
-              -or $entry[0].TestingAssemblyVersion -ne $version `
-              -or $entry[0].DownloadLinkInstall -ne $url `
-              -or $entry[0].DownloadLinkUpdate -ne $url `
-              -or $entry[0].DownloadLinkTesting -ne $url) {
-            throw "The authoritative child repo.json does not advertise $version and its published ZIP."
-          }
-
           $download = Join-Path $env:RUNNER_TEMP 'public-PvPSentinel.zip'
           for ($attempt = 1; $attempt -le 12; $attempt++) {
             try {
@@ -128,55 +132,11 @@ jobs:
             }
           }
 
-      - name: Notify central Sentinel catalog when configured
-        id: catalog_dispatch
+      - name: Publish authoritative child manifest and verify central catalog
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.DALAMUD_CATALOG_TOKEN }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
-            Write-Warning 'DALAMUD_CATALOG_TOKEN is unavailable; the central hourly reconciliation will read this child repo.json.'
-            'sent=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-            exit 0
-          }
-          [xml]$project = Get-Content PvPSentinel.csproj
-          $version = [string]$project.Project.PropertyGroup.Version
-          $payload = @{
-            event_type = 'plugin-released'
-            client_payload = @{
-              source_repository = '${{ github.repository }}'
-              source_commit = '${{ github.sha }}'
-              internal_name = 'PvPSentinel'
-              version = $version
-              tag = "v$version"
-            }
-          } | ConvertTo-Json -Depth 5
-          $payload | gh api --method POST 'repos/MarshalTitan/Sentinel/dispatches' --input -
-          if ($LASTEXITCODE -ne 0) { throw 'Central Sentinel catalog dispatch failed.' }
-          'sent=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      - name: Verify generated central catalog
-        if: steps.catalog_dispatch.outputs.sent == 'true'
-        shell: pwsh
-        run: |
-          [xml]$project = Get-Content PvPSentinel.csproj
-          $version = [string]$project.Project.PropertyGroup.Version
-          $asset = "https://github.com/${{ github.repository }}/releases/download/v$version/PvPSentinel.zip"
-          for ($attempt = 1; $attempt -le 60; $attempt++) {
-            try {
-              $catalog = @(Invoke-RestMethod -Uri "https://raw.githubusercontent.com/MarshalTitan/Sentinel/main/repo.json?pvpsentinel=${{ github.run_id }}-$attempt")
-              $entry = @($catalog | Where-Object InternalName -eq 'PvPSentinel')
-              if ($entry.Count -eq 1 -and $entry[0].AssemblyVersion -eq $version `
-                  -and $entry[0].TestingAssemblyVersion -eq $version `
-                  -and $entry[0].DownloadLinkInstall -eq $asset `
-                  -and $entry[0].DownloadLinkUpdate -eq $asset `
-                  -and $entry[0].DownloadLinkTesting -eq $asset) {
-                Write-Host "Verified PvPSentinel $version in generated Sentinel catalog."
-                exit 0
-              }
-            }
-            catch { Write-Host "Catalog check $attempt: $($_.Exception.Message)" }
-            Start-Sleep -Seconds 5
-          }
-          throw "Generated Sentinel catalog did not publish PvPSentinel $version within five minutes."
+        uses: MarshalTitan/Sentinel/.github/actions/distribute@4bbc5ce50837b37c8cfaee5c39a075c4f68858ed
+        with:
+          internal-name: PvPSentinel
+          version: ${{ steps.version.outputs.value }}
+          tag: ${{ steps.version.outputs.tag }}
+          notification-token: ${{ secrets.DALAMUD_CATALOG_TOKEN }}
