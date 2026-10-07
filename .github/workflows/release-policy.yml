@@ -1,0 +1,63 @@
+name: Release Infrastructure Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - name: Validate all active workflow syntax and expressions
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -shellcheck= -pyflakes=
+      - name: Parse PowerShell release scripts without executing them
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -LiteralPath '.github/scripts' -Filter '*.ps1' -File | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.Message -ErrorAction Continue }
+              $failed = $true
+            }
+          }
+          if ($failed) { throw 'PowerShell syntax validation failed.' }
+      - name: Reject obsolete asset replacement and direct-write credentials
+        shell: pwsh
+        run: |
+          $workflows = Get-ChildItem -LiteralPath '.github/workflows' -Filter '*.yml' -File | Where-Object Name -ne 'release-policy.yml'
+          foreach ($file in $workflows) {
+            $content = Get-Content -LiteralPath $file.FullName -Raw
+            if ($content -match '--clobber') { throw "Asset replacement remains in $($file.Name)" }
+            foreach ($line in ($content -split "\n")) {
+              if ($line -match 'secrets\.DALAMUD_CATALOG_TOKEN' -and $line -notmatch 'notification-token:') {
+                throw "Cross-repository token is used outside optional notification in $($file.Name)"
+              }
+            }
+          }
+
+  public-distribution:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        plugin: [PvPSentinel]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only token-free published manifest verification
+        uses: MarshalTitan/Sentinel/.github/actions/distribute@4bbc5ce50837b37c8cfaee5c39a075c4f68858ed
+        with:
+          internal-name: ${{ matrix.plugin }}
+          publish-child: 'false'
+          source-token: ''
+          timeout-seconds: '60'
