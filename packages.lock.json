@@ -16,14 +16,14 @@
       },
       "MarshalTitan.SentinelCore": {
         "type": "Transitive",
-        "resolved": "0.3.1",
-        "contentHash": "vL3hVnWi2Md/EsHidfupM08F/WYPJtn0W0vYZUqEi4KwarQi3Aoshw2hluL1DBtVoj3Qsi9FEaFWwleyerD8ew=="
+        "resolved": "0.3.1.1",
+        "contentHash": "WZwywGZ9txL4fwo7nxIm5r3coK2PES9g+fN5N+/wMOT4E1Ad4EGdCHQ8tC4fjlSpzbaS9cfipSsrUbWrH2+g8g=="
       },
       "MarshalTitan.SentinelCore.UI": {
         "type": "Direct",
-        "requested": "[0.3.1]",
-        "resolved": "0.3.1",
-        "contentHash": "dqe2P5SAGHFRSnhB5/C+SZM8pdPMLcsUCn442xOAhnwqClD2NRqzQKTeTswNjvAaGvgTXBnmqC89JrPkaPDixw=="
+        "requested": "[0.3.1.1]",
+        "resolved": "0.3.1.1",
+        "contentHash": "PX/5Ey10VDjv7OZCqH5PaX02I47SemjIUhUgpg2k732onrZ1Rtv0YQQo6cf4fpyYa/KdWEbby8WsBVOUDTJmqw=="
       }
     }
   }

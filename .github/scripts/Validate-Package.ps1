@@ -5,10 +5,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$feed = Join-Path $root '.packages/SentinelCore/v0.3.1.0'
-$uiPath = Join-Path $feed 'MarshalTitan.SentinelCore.UI.0.3.1.nupkg'
-$corePath = Join-Path $feed 'MarshalTitan.SentinelCore.0.3.1.nupkg'
-$expectedUiHash = 'e1a9ce4e1ce36042c0fcd53f4c23874d918640be10eef16c21f1cd436c6ba747'
+$feed = Join-Path $root '.packages/SentinelCore/v0.3.1.1'
+$uiPath = Join-Path $feed 'MarshalTitan.SentinelCore.UI.0.3.1.1.nupkg'
+$corePath = Join-Path $feed 'MarshalTitan.SentinelCore.0.3.1.1.nupkg'
+$expectedUiHash = '4d21d7c868f48fd082e0bcbd42be136a4611dfb6b9e4588dcef5dde7037d6057'
 $actualUiHash = (Get-FileHash -LiteralPath $uiPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actualUiHash -ne $expectedUiHash) { throw "Unexpected SentinelCore.UI package hash: $actualUiHash" }
 
@@ -43,7 +43,7 @@ try {
         throw "Invalid PvPSentinel ZIP manifest; expected $ExpectedVersion."
     }
     $dependencies = [Text.Encoding]::UTF8.GetString((Read-ZipEntry $zip 'PvPSentinel.deps.json')) | ConvertFrom-Json -AsHashtable
-    foreach ($name in @("PvPSentinel/$ExpectedVersion", 'MarshalTitan.SentinelCore/0.3.1', 'MarshalTitan.SentinelCore.UI/0.3.1')) {
+    foreach ($name in @("PvPSentinel/$ExpectedVersion", 'MarshalTitan.SentinelCore/0.3.1.1', 'MarshalTitan.SentinelCore.UI/0.3.1.1')) {
         if (-not $dependencies.libraries.ContainsKey($name)) { throw "Missing runtime dependency: $name" }
     }
 
@@ -52,9 +52,9 @@ try {
     $bundledCore = Hash-Bytes (Read-ZipEntry $zip 'SentinelCore.dll')
     $pinnedCore = Hash-Bytes (Read-ZipEntry $core 'lib/net10.0/SentinelCore.dll')
     if ($bundledUi -ne $pinnedUi -or $bundledCore -ne $pinnedCore) {
-        throw 'Bundled SentinelCore assemblies differ from the pinned v0.3.1.0 packages.'
+        throw 'Bundled SentinelCore assemblies differ from the pinned v0.3.1.1 packages.'
     }
-    Write-Host "Validated PvPSentinel $ExpectedVersion and exact SentinelCore 0.3.1 assemblies."
+    Write-Host "Validated PvPSentinel $ExpectedVersion and exact SentinelCore 0.3.1.1 assemblies."
 }
 finally {
     $zip.Dispose()

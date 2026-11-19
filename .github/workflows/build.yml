@@ -40,8 +40,8 @@ jobs:
       - name: Verify pinned SentinelCore UI package
         shell: pwsh
         run: |
-          $expected = 'e1a9ce4e1ce36042c0fcd53f4c23874d918640be10eef16c21f1cd436c6ba747'
-          $package = '.packages/SentinelCore/v0.3.1.0/MarshalTitan.SentinelCore.UI.0.3.1.nupkg'
+          $expected = '4d21d7c868f48fd082e0bcbd42be136a4611dfb6b9e4588dcef5dde7037d6057'
+          $package = '.packages/SentinelCore/v0.3.1.1/MarshalTitan.SentinelCore.UI.0.3.1.1.nupkg'
           $actual = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw "SentinelCore.UI package hash mismatch: $actual" }
 
@@ -107,7 +107,7 @@ jobs:
           gh release create $tag bin/Release/PvPSentinel/PvPSentinel.zip `
             --target $env:GITHUB_SHA `
             --title "PvPSentinel $version (beta)" `
-            --notes "Fix Sentinel Modern minimize: keep the shared Core themed header, readiness pill, page label, and expand control visible in a compact window. Preserve the expanded size and Classic native title bar. Frontline automation, combat, and Core.UI 0.3.1 are unchanged."
+            --notes "Privacy maintenance: replace personal copyright attribution in bundled Core package and assembly metadata with project attribution. Runtime source, saved configuration, character identity, Discord routing, and gameplay behavior are unchanged."
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to publish release $tag."
           }
